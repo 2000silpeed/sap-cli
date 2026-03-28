@@ -1,0 +1,278 @@
+{
+  "tcode": "MM03",
+  "title": "Display Material",
+  "module": "MM (Material Management)",
+  "description": "자재 마스터 데이터 조회. 자재번호를 입력하고 조직레벨/뷰를 선택하여 자재 정보를 확인한다.",
+  "screens": {
+    "4000": {
+      "transaction": "MM03",
+      "screen_number": 4000,
+      "program": "SAPLMGMM",
+      "title": "Display Material (Initial Screen)",
+      "fields": [
+        {
+          "id": "wnd[0]/usr/ctxtRMMG1-MATNR",
+          "name": "RMMG1-MATNR",
+          "type": "GuiCTextField",
+          "label": "Material",
+          "value": "",
+          "changeable": true,
+          "required": true,
+          "max_length": 18,
+          "semantic": {
+            "raw_label": "Material",
+            "sap_field_name": "MATNR",
+            "description": "자재 마스터 번호 - SAP 전체에서 자재를 고유 식별하는 키",
+            "synonyms": ["자재번호", "품번", "Material Number", "Part Number", "Item Number"],
+            "validation": "18자리 영숫자, 선행 0 자동 추가",
+            "domain_context": "MM 모듈의 핵심 식별자. MM01(생성), MM02(변경), MM03(조회)에서 공통 사용"
+          }
+        }
+      ],
+      "tables": [],
+      "buttons": [
+        {
+          "id": "wnd[0]/tbar[1]/btn[5]",
+          "name": "btn[5]",
+          "text": "Org. Levels",
+          "tooltip": "Select view(s) / org. levels",
+          "icon_name": "",
+          "vkey": null,
+          "emphasized": false
+        },
+        {
+          "id": "wnd[0]/tbar[0]/btn[0]",
+          "name": "btn[0]",
+          "text": "",
+          "tooltip": "Enter",
+          "icon_name": "ICON_ENTER",
+          "vkey": 0,
+          "emphasized": false
+        }
+      ],
+      "menus": [],
+      "tabs": [],
+      "status": null
+    },
+    "4004": {
+      "transaction": "MM03",
+      "screen_number": 4004,
+      "program": "SAPLMGMM",
+      "title": "Display Material - Select View(s)",
+      "fields": [],
+      "tables": [],
+      "buttons": [
+        {
+          "id": "wnd[0]/tbar[0]/btn[0]",
+          "name": "btn[0]",
+          "text": "",
+          "tooltip": "Enter",
+          "icon_name": "ICON_ENTER",
+          "vkey": 0,
+          "emphasized": false
+        }
+      ],
+      "menus": [],
+      "tabs": [],
+      "status": null
+    },
+    "4200": {
+      "transaction": "MM03",
+      "screen_number": 4200,
+      "program": "SAPLMGMM",
+      "title": "Display Material - Basic Data 1",
+      "fields": [
+        {
+          "id": "wnd[0]/usr/ctxtRMMG1-MATNR",
+          "name": "RMMG1-MATNR",
+          "type": "GuiCTextField",
+          "label": "Material",
+          "value": "",
+          "changeable": false,
+          "required": false,
+          "semantic": {
+            "raw_label": "Material",
+            "sap_field_name": "MATNR",
+            "description": "자재 번호 (표시 전용)",
+            "synonyms": ["자재번호"],
+            "validation": "",
+            "domain_context": ""
+          }
+        },
+        {
+          "id": "wnd[0]/usr/txtMAKT-MAKTX",
+          "name": "MAKT-MAKTX",
+          "type": "GuiTextField",
+          "label": "Material Description",
+          "value": "",
+          "changeable": false,
+          "required": false,
+          "max_length": 40,
+          "semantic": {
+            "raw_label": "Material Description",
+            "sap_field_name": "MAKTX",
+            "description": "자재 내역 - 자재를 설명하는 텍스트",
+            "synonyms": ["자재내역", "품명", "Material Description", "Description"],
+            "validation": "40자 이내",
+            "domain_context": "다국어 지원, 로그인 언어에 따라 다른 내역 표시"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/cmbMARA-MEINS",
+          "name": "MARA-MEINS",
+          "type": "GuiComboBox",
+          "label": "Base Unit of Measure",
+          "value": "",
+          "changeable": false,
+          "required": false,
+          "semantic": {
+            "raw_label": "Base Unit of Measure",
+            "sap_field_name": "MEINS",
+            "description": "기본 단위 - 수량 관리의 기준 단위",
+            "synonyms": ["기본단위", "단위", "UoM", "Unit of Measure"],
+            "validation": "SAP 단위 코드 (EA, KG, L, M 등)",
+            "domain_context": "모든 수량 계산의 기준. 변환 단위는 별도 관리"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/txtMARA-MTART",
+          "name": "MARA-MTART",
+          "type": "GuiTextField",
+          "label": "Material Type",
+          "value": "",
+          "changeable": false,
+          "required": false,
+          "semantic": {
+            "raw_label": "Material Type",
+            "sap_field_name": "MTART",
+            "description": "자재유형 - 자재의 분류 (FERT=완제품, ROH=원자재, HALB=반제품 등)",
+            "synonyms": ["자재유형", "유형", "Material Type"],
+            "validation": "SAP 표준 자재유형 코드",
+            "domain_context": "메타엣지: 자재유형에 따라 활성화되는 탭/필드가 결정됨"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/txtMARA-MATKL",
+          "name": "MARA-MATKL",
+          "type": "GuiTextField",
+          "label": "Material Group",
+          "value": "",
+          "changeable": false,
+          "required": false,
+          "semantic": {
+            "raw_label": "Material Group",
+            "sap_field_name": "MATKL",
+            "description": "자재 그룹 - 유사 자재의 분류 그룹",
+            "synonyms": ["자재그룹", "품목그룹", "Material Group"],
+            "validation": "9자리 코드",
+            "domain_context": "리포팅 및 분석을 위한 분류 기준"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/txtMARA-BRGEW",
+          "name": "MARA-BRGEW",
+          "type": "GuiTextField",
+          "label": "Gross Weight",
+          "value": "",
+          "changeable": false,
+          "required": false,
+          "semantic": {
+            "raw_label": "Gross Weight",
+            "sap_field_name": "BRGEW",
+            "description": "총중량",
+            "synonyms": ["총중량", "Gross Weight"],
+            "validation": "숫자",
+            "domain_context": "물류 계산에 사용"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/txtMARA-NTGEW",
+          "name": "MARA-NTGEW",
+          "type": "GuiTextField",
+          "label": "Net Weight",
+          "value": "",
+          "changeable": false,
+          "required": false,
+          "semantic": {
+            "raw_label": "Net Weight",
+            "sap_field_name": "NTGEW",
+            "description": "순중량",
+            "synonyms": ["순중량", "Net Weight"],
+            "validation": "숫자",
+            "domain_context": "물류 계산에 사용"
+          }
+        }
+      ],
+      "tables": [],
+      "buttons": [
+        {
+          "id": "wnd[0]/tbar[0]/btn[3]",
+          "name": "btn[3]",
+          "text": "",
+          "tooltip": "Back",
+          "icon_name": "ICON_SYSTEM_BACK",
+          "vkey": 3,
+          "emphasized": false
+        },
+        {
+          "id": "wnd[0]/tbar[0]/btn[12]",
+          "name": "btn[12]",
+          "text": "",
+          "tooltip": "Cancel",
+          "icon_name": "ICON_SYSTEM_CANCEL",
+          "vkey": 12,
+          "emphasized": false
+        }
+      ],
+      "menus": [],
+      "tabs": [
+        {
+          "id": "wnd[0]/usr/tabsTABSPR1/tabpSP01",
+          "name": "tabpSP01",
+          "text": "Basic Data 1",
+          "tooltip": "",
+          "icon_name": "",
+          "vkey": null,
+          "emphasized": false
+        },
+        {
+          "id": "wnd[0]/usr/tabsTABSPR1/tabpSP02",
+          "name": "tabpSP02",
+          "text": "Basic Data 2",
+          "tooltip": "",
+          "icon_name": "",
+          "vkey": null,
+          "emphasized": false
+        }
+      ],
+      "status": null
+    }
+  },
+  "screen_flow": [
+    {
+      "link_type": "NAVIGATES_TO",
+      "source_id": "screen:4000",
+      "target_id": "screen:4004",
+      "properties": {"trigger": "Enter after material number input"},
+      "description": "자재번호 입력 후 Enter → 뷰 선택 화면"
+    },
+    {
+      "link_type": "NAVIGATES_TO",
+      "source_id": "screen:4004",
+      "target_id": "screen:4200",
+      "properties": {"trigger": "Select views and Enter"},
+      "description": "뷰 선택 후 Enter → 기본 데이터 화면"
+    }
+  ],
+  "field_dependencies": [
+    {
+      "link_type": "FIELD_DEPENDS_ON",
+      "source_id": "MARA-MTART",
+      "target_id": "AVAILABLE_TABS",
+      "properties": {"dependency_type": "tab_activation"},
+      "description": "자재유형에 따라 사용 가능한 탭/뷰가 결정됨 (메타엣지)"
+    }
+  ],
+  "recorded_sequences": [],
+  "related_transactions": ["MM01", "MM02", "MD04", "MMBE", "MB52"]
+}

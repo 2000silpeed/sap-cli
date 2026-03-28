@@ -1,0 +1,50 @@
+{
+  "name": "save_flow",
+  "description": "SAP 문서 저장 공통 패턴 - 대부분의 생성/변경 트랜잭션에서 동일하게 작동",
+  "pattern_type": "meta_ontology",
+  "applicable_transactions": ["VA01", "VA02", "MM01", "MM02", "ME21N", "ME22N", "FB01"],
+  "sequence": [
+    {
+      "step": 1,
+      "action": "SendVKey",
+      "params": {"vkey": 11},
+      "description": "Ctrl+S 또는 Save 버튼 (VKey 11)"
+    },
+    {
+      "step": 2,
+      "check": "status_message",
+      "expected_types": ["S", "E", "W"],
+      "on_success": {
+        "type": "S",
+        "typical_message_pattern": "* saved under number *",
+        "extract_document_number": true
+      },
+      "on_error": {
+        "type": "E",
+        "action": "read_status_and_fix"
+      },
+      "on_warning": {
+        "type": "W",
+        "action": "confirm_or_fix",
+        "may_require": "Enter to confirm"
+      }
+    },
+    {
+      "step": 3,
+      "check": "modal_window",
+      "description": "경고/확인 팝업이 나타날 수 있음",
+      "on_modal": {
+        "action": "read_modal_text_and_decide",
+        "common_responses": [
+          {"text_contains": "Do you want to save", "action": "press_yes"},
+          {"text_contains": "Incomplete", "action": "read_errors_and_fix"}
+        ]
+      }
+    }
+  ],
+  "notes": [
+    "저장 후 상태바 메시지에서 문서번호를 추출할 수 있음",
+    "불완전 데이터 시 에러 메시지가 표시되며 필드로 커서가 이동함",
+    "일부 트랜잭션은 저장 전 확인 팝업이 나타남"
+  ]
+}

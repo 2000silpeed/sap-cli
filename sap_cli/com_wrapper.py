@@ -1,0 +1,560 @@
+"""SAP GUI COM Wrapper - win32com을 통한 SAP GUI Scripting API 직접 호출.
+
+Windows에서 실행 중인 SAP GUI에 COM을 통해 연결하고,
+트랜잭션 실행, 필드 조작, 화면 탐색 등 모든 GUI 자동화를 수행한다.
+
+Usage:
+    sap = SapGuiWrapper()
+    sap.connect()
+    sap.run_transaction("MM03")
+    sap.set_field("wnd[0]/usr/ctxtRMMG1-MATNR", "100-100")
+    sap.send_vkey(0)  # Enter
+    screen = sap.get_screen()
+    print(screen.model_dump_json())
+"""
+
+from __future__ import annotations
+
+import json
+import platform
+from typing import Any
+
+from .ontology.schema import (
+    GuiComponentType,
+    SapButton,
+    SapField,
+    SapSession,
+    SapStatusMessage,
+    SapTable,
+    SapTableColumn,
+    ScreenOntology,
+    SemanticContext,
+    StatusMessageType,
+)
+
+# win32com은 Windows 전용 - 임포트 실패 시 스텁 제공
+_WIN32 = platform.system() == "Windows"
+
+if _WIN32:
+    import win32com.client  # type: ignore[import-untyped]
+
+
+class SapGuiError(Exception):
+    """SAP GUI 조작 중 발생하는 에러."""
+
+
+class SapGuiWrapper:
+    """SAP GUI Scripting API COM 래퍼.
+
+    Running Object Table(ROT)을 통해 실행 중인 SAP GUI에 연결하고,
+    세션을 통해 모든 GUI 조작을 수행한다.
+    """
+
+    def __init__(self) -> None:
+        self._application: Any = None
+        self._connection: Any = None
+        self._session: Any = None
+
+    # -------------------------------------------------------------------
+    # Connection Management
+    # -------------------------------------------------------------------
+
+    def connect(self, connection_index: int = 0, session_index: int = 0) -> SapSession:
+        """실행 중인 SAP GUI에 연결.
+
+        SAP GUI가 이미 실행 중이고 로그인된 상태여야 한다.
+        ROT(Running Object Table)을 통해 SAP GUI 프로세스에 접근한다.
+        """
+        if not _WIN32:
+            raise SapGuiError("SAP GUI COM is only available on Windows")
+
+        try:
+            rot_entry = win32com.client.GetObject("SAPGUI")
+            self._application = rot_entry.GetScriptingEngine
+        except Exception as e:
+            raise SapGuiError(
+                "SAP GUI에 연결할 수 없습니다. SAP GUI가 실행 중인지, "
+                "스크립팅이 활성화되어 있는지 확인하세요.\n"
+                "서버: sapgui/user_scripting = TRUE\n"
+                "클라이언트: SAP GUI Options > Accessibility > Enable scripting"
+            ) from e
+
+        if self._application.Connections.Count == 0:
+            raise SapGuiError("활성 SAP 연결이 없습니다. SAP에 로그인하세요.")
+
+        if connection_index >= self._application.Connections.Count:
+            raise SapGuiError(
+                f"연결 인덱스 {connection_index} 없음. "
+                f"활성 연결 수: {self._application.Connections.Count}"
+            )
+
+        self._connection = self._application.Connections(connection_index)
+
+        if session_index >= self._connection.Sessions.Count:
+            raise SapGuiError(
+                f"세션 인덱스 {session_index} 없음. "
+                f"활성 세션 수: {self._connection.Sessions.Count}"
+            )
+
+        self._session = self._connection.Sessions(session_index)
+        return self.get_session_info()
+
+    @property
+    def session(self) -> Any:
+        if self._session is None:
+            raise SapGuiError("SAP GUI에 연결되지 않았습니다. connect()를 먼저 호출하세요.")
+        return self._session
+
+    @property
+    def is_connected(self) -> bool:
+        return self._session is not None
+
+    def disconnect(self) -> None:
+        self._session = None
+        self._connection = None
+        self._application = None
+
+    # -------------------------------------------------------------------
+    # Session Info
+    # -------------------------------------------------------------------
+
+    def get_session_info(self) -> SapSession:
+        """현재 세션의 상세 정보."""
+        info = self.session.Info
+        return SapSession(
+            session_id=self.session.Id,
+            user=info.User,
+            language=info.Language,
+            transaction=info.Transaction,
+            screen_number=info.ScreenNumber,
+            program=info.Program,
+            system_name=info.SystemName,
+            client=info.Client,
+            application_server=info.ApplicationServer,
+        )
+
+    # -------------------------------------------------------------------
+    # Transaction Execution
+    # -------------------------------------------------------------------
+
+    def run_transaction(self, tcode: str) -> None:
+        """트랜잭션 실행. /n 접두사가 자동 추가된다."""
+        cmd = tcode if tcode.startswith("/") else f"/n{tcode}"
+        self.session.SendCommand(cmd)
+
+    def send_command(self, command: str) -> None:
+        """커맨드 필드에 명령 입력 후 실행."""
+        self.session.SendCommand(command)
+
+    def end_transaction(self) -> None:
+        """현재 트랜잭션 종료 (/n)."""
+        self.session.EndTransaction()
+
+    # -------------------------------------------------------------------
+    # Field Operations
+    # -------------------------------------------------------------------
+
+    def set_field(self, element_id: str, value: str) -> None:
+        """필드에 값 설정."""
+        try:
+            element = self.session.FindById(element_id)
+            element.Text = value
+        except Exception as e:
+            raise SapGuiError(f"필드 설정 실패 [{element_id}]: {e}") from e
+
+    def get_field(self, element_id: str) -> str:
+        """필드 값 읽기."""
+        try:
+            element = self.session.FindById(element_id)
+            return str(element.Text)
+        except Exception as e:
+            raise SapGuiError(f"필드 읽기 실패 [{element_id}]: {e}") from e
+
+    def set_focus(self, element_id: str) -> None:
+        """요소에 포커스 설정."""
+        try:
+            self.session.FindById(element_id).SetFocus()
+        except Exception as e:
+            raise SapGuiError(f"포커스 설정 실패 [{element_id}]: {e}") from e
+
+    # -------------------------------------------------------------------
+    # Button / Key Operations
+    # -------------------------------------------------------------------
+
+    def press(self, element_id: str) -> None:
+        """버튼 클릭."""
+        try:
+            self.session.FindById(element_id).Press()
+        except Exception as e:
+            raise SapGuiError(f"버튼 클릭 실패 [{element_id}]: {e}") from e
+
+    def send_vkey(self, vkey: int) -> None:
+        """VKey 전송 (Enter=0, Back=3, Execute=8, Save=11, Cancel=12)."""
+        try:
+            self.session.FindById("wnd[0]").SendVKey(vkey)
+        except Exception as e:
+            raise SapGuiError(f"VKey 전송 실패 [{vkey}]: {e}") from e
+
+    def select_menu(self, menu_id: str) -> None:
+        """메뉴 항목 선택."""
+        try:
+            self.session.FindById(menu_id).Select()
+        except Exception as e:
+            raise SapGuiError(f"메뉴 선택 실패 [{menu_id}]: {e}") from e
+
+    # -------------------------------------------------------------------
+    # Checkbox / Radio / ComboBox
+    # -------------------------------------------------------------------
+
+    def set_checkbox(self, element_id: str, checked: bool) -> None:
+        """체크박스 설정."""
+        try:
+            self.session.FindById(element_id).Selected = checked
+        except Exception as e:
+            raise SapGuiError(f"체크박스 설정 실패 [{element_id}]: {e}") from e
+
+    def select_radio(self, element_id: str) -> None:
+        """라디오 버튼 선택."""
+        try:
+            self.session.FindById(element_id).Select()
+        except Exception as e:
+            raise SapGuiError(f"라디오 선택 실패 [{element_id}]: {e}") from e
+
+    def select_combo(self, element_id: str, value: str) -> None:
+        """콤보박스(드롭다운) 값 선택."""
+        try:
+            self.session.FindById(element_id).Value = value
+        except Exception as e:
+            raise SapGuiError(f"콤보박스 선택 실패 [{element_id}]: {e}") from e
+
+    # -------------------------------------------------------------------
+    # Status Bar
+    # -------------------------------------------------------------------
+
+    def get_status(self) -> SapStatusMessage:
+        """상태바 메시지 조회."""
+        try:
+            statusbar = self.session.FindById("wnd[0]/sbar")
+            msg_type = statusbar.MessageType or "S"
+            return SapStatusMessage(
+                type=StatusMessageType(msg_type),
+                message=statusbar.Text or "",
+            )
+        except Exception:
+            return SapStatusMessage(type=StatusMessageType.INFO, message="")
+
+    # -------------------------------------------------------------------
+    # Screen Reading (GetObjectTree 기반)
+    # -------------------------------------------------------------------
+
+    def get_screen(self, window_id: str = "wnd[0]") -> ScreenOntology:
+        """현재 화면의 전체 UI 구조를 ScreenOntology로 반환.
+
+        GetObjectTree()가 사용 가능하면 JSON 기반으로, 아니면 수동 탐색으로 수집.
+        """
+        info = self.session.Info
+        screen = ScreenOntology(
+            transaction=info.Transaction,
+            screen_number=info.ScreenNumber,
+            program=info.Program,
+            title=self.session.FindById(window_id).Text,
+        )
+
+        try:
+            tree_json = self._get_object_tree(window_id)
+            if tree_json:
+                self._parse_tree_to_ontology(tree_json, screen)
+                screen.raw_tree = tree_json
+                return screen
+        except Exception:
+            pass
+
+        self._manual_scan(window_id, screen)
+        screen.status = self.get_status()
+        return screen
+
+    def _get_object_tree(self, window_id: str) -> dict[str, Any] | None:
+        """GetObjectTree()로 JSON UI 트리 획득 (SAP GUI 7.70 PL3+)."""
+        try:
+            json_str = self.session.GetObjectTree(window_id, None)
+            return json.loads(json_str)
+        except Exception:
+            return None
+
+    def _parse_tree_to_ontology(self, tree: dict[str, Any], screen: ScreenOntology) -> None:
+        """GetObjectTree JSON을 ScreenOntology로 파싱."""
+        self._walk_tree(tree, screen)
+
+    def _walk_tree(self, node: dict[str, Any], screen: ScreenOntology) -> None:
+        props = node.get("properties", {})
+        node_id = props.get("Id", "")
+        node_type = props.get("Type", "")
+        node_text = props.get("Text", "")
+
+        comp_type = self._map_component_type(node_type)
+
+        if comp_type in (
+            GuiComponentType.TEXT_FIELD,
+            GuiComponentType.CTEXT_FIELD,
+            GuiComponentType.PASSWORD_FIELD,
+            GuiComponentType.COMBO_BOX,
+        ):
+            screen.fields.append(SapField(
+                id=node_id,
+                name=self._extract_name(node_id),
+                type=comp_type,
+                label=node_text,
+                value=node_text,
+                changeable=props.get("Changeable", False),
+            ))
+        elif comp_type == GuiComponentType.BUTTON:
+            screen.buttons.append(SapButton(
+                id=node_id,
+                name=self._extract_name(node_id),
+                text=node_text,
+                tooltip=props.get("Tooltip", ""),
+                icon_name=props.get("IconName", ""),
+            ))
+        elif comp_type in (GuiComponentType.CHECK_BOX, GuiComponentType.RADIO_BUTTON):
+            screen.fields.append(SapField(
+                id=node_id,
+                name=self._extract_name(node_id),
+                type=comp_type,
+                label=node_text,
+                changeable=props.get("Changeable", False),
+            ))
+        elif comp_type == GuiComponentType.TAB:
+            screen.tabs.append(SapButton(
+                id=node_id,
+                name=self._extract_name(node_id),
+                text=node_text,
+            ))
+
+        for child in node.get("children", []):
+            self._walk_tree(child, screen)
+
+    def _manual_scan(self, window_id: str, screen: ScreenOntology) -> None:
+        """GetObjectTree 미지원 시 수동 탐색으로 화면 요소 수집."""
+        try:
+            window = self.session.FindById(window_id)
+            self._scan_children(window, screen)
+        except Exception:
+            pass
+
+    def _scan_children(self, container: Any, screen: ScreenOntology) -> None:
+        """컨테이너의 자식 요소를 재귀 탐색."""
+        try:
+            children = container.Children
+            for i in range(children.Count):
+                child = children(i)
+                child_type = str(child.Type)
+                child_id = str(child.Id)
+
+                comp_type = self._map_component_type(child_type)
+
+                if comp_type in (
+                    GuiComponentType.TEXT_FIELD,
+                    GuiComponentType.CTEXT_FIELD,
+                    GuiComponentType.PASSWORD_FIELD,
+                ):
+                    screen.fields.append(SapField(
+                        id=child_id,
+                        name=self._extract_name(child_id),
+                        type=comp_type,
+                        label=self._get_label_for(child),
+                        value=str(getattr(child, "Text", "")),
+                        changeable=bool(getattr(child, "Changeable", False)),
+                    ))
+                elif comp_type == GuiComponentType.BUTTON:
+                    screen.buttons.append(SapButton(
+                        id=child_id,
+                        name=self._extract_name(child_id),
+                        text=str(getattr(child, "Text", "")),
+                        tooltip=str(getattr(child, "Tooltip", "")),
+                        icon_name=str(getattr(child, "IconName", "")),
+                    ))
+                elif comp_type == GuiComponentType.COMBO_BOX:
+                    screen.fields.append(SapField(
+                        id=child_id,
+                        name=self._extract_name(child_id),
+                        type=comp_type,
+                        label=self._get_label_for(child),
+                        value=str(getattr(child, "Value", "")),
+                        changeable=bool(getattr(child, "Changeable", False)),
+                    ))
+                elif comp_type in (GuiComponentType.CHECK_BOX, GuiComponentType.RADIO_BUTTON):
+                    screen.fields.append(SapField(
+                        id=child_id,
+                        name=self._extract_name(child_id),
+                        type=comp_type,
+                        label=str(getattr(child, "Text", "")),
+                        changeable=bool(getattr(child, "Changeable", False)),
+                    ))
+
+                if hasattr(child, "Children"):
+                    try:
+                        if child.Children.Count > 0:
+                            self._scan_children(child, screen)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    # -------------------------------------------------------------------
+    # Table Operations
+    # -------------------------------------------------------------------
+
+    def read_table(self, element_id: str) -> SapTable:
+        """테이블 데이터 읽기."""
+        try:
+            table = self.session.FindById(element_id)
+            table_type = str(table.Type)
+
+            if table_type == "GuiGridView":
+                return self._read_grid_view(element_id, table)
+            else:
+                return self._read_table_control(element_id, table)
+        except Exception as e:
+            raise SapGuiError(f"테이블 읽기 실패 [{element_id}]: {e}") from e
+
+    def _read_grid_view(self, element_id: str, grid: Any) -> SapTable:
+        row_count = grid.RowCount
+        col_count = grid.ColumnCount
+        columns = []
+        for c in range(col_count):
+            col_id = grid.ColumnOrder(c)
+            columns.append(SapTableColumn(
+                name=col_id,
+                title=grid.GetColumnTitles(col_id)[0] if grid.GetColumnTitles(col_id) else col_id,
+                position=c,
+            ))
+
+        rows = []
+        for r in range(min(row_count, 100)):
+            row_data = {}
+            for col in columns:
+                try:
+                    row_data[col.name] = grid.GetCellValue(r, col.name)
+                except Exception:
+                    row_data[col.name] = ""
+            rows.append(row_data)
+
+        return SapTable(
+            id=element_id,
+            type=GuiComponentType.GRID_VIEW,
+            row_count=row_count,
+            column_count=col_count,
+            visible_rows=grid.VisibleRowCount,
+            columns=columns,
+            rows=rows,
+        )
+
+    def _read_table_control(self, element_id: str, table: Any) -> SapTable:
+        row_count = table.RowCount
+        visible_rows = table.VisibleRowCount
+        columns = []
+        for c in range(table.Columns.Count):
+            col = table.Columns(c)
+            columns.append(SapTableColumn(
+                name=col.Name,
+                title=col.Title,
+                position=c,
+            ))
+
+        rows = []
+        for r in range(min(row_count, visible_rows)):
+            row_data = {}
+            for col in columns:
+                try:
+                    cell = table.GetCell(r, col.position)
+                    row_data[col.name] = str(cell.Text)
+                except Exception:
+                    row_data[col.name] = ""
+            rows.append(row_data)
+
+        return SapTable(
+            id=element_id,
+            type=GuiComponentType.TABLE_CONTROL,
+            row_count=row_count,
+            column_count=len(columns),
+            visible_rows=visible_rows,
+            columns=columns,
+            rows=rows,
+        )
+
+    def set_table_cell(self, element_id: str, row: int, col: str, value: str) -> None:
+        """테이블 셀에 값 설정."""
+        try:
+            table = self.session.FindById(element_id)
+            if str(table.Type) == "GuiGridView":
+                table.ModifyCell(row, col, value)
+            else:
+                cell = table.GetCell(row, col)
+                cell.Text = value
+        except Exception as e:
+            raise SapGuiError(f"테이블 셀 설정 실패: {e}") from e
+
+    # -------------------------------------------------------------------
+    # Modal Window Handling
+    # -------------------------------------------------------------------
+
+    def has_modal(self) -> bool:
+        """모달 윈도우(팝업) 존재 여부."""
+        try:
+            self.session.FindById("wnd[1]")
+            return True
+        except Exception:
+            return False
+
+    def get_modal_text(self) -> str:
+        """모달 윈도우의 텍스트 내용."""
+        try:
+            modal = self.session.FindById("wnd[1]")
+            return str(modal.Text)
+        except Exception:
+            return ""
+
+    def close_modal(self, vkey: int = 0) -> None:
+        """모달 윈도우 닫기 (기본: Enter)."""
+        try:
+            self.session.FindById("wnd[1]").SendVKey(vkey)
+        except Exception as e:
+            raise SapGuiError(f"모달 닫기 실패: {e}") from e
+
+    # -------------------------------------------------------------------
+    # Helpers
+    # -------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_name(element_id: str) -> str:
+        """요소 ID에서 이름 부분 추출. 예: 'wnd[0]/usr/txtFIELD' → 'FIELD'"""
+        if "/" in element_id:
+            last = element_id.rsplit("/", 1)[-1]
+            for prefix in ("txt", "ctxt", "cmb", "chk", "rad", "btn", "tab", "tabp", "lbl",
+                           "shell", "sub", "ssub", "tbl"):
+                if last.startswith(prefix):
+                    return last[len(prefix):]
+            return last
+        return element_id
+
+    @staticmethod
+    def _map_component_type(type_str: str) -> GuiComponentType:
+        """타입 문자열을 GuiComponentType enum으로 매핑."""
+        try:
+            return GuiComponentType(type_str)
+        except ValueError:
+            return GuiComponentType.TEXT_FIELD
+
+    @staticmethod
+    def _get_label_for(element: Any) -> str:
+        """요소의 라벨 텍스트 추출 시도."""
+        try:
+            left_label = element.LeftLabel
+            if left_label:
+                return str(left_label.Text)
+        except Exception:
+            pass
+        try:
+            return str(element.Tooltip) if element.Tooltip else ""
+        except Exception:
+            return ""

@@ -1,0 +1,298 @@
+{
+  "tcode": "VA01",
+  "title": "Create Sales Order",
+  "module": "SD (Sales & Distribution)",
+  "description": "판매오더(수주) 생성. 오더유형, 판매조직, 유통채널 등을 입력한 후 품목/수량/납품일 등을 입력하여 수주를 생성한다.",
+  "screens": {
+    "4001": {
+      "transaction": "VA01",
+      "screen_number": 4001,
+      "program": "SAPMV45A",
+      "title": "Create Sales Order: Initial Screen",
+      "fields": [
+        {
+          "id": "wnd[0]/usr/ctxtVBAK-AUART",
+          "name": "VBAK-AUART",
+          "type": "GuiCTextField",
+          "label": "Order Type",
+          "value": "",
+          "changeable": true,
+          "required": true,
+          "max_length": 4,
+          "semantic": {
+            "raw_label": "Order Type",
+            "sap_field_name": "AUART",
+            "description": "오더유형 - 판매 문서의 종류를 결정",
+            "synonyms": ["오더유형", "주문유형", "Order Type", "Sales Doc. Type"],
+            "validation": "4자리 코드 (OR=표준수주, SO=러시수주, RE=반품수주 등)",
+            "domain_context": "메타엣지: 오더유형에 따라 화면 필드 구성, 가격결정, 납품처리 방식이 결정됨"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/ctxtVBAK-VKORG",
+          "name": "VBAK-VKORG",
+          "type": "GuiCTextField",
+          "label": "Sales Organization",
+          "value": "",
+          "changeable": true,
+          "required": true,
+          "max_length": 4,
+          "semantic": {
+            "raw_label": "Sales Organization",
+            "sap_field_name": "VKORG",
+            "description": "판매조직 - 제품/서비스 판매를 담당하는 조직 단위",
+            "synonyms": ["판매조직", "영업조직", "Sales Org"],
+            "validation": "4자리 코드",
+            "domain_context": "가격결정, 출고 공장 결정의 기준. 회사코드에 종속"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/ctxtVBAK-VTWEG",
+          "name": "VBAK-VTWEG",
+          "type": "GuiCTextField",
+          "label": "Distribution Channel",
+          "value": "",
+          "changeable": true,
+          "required": true,
+          "max_length": 2,
+          "semantic": {
+            "raw_label": "Distribution Channel",
+            "sap_field_name": "VTWEG",
+            "description": "유통채널 - 제품이 고객에게 전달되는 경로",
+            "synonyms": ["유통채널", "유통경로", "Distribution Channel"],
+            "validation": "2자리 코드 (10=직판, 20=대리점 등)",
+            "domain_context": "판매조직과 함께 가격결정, 고객마스터 접근의 키"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/ctxtVBAK-SPART",
+          "name": "VBAK-SPART",
+          "type": "GuiCTextField",
+          "label": "Division",
+          "value": "",
+          "changeable": true,
+          "required": true,
+          "max_length": 2,
+          "semantic": {
+            "raw_label": "Division",
+            "sap_field_name": "SPART",
+            "description": "제품군 - 제품/서비스의 분류",
+            "synonyms": ["제품군", "사업부", "Division"],
+            "validation": "2자리 코드",
+            "domain_context": "판매조직, 유통채널과 함께 판매영역(Sales Area)을 구성"
+          }
+        }
+      ],
+      "tables": [],
+      "buttons": [
+        {
+          "id": "wnd[0]/tbar[0]/btn[0]",
+          "name": "btn[0]",
+          "text": "",
+          "tooltip": "Enter",
+          "icon_name": "ICON_ENTER",
+          "vkey": 0,
+          "emphasized": false
+        }
+      ],
+      "menus": [],
+      "tabs": [],
+      "status": null
+    },
+    "4011": {
+      "transaction": "VA01",
+      "screen_number": 4011,
+      "program": "SAPMV45A",
+      "title": "Create Standard Order: Overview",
+      "fields": [
+        {
+          "id": "wnd[0]/usr/subSUBSCREEN_HEADER/ctxtVBKD-BSTNK",
+          "name": "VBKD-BSTNK",
+          "type": "GuiCTextField",
+          "label": "PO Number",
+          "value": "",
+          "changeable": true,
+          "required": false,
+          "max_length": 20,
+          "semantic": {
+            "raw_label": "PO Number",
+            "sap_field_name": "BSTNK",
+            "description": "고객 구매오더 번호 - 고객이 발행한 PO 번호 참조",
+            "synonyms": ["PO번호", "고객PO", "Purchase Order Number", "Customer PO"],
+            "validation": "20자리 이내",
+            "domain_context": "고객 추적 참조용. 필수는 아니지만 업무상 중요"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/subSUBSCREEN_HEADER/ctxtKUAGV-KUNNR",
+          "name": "KUAGV-KUNNR",
+          "type": "GuiCTextField",
+          "label": "Sold-to Party",
+          "value": "",
+          "changeable": true,
+          "required": true,
+          "max_length": 10,
+          "semantic": {
+            "raw_label": "Sold-to Party",
+            "sap_field_name": "KUNNR",
+            "description": "주문자(Sold-to) - 주문을 발행한 고객",
+            "synonyms": ["주문자", "고객번호", "Sold-to", "Customer"],
+            "validation": "10자리 고객 마스터 번호",
+            "domain_context": "파트너 기능 중 주문자. Ship-to, Bill-to, Payer와 구분"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/subSUBSCREEN_HEADER/ctxtKUWEV-KUNNR",
+          "name": "KUWEV-KUNNR",
+          "type": "GuiCTextField",
+          "label": "Ship-to Party",
+          "value": "",
+          "changeable": true,
+          "required": false,
+          "max_length": 10,
+          "semantic": {
+            "raw_label": "Ship-to Party",
+            "sap_field_name": "KUNNR_SH",
+            "description": "납품처(Ship-to) - 물건을 배송받을 고객/주소",
+            "synonyms": ["납품처", "배송지", "Ship-to"],
+            "validation": "10자리 고객 마스터 번호",
+            "domain_context": "주문자와 다를 수 있음. 주문자 마스터에서 기본값 자동 결정"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/subSUBSCREEN_HEADER/ctxtRV45A-KETDAT",
+          "name": "RV45A-KETDAT",
+          "type": "GuiCTextField",
+          "label": "Req. Deliv. Date",
+          "value": "",
+          "changeable": true,
+          "required": true,
+          "max_length": 10,
+          "semantic": {
+            "raw_label": "Req. Deliv. Date",
+            "sap_field_name": "KETDAT",
+            "description": "요청 납품일 - 고객이 요청한 납품 날짜",
+            "synonyms": ["납품요청일", "납기일", "Requested Delivery Date"],
+            "validation": "날짜 형식 (DD.MM.YYYY 또는 YYYYMMDD)",
+            "domain_context": "ATP(가용성 확인) 및 납품 스케줄링의 기준일"
+          }
+        }
+      ],
+      "tables": [
+        {
+          "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tpSPMOV/ssubSUBSCREEN_BODY:SAPMV45A:4400/subSUBSCREEN_TC:SAPMV45A:4900/tblSAPMV45ATCTRL_U_ERF_AUFTRAG",
+          "name": "CTRL_U_ERF_AUFTRAG",
+          "type": "GuiTableControl",
+          "row_count": 0,
+          "column_count": 8,
+          "visible_rows": 5,
+          "columns": [
+            {"name": "MATNR", "title": "Material", "position": 0},
+            {"name": "KWMENG", "title": "Order Quantity", "position": 1},
+            {"name": "VRKME", "title": "SU", "position": 2},
+            {"name": "NETWR", "title": "Net Value", "position": 3},
+            {"name": "WAERK", "title": "Currency", "position": 4},
+            {"name": "WERKS", "title": "Plant", "position": 5},
+            {"name": "LGORT", "title": "Storage Location", "position": 6},
+            {"name": "PSTYV", "title": "Item Category", "position": 7}
+          ],
+          "rows": []
+        }
+      ],
+      "buttons": [
+        {
+          "id": "wnd[0]/tbar[0]/btn[11]",
+          "name": "btn[11]",
+          "text": "",
+          "tooltip": "Save",
+          "icon_name": "ICON_SYSTEM_SAVE",
+          "vkey": 11,
+          "emphasized": true
+        },
+        {
+          "id": "wnd[0]/tbar[0]/btn[3]",
+          "name": "btn[3]",
+          "text": "",
+          "tooltip": "Back",
+          "icon_name": "ICON_SYSTEM_BACK",
+          "vkey": 3,
+          "emphasized": false
+        }
+      ],
+      "menus": [],
+      "tabs": [
+        {
+          "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tpSPMOV",
+          "name": "tpSPMOV",
+          "text": "All Items",
+          "tooltip": "",
+          "icon_name": "",
+          "vkey": null,
+          "emphasized": false
+        },
+        {
+          "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tpSPMOI",
+          "name": "tpSPMOI",
+          "text": "Item Overview",
+          "tooltip": "",
+          "icon_name": "",
+          "vkey": null,
+          "emphasized": false
+        },
+        {
+          "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tpSPMOD",
+          "name": "tpSPMOD",
+          "text": "Item Detail",
+          "tooltip": "",
+          "icon_name": "",
+          "vkey": null,
+          "emphasized": false
+        },
+        {
+          "id": "wnd[0]/usr/tabsTAXI_TABSTRIP_OVERVIEW/tpSPMOP",
+          "name": "tpSPMOP",
+          "text": "Ordering Party",
+          "tooltip": "",
+          "icon_name": "",
+          "vkey": null,
+          "emphasized": false
+        }
+      ],
+      "status": null
+    }
+  },
+  "screen_flow": [
+    {
+      "link_type": "NAVIGATES_TO",
+      "source_id": "screen:4001",
+      "target_id": "screen:4011",
+      "properties": {"trigger": "Enter after org levels input"},
+      "description": "조직레벨 입력 후 Enter → 오더 Overview 화면"
+    }
+  ],
+  "field_dependencies": [
+    {
+      "link_type": "FIELD_DEPENDS_ON",
+      "source_id": "KUAGV-KUNNR",
+      "target_id": "KUWEV-KUNNR",
+      "properties": {"dependency_type": "default_value"},
+      "description": "주문자(Sold-to) 입력 시 납품처(Ship-to)가 자동 결정됨"
+    },
+    {
+      "link_type": "FIELD_DEPENDS_ON",
+      "source_id": "VBAK-VKORG",
+      "target_id": "PRICING",
+      "properties": {"dependency_type": "pricing_procedure"},
+      "description": "판매조직에 따라 가격결정 절차가 결정됨"
+    },
+    {
+      "link_type": "FIELD_DEPENDS_ON",
+      "source_id": "VBAK-AUART",
+      "target_id": "SCREEN_LAYOUT",
+      "properties": {"dependency_type": "field_activation"},
+      "description": "오더유형에 따라 화면 필드 구성이 변경됨 (메타엣지)"
+    }
+  ],
+  "recorded_sequences": [],
+  "related_transactions": ["VA02", "VA03", "VL01N", "VL02N", "VF01", "VF02"]
+}

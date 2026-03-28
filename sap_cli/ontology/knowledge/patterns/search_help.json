@@ -1,0 +1,51 @@
+{
+  "name": "search_help",
+  "description": "F4 검색 도움말 패턴 - 필드에서 가능한 값을 검색하는 공통 패턴",
+  "pattern_type": "meta_ontology",
+  "applicable_transactions": ["*"],
+  "sequence": [
+    {
+      "step": 1,
+      "action": "SetFocus",
+      "description": "검색할 필드에 포커스 이동"
+    },
+    {
+      "step": 2,
+      "action": "SendVKey",
+      "params": {"vkey": 16},
+      "description": "F4 키 (VKey 16) - 검색 도움말 호출"
+    },
+    {
+      "step": 3,
+      "check": "modal_window",
+      "description": "검색 도움말 팝업 또는 목록이 나타남",
+      "variants": [
+        {
+          "type": "simple_list",
+          "description": "값 목록이 바로 표시",
+          "action": "select_value_from_list"
+        },
+        {
+          "type": "search_dialog",
+          "description": "검색 조건 입력 화면",
+          "action": "enter_search_criteria_then_execute"
+        },
+        {
+          "type": "tabbed_search",
+          "description": "탭별로 다른 검색 기준 제공",
+          "action": "select_tab_and_search"
+        }
+      ]
+    },
+    {
+      "step": 4,
+      "action": "SelectRow",
+      "description": "결과 목록에서 원하는 값을 선택 (더블클릭 또는 Enter)"
+    }
+  ],
+  "notes": [
+    "GuiCTextField 타입의 필드는 대부분 F4 검색 도움말을 지원",
+    "검색 도움말은 SAP 데이터 딕셔너리에서 정의됨",
+    "일부 필드는 matchcode 기능으로 와일드카드(*) 검색 지원"
+  ]
+}
