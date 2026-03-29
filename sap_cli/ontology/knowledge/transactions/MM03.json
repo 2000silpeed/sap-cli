@@ -59,8 +59,95 @@
       "screen_number": 4004,
       "program": "SAPLMGMM",
       "title": "Display Material - Select View(s)",
-      "fields": [],
-      "tables": [],
+      "fields": [
+        {
+          "id": "wnd[0]/usr/ctxtRMMG1-WERKS",
+          "name": "RMMG1-WERKS",
+          "type": "GuiCTextField",
+          "label": "Plant",
+          "value": "",
+          "changeable": true,
+          "required": false,
+          "max_length": 4,
+          "semantic": {
+            "raw_label": "Plant",
+            "sap_field_name": "WERKS",
+            "description": "플랜트 - 조직레벨 선택 시 필요 (MRP, 구매 뷰 등)",
+            "synonyms": ["플랜트", "공장", "Plant"],
+            "validation": "4자리 코드",
+            "domain_context": "플랜트 종속 뷰(MRP, 구매, 저장위치 등) 조회 시 필수"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/ctxtRMMG1-LGORT",
+          "name": "RMMG1-LGORT",
+          "type": "GuiCTextField",
+          "label": "Storage Location",
+          "value": "",
+          "changeable": true,
+          "required": false,
+          "max_length": 4,
+          "semantic": {
+            "raw_label": "Storage Location",
+            "sap_field_name": "LGORT",
+            "description": "저장위치 - 저장위치 뷰 조회 시 필요",
+            "synonyms": ["저장위치", "창고", "Storage Loc."],
+            "validation": "4자리 코드",
+            "domain_context": "플랜트 하위의 재고 관리 단위"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/ctxtRMMG1-VKORG",
+          "name": "RMMG1-VKORG",
+          "type": "GuiCTextField",
+          "label": "Sales Organization",
+          "value": "",
+          "changeable": true,
+          "required": false,
+          "max_length": 4,
+          "semantic": {
+            "raw_label": "Sales Organization",
+            "sap_field_name": "VKORG",
+            "description": "판매조직 - 판매 뷰 조회 시 필요",
+            "synonyms": ["판매조직", "Sales Org"],
+            "validation": "4자리 코드",
+            "domain_context": "판매 뷰 조회에 필요한 조직레벨"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/ctxtRMMG1-VTWEG",
+          "name": "RMMG1-VTWEG",
+          "type": "GuiCTextField",
+          "label": "Distribution Channel",
+          "value": "",
+          "changeable": true,
+          "required": false,
+          "max_length": 2,
+          "semantic": {
+            "raw_label": "Distribution Channel",
+            "sap_field_name": "VTWEG",
+            "description": "유통채널 - 판매 뷰 조회 시 필요",
+            "synonyms": ["유통채널", "Distr. Channel"],
+            "validation": "2자리 코드",
+            "domain_context": "판매 뷰 조회에 필요한 조직레벨"
+          }
+        }
+      ],
+      "tables": [
+        {
+          "id": "wnd[0]/usr/tblSAPLMGMMTC_VIEW",
+          "name": "TC_VIEW",
+          "type": "GuiTableControl",
+          "row_count": 20,
+          "column_count": 2,
+          "visible_rows": 10,
+          "columns": [
+            {"name": "SELECTED", "title": "", "position": 0},
+            {"name": "VIEW_TEXT", "title": "View", "position": 1}
+          ],
+          "rows": []
+        }
+      ],
       "buttons": [
         {
           "id": "wnd[0]/tbar[0]/btn[0]",
@@ -118,9 +205,9 @@
           }
         },
         {
-          "id": "wnd[0]/usr/cmbMARA-MEINS",
+          "id": "wnd[0]/usr/txtMARA-MEINS",
           "name": "MARA-MEINS",
-          "type": "GuiComboBox",
+          "type": "GuiTextField",
           "label": "Base Unit of Measure",
           "value": "",
           "changeable": false,
@@ -164,7 +251,7 @@
             "sap_field_name": "MATKL",
             "description": "자재 그룹 - 유사 자재의 분류 그룹",
             "synonyms": ["자재그룹", "품목그룹", "Material Group"],
-            "validation": "9자리 코드",
+            "validation": "영숫자 코드 (클라이언트 설정에 따라 자릿수 상이)",
             "domain_context": "리포팅 및 분석을 위한 분류 기준"
           }
         },
@@ -200,6 +287,94 @@
             "synonyms": ["순중량", "Net Weight"],
             "validation": "숫자",
             "domain_context": "물류 계산에 사용"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/cmbMARA-GEWEI",
+          "name": "MARA-GEWEI",
+          "type": "GuiTextField",
+          "label": "Weight Unit",
+          "value": "",
+          "changeable": false,
+          "required": false,
+          "semantic": {
+            "raw_label": "Weight Unit",
+            "sap_field_name": "GEWEI",
+            "description": "중량 단위 (KG, G, LB 등)",
+            "synonyms": ["중량단위", "Weight Unit"],
+            "validation": "SAP 단위 코드",
+            "domain_context": "총중량/순중량의 단위. 기본단위와 별도 관리"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/txtMARA-SPART",
+          "name": "MARA-SPART",
+          "type": "GuiTextField",
+          "label": "Division",
+          "value": "",
+          "changeable": false,
+          "required": false,
+          "semantic": {
+            "raw_label": "Division",
+            "sap_field_name": "SPART",
+            "description": "제품군/구부문",
+            "synonyms": ["제품군", "구부문", "Division"],
+            "validation": "2자리 코드",
+            "domain_context": "판매영역 결정에 사용. SD 모듈과 연결"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/txtMARA-PRDHA",
+          "name": "MARA-PRDHA",
+          "type": "GuiTextField",
+          "label": "Product Hierarchy",
+          "value": "",
+          "changeable": false,
+          "required": false,
+          "max_length": 18,
+          "semantic": {
+            "raw_label": "Product Hierarchy",
+            "sap_field_name": "PRDHA",
+            "description": "제품 계층구조 - 제품 분류를 위한 다단계 코드",
+            "synonyms": ["제품계층", "Product Hierarchy"],
+            "validation": "최대 18자리 계층 코드",
+            "domain_context": "리포팅 및 가격결정에 활용"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/txtMARA-GROES",
+          "name": "MARA-GROES",
+          "type": "GuiTextField",
+          "label": "Size/Dimensions",
+          "value": "",
+          "changeable": false,
+          "required": false,
+          "max_length": 32,
+          "semantic": {
+            "raw_label": "Size/Dimensions",
+            "sap_field_name": "GROES",
+            "description": "크기/치수 - 자재의 물리적 규격",
+            "synonyms": ["크기", "치수", "규격", "Size", "Dimensions"],
+            "validation": "자유 텍스트 32자",
+            "domain_context": "자재의 물리적 특성 기술"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/txtMARA-EAN11",
+          "name": "MARA-EAN11",
+          "type": "GuiTextField",
+          "label": "EAN/UPC",
+          "value": "",
+          "changeable": false,
+          "required": false,
+          "max_length": 18,
+          "semantic": {
+            "raw_label": "EAN/UPC",
+            "sap_field_name": "EAN11",
+            "description": "국제상품코드 (바코드)",
+            "synonyms": ["바코드", "EAN", "UPC", "GTIN"],
+            "validation": "최대 18자리 숫자",
+            "domain_context": "물류/유통에서 자재 식별에 사용"
           }
         }
       ],
@@ -251,26 +426,40 @@
   "screen_flow": [
     {
       "link_type": "NAVIGATES_TO",
-      "source_id": "screen:4000",
-      "target_id": "screen:4004",
-      "properties": {"trigger": "Enter after material number input"},
-      "description": "자재번호 입력 후 Enter → 뷰 선택 화면"
+      "source_id": "screen:MM03:4000",
+      "target_id": "screen:MM03:4004",
+      "properties": {"trigger": "Enter", "vkey": 0},
+      "description": "자재번호 입력 후 Enter → 뷰/조직레벨 선택 화면"
     },
     {
       "link_type": "NAVIGATES_TO",
-      "source_id": "screen:4004",
-      "target_id": "screen:4200",
-      "properties": {"trigger": "Select views and Enter"},
-      "description": "뷰 선택 후 Enter → 기본 데이터 화면"
+      "source_id": "screen:MM03:4004",
+      "target_id": "screen:MM03:4200",
+      "properties": {"trigger": "Enter", "vkey": 0},
+      "description": "뷰/조직레벨 선택 후 Enter → 기본 데이터 화면"
+    },
+    {
+      "link_type": "NAVIGATES_TO",
+      "source_id": "screen:MM03:4200",
+      "target_id": "screen:MM03:4000",
+      "properties": {"trigger": "Back", "vkey": 3},
+      "description": "Back(F3) → 초기 화면으로 복귀"
     }
   ],
   "field_dependencies": [
     {
       "link_type": "FIELD_DEPENDS_ON",
-      "source_id": "MARA-MTART",
-      "target_id": "AVAILABLE_TABS",
+      "source_id": "field:MM03:4004:TC_VIEW",
+      "target_id": "field:MM03:4200:MARA-MTART",
       "properties": {"dependency_type": "tab_activation"},
-      "description": "자재유형에 따라 사용 가능한 탭/뷰가 결정됨 (메타엣지)"
+      "description": "자재유형(MTART)에 따라 뷰 선택 화면(4004)에서 선택 가능한 뷰 목록이 결정됨 (메타엣지)"
+    },
+    {
+      "link_type": "FIELD_DEPENDS_ON",
+      "source_id": "field:MM03:4200:MAKT-MAKTX",
+      "target_id": "field:MM03:4000:RMMG1-MATNR",
+      "properties": {"dependency_type": "lookup"},
+      "description": "자재번호(MATNR) 입력에 따라 자재내역(MAKTX)이 결정됨"
     }
   ],
   "recorded_sequences": [],

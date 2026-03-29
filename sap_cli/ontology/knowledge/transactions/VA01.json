@@ -103,11 +103,11 @@
       "transaction": "VA01",
       "screen_number": 4011,
       "program": "SAPMV45A",
-      "title": "Create Standard Order: Overview",
+      "title": "Create Sales Order: Overview",
       "fields": [
         {
-          "id": "wnd[0]/usr/subSUBSCREEN_HEADER/ctxtVBKD-BSTNK",
-          "name": "VBKD-BSTNK",
+          "id": "wnd[0]/usr/subSUBSCREEN_HEADER/ctxtVBAK-BSTNK",
+          "name": "VBAK-BSTNK",
           "type": "GuiCTextField",
           "label": "PO Number",
           "value": "",
@@ -152,7 +152,7 @@
           "max_length": 10,
           "semantic": {
             "raw_label": "Ship-to Party",
-            "sap_field_name": "KUNNR_SH",
+            "sap_field_name": "KUNNR",
             "description": "납품처(Ship-to) - 물건을 배송받을 고객/주소",
             "synonyms": ["납품처", "배송지", "Ship-to"],
             "validation": "10자리 고객 마스터 번호",
@@ -175,6 +175,60 @@
             "synonyms": ["납품요청일", "납기일", "Requested Delivery Date"],
             "validation": "날짜 형식 (DD.MM.YYYY 또는 YYYYMMDD)",
             "domain_context": "ATP(가용성 확인) 및 납품 스케줄링의 기준일"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/subSUBSCREEN_HEADER/ctxtVBKD-BSTDK",
+          "name": "VBKD-BSTDK",
+          "type": "GuiCTextField",
+          "label": "PO Date",
+          "value": "",
+          "changeable": true,
+          "required": false,
+          "max_length": 10,
+          "semantic": {
+            "raw_label": "PO Date",
+            "sap_field_name": "BSTDK",
+            "description": "고객 PO 날짜",
+            "synonyms": ["PO일자", "고객PO일자", "PO Date"],
+            "validation": "날짜 형식",
+            "domain_context": "고객 구매오더 발행일 참조"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/subSUBSCREEN_HEADER/ctxtVBKD-ZTERM",
+          "name": "VBKD-ZTERM",
+          "type": "GuiCTextField",
+          "label": "Payment Terms",
+          "value": "",
+          "changeable": true,
+          "required": false,
+          "max_length": 4,
+          "semantic": {
+            "raw_label": "Payment Terms",
+            "sap_field_name": "ZTERM",
+            "description": "지급조건 - 대금 지급 기한 및 할인 조건",
+            "synonyms": ["지급조건", "결제조건", "Payment Terms"],
+            "validation": "4자리 코드",
+            "domain_context": "고객 마스터에서 기본값 결정. FI 대금청구에 영향"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/subSUBSCREEN_HEADER/ctxtVBKD-INCO1",
+          "name": "VBKD-INCO1",
+          "type": "GuiCTextField",
+          "label": "Incoterms",
+          "value": "",
+          "changeable": true,
+          "required": false,
+          "max_length": 3,
+          "semantic": {
+            "raw_label": "Incoterms",
+            "sap_field_name": "INCO1",
+            "description": "인코텀즈 - 국제상거래 운송/보험 조건",
+            "synonyms": ["인코텀즈", "무역조건", "Incoterms"],
+            "validation": "3자리 코드 (FOB, CIF, EXW 등)",
+            "domain_context": "운송비 및 보험 부담 결정. 가격결정에 영향"
           }
         }
       ],
@@ -264,33 +318,47 @@
   "screen_flow": [
     {
       "link_type": "NAVIGATES_TO",
-      "source_id": "screen:4001",
-      "target_id": "screen:4011",
-      "properties": {"trigger": "Enter after org levels input"},
-      "description": "조직레벨 입력 후 Enter → 오더 Overview 화면"
+      "source_id": "screen:VA01:4001",
+      "target_id": "screen:VA01:4011",
+      "properties": {"trigger": "Enter", "vkey": 0},
+      "description": "오더유형/판매영역 입력 후 Enter → 오더 Overview 화면"
+    },
+    {
+      "link_type": "NAVIGATES_TO",
+      "source_id": "screen:VA01:4011",
+      "target_id": "screen:VA01:4001",
+      "properties": {"trigger": "Back", "vkey": 3},
+      "description": "Back(F3) → 초기 화면으로 복귀 (저장하지 않음)"
     }
   ],
   "field_dependencies": [
     {
       "link_type": "FIELD_DEPENDS_ON",
-      "source_id": "KUAGV-KUNNR",
-      "target_id": "KUWEV-KUNNR",
+      "source_id": "field:VA01:4011:KUWEV-KUNNR",
+      "target_id": "field:VA01:4011:KUAGV-KUNNR",
       "properties": {"dependency_type": "default_value"},
-      "description": "주문자(Sold-to) 입력 시 납품처(Ship-to)가 자동 결정됨"
+      "description": "주문자(Sold-to) 입력 시 납품처(Ship-to)가 고객 마스터에서 자동 결정됨"
     },
     {
       "link_type": "FIELD_DEPENDS_ON",
-      "source_id": "VBAK-VKORG",
-      "target_id": "PRICING",
-      "properties": {"dependency_type": "pricing_procedure"},
-      "description": "판매조직에 따라 가격결정 절차가 결정됨"
+      "source_id": "field:VA01:4011:VBKD-ZTERM",
+      "target_id": "field:VA01:4011:KUAGV-KUNNR",
+      "properties": {"dependency_type": "default_value"},
+      "description": "주문자에 따라 지급조건이 고객 마스터에서 기본값으로 결정됨"
     },
     {
       "link_type": "FIELD_DEPENDS_ON",
-      "source_id": "VBAK-AUART",
-      "target_id": "SCREEN_LAYOUT",
+      "source_id": "field:VA01:4011:VBKD-INCO1",
+      "target_id": "field:VA01:4001:VBAK-VKORG",
+      "properties": {"dependency_type": "default_value"},
+      "description": "판매조직에 따라 인코텀즈 기본값이 결정됨"
+    },
+    {
+      "link_type": "FIELD_DEPENDS_ON",
+      "source_id": "screen:VA01:4011",
+      "target_id": "field:VA01:4001:VBAK-AUART",
       "properties": {"dependency_type": "field_activation"},
-      "description": "오더유형에 따라 화면 필드 구성이 변경됨 (메타엣지)"
+      "description": "오더유형에 따라 오버뷰 화면의 필드 구성이 변경됨 (메타엣지)"
     }
   ],
   "recorded_sequences": [],
