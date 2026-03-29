@@ -138,11 +138,9 @@ SAP 시스템의 Basis 관리자에게 다음 파라미터 설정을 요청합�
 PowerShell을 열고 원하는 디렉토리로 이동한 후:
 
 ```powershell
-git clone https://github.com/your-username/sap-cli.git
+git clone https://github.com/2000silpeed/sap-cli.git
 cd sap-cli
 ```
-
-> **참고:** 실제 GitHub 저장소 URL은 프로젝트 관리자에게 확인하세요.
 
 ### 3.2 패키지 설치
 
@@ -154,7 +152,7 @@ pip install -e .
 - `pydantic` (>=2.0) - 데이터 모델
 - `typer` (>=0.9) - CLI 프레임워크
 - `rich` (>=13.0) - 터미널 출력 포맷팅
-- `pywin32` (>=306) - Windows COM 인터페이스 (SAP GUI 연결에 필수)
+- `pywin32` (>=306) - Windows COM 인터페이스 (SAP GUI 연결에 필수). Windows 이외의 OS에서는 자동으로 건너뜁니다.
 
 ### 3.3 설치 확인
 
@@ -449,6 +447,26 @@ where python
 | `sap_macro_record_step` | 녹화 중 단계 기록 + SAP 실행 |
 | `sap_macro_play` | 매크로 재생 |
 | `sap_macro_list` | 매크로 목록 조회 |
+
+### 5.5.5 권한 정책 설정 (선택)
+
+에이전트별로 허용 도구를 제한하려면 기본 정책 파일을 복사하여 활성화합니다.
+
+```powershell
+# 설정 디렉토리 생성
+mkdir %USERPROFILE%\.sap_cli
+
+# 기본 정책 파일 복사
+copy sap_cli\auth\default_policy.yaml %USERPROFILE%\.sap_cli\policy.yaml
+```
+
+복사한 `policy.yaml`을 열고 `active_agent` 값을 원하는 프리셋으로 설정합니다:
+
+```yaml
+active_agent: readonly   # readonly | standard | mm_operator | sd_operator
+```
+
+정책 파일이 없으면 모든 도구가 허용됩니다 (기본 동작). Claude Code를 재시작하면 변경된 정책이 적용됩니다.
 
 ---
 

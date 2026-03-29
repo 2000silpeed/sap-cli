@@ -36,7 +36,7 @@ SOS(Study Ontology System)의 온톨로지 사상을 적용하여, 단순 스크
 
 ```powershell
 # 저장소 클론
-git clone https://github.com/your-repo/sap-cli.git
+git clone https://github.com/2000silpeed/sap-cli.git
 cd sap-cli
 
 # 설치 (편집 가능 모드)
@@ -44,6 +44,9 @@ pip install -e .
 
 # MCP 서버도 사용할 경우
 pip install -e ".[mcp]"
+
+# 개발/테스트용 (pytest 포함)
+pip install -e ".[dev]"
 
 # 설치 확인
 sap --help
@@ -502,6 +505,9 @@ Windows의 Claude Code `settings.json`에 추가:
 
 ### 7.2 사용 가능한 MCP 도구 (16개)
 
+> `~/.sap_cli/policy.yaml` 파일이 존재하면 ReBAC 권한관리가 활성화되어 에이전트별로 허용된 도구만 호출할 수 있습니다. 정책 파일이 없으면 모든 도구가 허용됩니다 (하위 호환).
+
+
 #### 기본 SAP 조작 (8개)
 
 | 도구 | 설명 |
@@ -537,6 +543,62 @@ Windows의 Claude Code `settings.json`에 추가:
 | `sap_macro_record_step` | 녹화 중 단계 기록 + SAP 실행 |
 | `sap_macro_play` | 매크로 재생 |
 | `sap_macro_list` | 매크로 목록 조회 |
+
+---
+
+## 7.5 ReBAC 권한관리
+
+에이전트 유형에 따라 허용하는 MCP 도구를 제한하는 정책 기반 접근 제어(ReBAC)를 지원합니다.
+
+### 정책 파일 설치
+
+```powershell
+# 기본 정책 파일을 사용자 설정 디렉토리로 복사
+copy sap_cli\auth\default_policy.yaml %USERPROFILE%\.sap_cli\policy.yaml
+```
+
+### 에이전트 프리셋 (4종)
+
+| 프리셋 | 설명 |
+|--------|------|
+| `readonly` | 조회성 도구만 허용. 데이터 변경 불가 |
+| `standard` | 일반 업무용. 매크로 재생 허용, 녹화는 불가 |
+| `mm_operator` | MM(자재관리) 도메인 특화. MM 트랜잭션 허용 |
+| `sd_operator` | SD(영업/배포) 도메인 특화. SD 트랜잭션 허용 |
+
+SM30, SE38, SU01 등 위험 트랜잭션은 모든 프리셋에서 차단됩니다.
+
+도구 호출 이력은 `~/.sap_cli/audit/` 경로에 감사 로그로 기록됩니다.
+
+### 정책 파일 예시
+
+```yaml
+version: 1
+active_agent: standard   # readonly | standard | mm_operator | sd_operator
+
+agents:
+  readonly:
+    description: "조회 전용 에이전트"
+    relations:
+      - resource: "tx:*"
+        relation: viewer    # read 권한만
+
+  standard:
+    description: "일반 운영 에이전트"
+    relations:
+      - resource: "tx:*"
+        relation: operator  # read + execute + write
+
+dangerous_transactions:
+  - tcode: "SM30"
+    reason: "테이블 직접 수정"
+
+audit:
+  enabled: true
+  log_dir: "~/.sap_cli/audit"
+```
+
+`active_agent` 값을 변경하면 다음 MCP 서버 재시작 시 적용됩니다. 권한 모델 상세는 `DESIGN_REBAC.md`를 참조하세요.
 
 ---
 
@@ -665,6 +727,17 @@ Claude:
 - 미지원 시 자동으로 수동 탐색(Children 재귀 순회)으로 폴백
 - 수동 탐색은 느리지만 동일하게 동작
 
+### "매크로/온톨로지 데이터가 안 보입니다"
+
+버전 업그레이드 이후 데이터 저장 위치가 패키지 내부에서 사용자 홈 디렉토리로 이동했습니다.
+
+| 데이터 종류 | 이전 위치 | 현재 위치 |
+|------------|----------|----------|
+| 매크로 | `sap_cli/macro/library/` | `~/.sap_cli/macros/` |
+| 온톨로지 지식 | `sap_cli/ontology/knowledge/` | `~/.sap_cli/knowledge/` |
+
+패키지에 포함된 기본 데이터(시드 데이터)는 첫 실행 시 `~/.sap_cli/` 경로로 자동 복사됩니다. 이전에 직접 추가한 데이터가 있다면 수동으로 해당 경로로 옮겨야 합니다.
+
 ### VKey 번호 레퍼런스
 
 | VKey | 키 | 설명 |
@@ -694,10 +767,19 @@ Claude:
 │  │ CLI (typer)  │  MCP Server (mcp)   │     │
 │  └──────┬───────┴──────┬──────────────┘     │
 │  ┌──────▼──────────────▼──────────────┐     │
-│  │ Macro System                       │     │
-│  │ ├── Recorder (녹화)                │     │
-│  │ ├── Player (재생 + 변수 치환)       │     │
-│  │ └── Store (JSON 저장)              │     │
+│  │ Auth Layer (ReBAC)                 │     │
+│  │ ├── Policy (policy.yaml 로드)      │     │
+│  │ ├── Checker (도구 허용 여부 판단)   │     │
+│  │ └── Audit (감사 로그 기록)          │     │
+│  └──────┬─────────────────────────────┘     │
+│  ┌──────▼──────────────────────────────┐    │
+│  │ Service Layer (공통 비즈니스 로직)   │    │
+│  └──────┬─────────────────────────────┘     │
+│  ┌──────▼──────────────────────────────┐    │
+│  │ Macro System                        │    │
+│  │ ├── Recorder (녹화)                 │    │
+│  │ ├── Player (재생 + 변수 치환)        │    │
+│  │ └── Store (JSON 저장)               │    │
 │  └──────┬─────────────────────────────┘     │
 │  ┌──────▼─────────────────────────────┐     │
 │  │ COM Wrapper (win32com)             │     │
@@ -709,7 +791,7 @@ Claude:
 │  │ ├── Meta-Edge (필드 종속성 규칙)    │     │
 │  │ ├── Graph (GraphRAG 탐색)          │     │
 │  │ ├── Analysis Space (6공간 분석)    │     │
-│  │ └── Knowledge (학습된 JSON 데이터)  │     │
+│  │ └── Knowledge (시드 데이터)         │     │
 │  └────────────────────────────────────┘     │
 └──────────────┬──────────────────────────────┘
                │ COM/ActiveX
@@ -728,21 +810,60 @@ sap_cli/
 │   ├── cli.py                  # CLI 엔트리포인트 (22개 커맨드)
 │   ├── com_wrapper.py          # SAP GUI COM 래퍼
 │   ├── mcp_server.py           # MCP 서버 (16개 도구)
+│   ├── service.py              # CLI/MCP 공통 서비스 레이어
 │   ├── learner.py              # 온톨로지 학습 엔진
+│   ├── auth/
+│   │   ├── __init__.py
+│   │   ├── policy.py           # 정책 로더 (policy.yaml 파싱)
+│   │   ├── checker.py          # 도구 허용 여부 판단
+│   │   ├── audit.py            # 감사 로그 기록
+│   │   └── default_policy.yaml # 기본 정책 파일 (배포용)
 │   ├── macro/
 │   │   ├── schema.py           # 매크로 데이터 모델
 │   │   ├── recorder.py         # 매크로 녹화기
 │   │   ├── player.py           # 매크로 재생기
-│   │   ├── store.py            # 매크로 저장소
-│   │   └── library/            # 저장된 매크로 (JSON)
+│   │   └── store.py            # 매크로 저장소
 │   └── ontology/
 │       ├── schema.py           # 온톨로지 4요소 스키마
 │       ├── meta_edge.py        # 메타엣지 규칙 엔진
 │       ├── analysis_space.py   # 6공간 분석 프레임워크
 │       ├── graph.py            # GraphRAG 관계 그래프
 │       ├── store.py            # 온톨로지 저장소
-│       └── knowledge/          # 학습된 도메인 지식
+│       └── knowledge/          # 시드 데이터 (첫 실행 시 ~/.sap_cli/knowledge/로 복사됨)
 │           ├── transactions/   # MM03.json, VA01.json ...
 │           ├── meta_edges/     # 메타엣지 규칙
 │           └── patterns/       # 공통 패턴 (메타온톨로지)
+└── tests/
+    ├── test_macro.py           # 매크로 녹화/재생/변수 치환 테스트
+    ├── test_ontology.py        # 온톨로지 스키마/그래프 테스트
+    ├── test_auth.py            # ReBAC 정책/감사 로그 테스트
+    └── test_service.py         # 서비스 레이어 단위 테스트
 ```
+
+> 실제 매크로 데이터는 `~/.sap_cli/macros/`, 온톨로지 지식 데이터는 `~/.sap_cli/knowledge/`에 저장됩니다. 패키지의 `knowledge/` 디렉토리는 시드 데이터 역할만 합니다.
+
+---
+
+## 11. 테스트
+
+SAP GUI나 Windows 없이도 실행할 수 있는 순수 로직 테스트입니다 (COM 의존성 없음).
+
+### 테스트 실행
+
+```powershell
+# 개발 의존성 설치 (pytest 포함)
+pip install -e ".[dev]"
+
+# 전체 테스트 실행
+pytest tests/ -v
+```
+
+### 테스트 현황
+
+| 항목 | 값 |
+|------|---|
+| 총 테스트 수 | 68개 |
+| 실행 시간 | 약 0.13초 |
+| SAP/Windows 필요 여부 | 불필요 |
+
+매크로 변수 치환, 온톨로지 스키마 검증, ReBAC 정책 판단, 서비스 레이어 로직을 포함합니다.
