@@ -55,6 +55,7 @@ class GuiComponentType(str, Enum):
     HTML_VIEWER = "GuiHTMLViewer"
     INPUT_FIELD_CONTROL = "GuiInputFieldControl"
     SPLITTER_CONTAINER = "GuiSplitterContainer"
+    UNKNOWN = "Unknown"
 
 
 class StatusMessageType(str, Enum):
@@ -312,6 +313,22 @@ class ScreenOntology(BaseModel):
                 target_id=tab.id,
                 target_label=tab.text,
                 description=f"Select tab '{tab.text}'",
+            ))
+
+        for table in self.tables:
+            actions.append(AvailableAction(
+                action_type=ActionType.SELECT_TABLE_ROW,
+                target_id=table.id,
+                target_label=table.name,
+                description=f"Select row in table '{table.name}' ({table.row_count} rows, {table.column_count} cols)",
+            ))
+
+        for menu in self.menus:
+            actions.append(AvailableAction(
+                action_type=ActionType.SELECT_MENU,
+                target_id=menu.id,
+                target_label=menu.text,
+                description=f"Select menu '{menu.text}'",
             ))
 
         return actions

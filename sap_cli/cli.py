@@ -26,12 +26,16 @@ import typer
 from rich.console import Console
 
 from .com_wrapper import SapGuiError, SapGuiWrapper
-from .ontology.store import OntologyStore
-from .ontology.schema import ActionType
 from .macro.schema import Macro, MacroVariable
-from .macro.recorder import MacroRecorder
 from .macro.player import MacroPlayer
-from .macro.store import MacroStore
+from .service import (
+    get_sap as _get_sap,
+    get_store as _get_store,
+    get_recorder as _get_recorder,
+    get_macro_store as _get_macro_store,
+    map_action as _map_action,
+    execute_sap_action as _execute_sap_action,
+)
 
 app = typer.Typer(
     name="sap",
@@ -39,85 +43,6 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
-
-_sap: SapGuiWrapper | None = None
-_store: OntologyStore | None = None
-_recorder: MacroRecorder | None = None
-_macro_store: MacroStore | None = None
-
-
-def _get_sap() -> SapGuiWrapper:
-    global _sap
-    if _sap is None:
-        _sap = SapGuiWrapper()
-    if not _sap.is_connected:
-        _sap.connect()
-    return _sap
-
-
-def _get_store() -> OntologyStore:
-    global _store
-    if _store is None:
-        _store = OntologyStore()
-    return _store
-
-
-def _get_recorder() -> MacroRecorder:
-    global _recorder
-    if _recorder is None:
-        _recorder = MacroRecorder()
-    return _recorder
-
-
-def _get_macro_store() -> MacroStore:
-    global _macro_store
-    if _macro_store is None:
-        _macro_store = MacroStore()
-    return _macro_store
-
-
-# action 문자열 → ActionType enum 매핑
-_ACTION_MAP: dict[str, ActionType] = {
-    "set": ActionType.SET_FIELD_VALUE,
-    "press": ActionType.PRESS_BUTTON,
-    "vkey": ActionType.SEND_VKEY,
-    "run": ActionType.RUN_TRANSACTION,
-    "checkbox": ActionType.TOGGLE_CHECKBOX,
-    "radio": ActionType.SELECT_RADIO,
-    "combo": ActionType.SELECT_COMBO_ITEM,
-    "tab": ActionType.SELECT_TAB,
-    "menu": ActionType.SELECT_MENU,
-}
-
-
-def _map_action(action: str) -> ActionType:
-    """action 문자열을 ActionType enum으로 변환."""
-    at = _ACTION_MAP.get(action.lower())
-    if at is None:
-        raise ValueError(f"알 수 없는 액션: {action}. 가능한 값: {list(_ACTION_MAP.keys())}")
-    return at
-
-
-def _execute_sap_action(sap: SapGuiWrapper, action: str, target: str, value: str | None) -> None:
-    """action에 따라 실제 SAP 명령 실행."""
-    if action == "set":
-        sap.set_field(target, value or "")
-    elif action == "press":
-        sap.press(target)
-    elif action == "vkey":
-        sap.send_vkey(int(target))
-    elif action == "run":
-        sap.run_transaction(target)
-    elif action == "checkbox":
-        sap.set_checkbox(target, (value or "").lower() == "true")
-    elif action == "radio":
-        sap.select_radio(target)
-    elif action == "combo":
-        sap.select_combo(target, value or "")
-    elif action == "tab":
-        sap.press(target)
-    elif action == "menu":
-        sap.select_menu(target)
 
 
 def _output_json(data: dict | list) -> None:
@@ -380,11 +305,15 @@ def record_step(
         status = sap.get_status()
         info = sap.get_session_info()
 
-        # 녹화 기록
+        # 녹화 기록: run/vkey는 target이 실행 값이므로 value에도 저장
+        record_value = value
+        if action.lower() in ("run", "vkey") and not value:
+            record_value = target
+
         step = recorder.record_step(
             action=action_type,
             target_id=target,
-            value=value,
+            value=record_value,
             description=description,
             screen_number=info.screen_number,
         )

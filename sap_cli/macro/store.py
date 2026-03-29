@@ -3,9 +3,18 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from sap_cli.macro.schema import Macro
+
+_SAFE_ID = re.compile(r"^[A-Za-z0-9_\-]+$")
+
+
+def _validate_id(value: str, label: str = "id") -> str:
+    if not value or not _SAFE_ID.match(value):
+        raise ValueError(f"잘못된 {label}: {value!r} (영문, 숫자, _, - 만 허용)")
+    return value
 
 
 class MacroStore:
@@ -17,12 +26,13 @@ class MacroStore:
 
     def __init__(self, library_dir: str | Path | None = None) -> None:
         if library_dir is None:
-            self._dir = Path(__file__).parent / "library"
+            self._dir = Path.home() / ".sap_cli" / "macros"
         else:
             self._dir = Path(library_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
 
     def _macro_path(self, macro_id: str) -> Path:
+        _validate_id(macro_id, "macro_id")
         return self._dir / f"{macro_id}.json"
 
     def save(self, macro: Macro) -> Path:

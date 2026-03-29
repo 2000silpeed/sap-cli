@@ -25,92 +25,24 @@ try:
 except ImportError:
     HAS_MCP = False
 
+from .auth.checker import PermissionChecker
+from .auth.audit import AuditLogger
+from .auth.policy import load_policy, TOOL_PERMISSION_MAP
 from .com_wrapper import SapGuiError, SapGuiWrapper
-from .learner import OntologyLearner
-from .ontology.store import OntologyStore
-from .ontology.schema import ActionType
-from .macro.recorder import MacroRecorder
 from .macro.player import MacroPlayer
-from .macro.store import MacroStore
+from .service import (
+    get_sap as _get_sap,
+    get_store as _get_store,
+    get_learner as _get_learner,
+    get_recorder as _get_recorder,
+    get_macro_store as _get_macro_store,
+    execute_sap_action as _execute_sap_action,
+)
 
-_sap: SapGuiWrapper | None = None
-_store: OntologyStore | None = None
-_learner: OntologyLearner | None = None
-_recorder: MacroRecorder | None = None
-_macro_store: MacroStore | None = None
-
-
-def _get_sap() -> SapGuiWrapper:
-    global _sap
-    if _sap is None:
-        _sap = SapGuiWrapper()
-    if not _sap.is_connected:
-        _sap.connect()
-    return _sap
-
-
-def _get_store() -> OntologyStore:
-    global _store
-    if _store is None:
-        _store = OntologyStore()
-    return _store
-
-
-def _get_learner() -> OntologyLearner:
-    global _learner
-    if _learner is None:
-        _learner = OntologyLearner(_get_sap(), _get_store())
-    return _learner
-
-
-def _get_recorder() -> MacroRecorder:
-    global _recorder
-    if _recorder is None:
-        _recorder = MacroRecorder()
-    return _recorder
-
-
-def _get_macro_store() -> MacroStore:
-    global _macro_store
-    if _macro_store is None:
-        _macro_store = MacroStore()
-    return _macro_store
-
-
-# action 문자열 → ActionType enum 매핑
-_ACTION_MAP: dict[str, ActionType] = {
-    "set": ActionType.SET_FIELD_VALUE,
-    "press": ActionType.PRESS_BUTTON,
-    "vkey": ActionType.SEND_VKEY,
-    "run": ActionType.RUN_TRANSACTION,
-    "checkbox": ActionType.TOGGLE_CHECKBOX,
-    "radio": ActionType.SELECT_RADIO,
-    "combo": ActionType.SELECT_COMBO_ITEM,
-    "tab": ActionType.SELECT_TAB,
-    "menu": ActionType.SELECT_MENU,
-}
-
-
-def _execute_sap_action(sap: SapGuiWrapper, action: str, target: str, value: str | None) -> None:
-    """action에 따라 실제 SAP 명령 실행."""
-    if action == "set":
-        sap.set_field(target, value or "")
-    elif action == "press":
-        sap.press(target)
-    elif action == "vkey":
-        sap.send_vkey(int(target))
-    elif action == "run":
-        sap.run_transaction(target)
-    elif action == "checkbox":
-        sap.set_checkbox(target, (value or "").lower() == "true")
-    elif action == "radio":
-        sap.select_radio(target)
-    elif action == "combo":
-        sap.select_combo(target, value or "")
-    elif action == "tab":
-        sap.press(target)
-    elif action == "menu":
-        sap.select_menu(target)
+# 권한 체크 초기화 (정책 파일 없으면 전체 허용)
+_policy = load_policy()
+_checker = PermissionChecker(_policy)
+_auditor = AuditLogger(_policy.audit if _policy else None)
 
 
 def _json_result(data: Any) -> list[TextContent]:
@@ -125,7 +57,10 @@ def _error_result(msg: str) -> list[TextContent]:
 # Tool Definitions
 # -------------------------------------------------------------------
 
-TOOLS = [
+TOOLS: list = []
+
+if HAS_MCP:
+    TOOLS = [
     Tool(
         name="sap_connect",
         description="실행 중인 SAP GUI에 연결합니다. SAP GUI가 이미 실행 중이고 로그인된 상태여야 합니다.",
@@ -301,6 +236,47 @@ TOOLS = [
 # -------------------------------------------------------------------
 
 def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+    # ReBAC 권한 체크
+    check = _checker.check_tool(name, arguments)
+    perm = TOOL_PERMISSION_MAP.get(name, "unknown")
+    if not check:
+        _auditor.log(
+            agent=_checker._agent_name,
+            tool_name=name,
+            arguments=arguments,
+            allowed=False,
+            reason=check.reason,
+            permission=perm if isinstance(perm, str) else perm.value,
+        )
+        return _error_result(f"권한 없음: {check.reason}")
+
+    # 승인 필요 여부 체크
+    approval_reason = _checker.requires_approval(name, arguments)
+    if approval_reason:
+        _auditor.log(
+            agent=_checker._agent_name,
+            tool_name=name,
+            arguments=arguments,
+            allowed=False,
+            reason=f"approval_required: {approval_reason}",
+            permission=perm if isinstance(perm, str) else perm.value,
+        )
+        return _json_result({
+            "approval_required": True,
+            "tool": name,
+            "reason": approval_reason,
+        })
+
+    # 감사 로그 (허용된 호출)
+    _auditor.log(
+        agent=_checker._agent_name,
+        tool_name=name,
+        arguments=arguments,
+        allowed=True,
+        reason=check.reason,
+        permission=perm if isinstance(perm, str) else perm.value,
+    )
+
     try:
         if name == "sap_connect":
             sap = SapGuiWrapper()

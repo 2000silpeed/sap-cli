@@ -71,28 +71,6 @@ class MacroPlayer:
 
         # 각 스텝 실행
         for step in resolved_steps:
-            # 화면번호 검증
-            if not self._verify_screen(step.expected_screen):
-                result = MacroStepResult(
-                    step_number=step.step_number,
-                    success=False,
-                    error=f"화면번호 불일치: 예상={step.expected_screen}, "
-                          f"실제={self._get_current_screen()}",
-                )
-                step_results.append(result)
-                return MacroRunResult(
-                    macro_id=macro.id,
-                    macro_name=macro.name,
-                    success=False,
-                    variables_used=variables,
-                    step_results=step_results,
-                    total_steps=len(macro.steps),
-                    completed_steps=len(step_results) - 1,
-                    error_step=step.step_number,
-                    started_at=started_at,
-                    finished_at=datetime.now().isoformat(),
-                )
-
             result = self._execute_step(step)
             step_results.append(result)
 
@@ -238,10 +216,12 @@ class MacroPlayer:
                 self.sap.press(step.target_id)
 
             elif action == ActionType.SEND_VKEY:
-                self.sap.send_vkey(int(step.value or "0"))
+                vkey_val = step.value or step.target_id
+                self.sap.send_vkey(int(vkey_val))
 
             elif action == ActionType.RUN_TRANSACTION:
-                self.sap.run_transaction(step.value or "")
+                tcode_val = step.value or step.target_id
+                self.sap.run_transaction(tcode_val)
 
             elif action == ActionType.TOGGLE_CHECKBOX:
                 self.sap.set_checkbox(
@@ -283,6 +263,17 @@ class MacroPlayer:
                     status_message=status.message,
                     status_type=status.type.value,
                     error=f"SAP 에러: {status.message}",
+                )
+
+            # 실행 후 화면번호 검증 (expected_screen은 녹화 시 실행 후 저장된 값)
+            if not self._verify_screen(step.expected_screen):
+                return MacroStepResult(
+                    step_number=step.step_number,
+                    success=False,
+                    actual_screen=current_screen,
+                    status_message=status.message,
+                    status_type=status.type.value,
+                    error=f"실행 후 화면번호 불일치: 예상={step.expected_screen}, 실제={current_screen}",
                 )
 
             return MacroStepResult(

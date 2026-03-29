@@ -1,0 +1,69 @@
+# SAP CLI ReBAC 기본 정책
+# ~/.sap_cli/policy.yaml에 복사하여 사용
+version: 1
+
+agents:
+  readonly:
+    description: "조회 전용 에이전트"
+    relations:
+      - resource: "tx:*"
+        relation: viewer
+
+  standard:
+    description: "일반 운영 에이전트 (조회+실행+입력)"
+    relations:
+      - resource: "tx:*"
+        relation: operator
+    requires_approval:
+      - permission: execute
+        transactions: ["SM30", "SE38", "SU01", "SE16"]
+
+  mm_operator:
+    description: "MM 모듈 전용 에이전트"
+    relations:
+      - resource: "tx:MM*"
+        relation: operator
+      - resource: "tx:ME*"
+        relation: operator
+      - resource: "tx:MB*"
+        relation: operator
+      - resource: "tx:*"
+        relation: viewer
+
+  sd_operator:
+    description: "SD 모듈 전용 에이전트"
+    relations:
+      - resource: "tx:VA*"
+        relation: operator
+      - resource: "tx:VF*"
+        relation: operator
+      - resource: "tx:VL*"
+        relation: operator
+      - resource: "tx:*"
+        relation: viewer
+
+# 관계 → 권한 매핑 (기본값 사용 시 생략 가능)
+# relation_permissions:
+#   viewer:    [read]
+#   operator:  [read, execute, write]
+#   supervisor: [read, execute, write, admin]
+
+dangerous_transactions:
+  - tcode: "SM30"
+    reason: "테이블 직접 수정"
+  - tcode: "SE38"
+    reason: "ABAP 프로그램 실행"
+  - tcode: "SU01"
+    reason: "사용자 관리"
+  - tcode: "SE16"
+    reason: "테이블 데이터 직접 조회/수정"
+  - tcode: "SM21"
+    reason: "시스템 로그"
+
+audit:
+  enabled: true
+  log_dir: "~/.sap_cli/audit"
+  log_level: "all"
+
+# 활성 에이전트 (MCP 서버 시작 시 적용)
+active_agent: "standard"

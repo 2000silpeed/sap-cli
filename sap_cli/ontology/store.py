@@ -9,12 +9,22 @@ NOMIK 패턴: "Scan once, query everything"
 from __future__ import annotations
 
 import json
+import re
+import shutil
 from pathlib import Path
 from typing import Any
 
 from .analysis_space import CrossSpace
 from .meta_edge import MetaEdge, MetaEdgeRegistry, create_default_registry
 from .schema import ScreenOntology, TransactionOntology
+
+_SAFE_ID = re.compile(r"^[A-Za-z0-9_\-]+$")
+
+
+def _validate_id(value: str, label: str = "id") -> str:
+    if not value or not _SAFE_ID.match(value):
+        raise ValueError(f"잘못된 {label}: {value!r} (영문, 숫자, _, - 만 허용)")
+    return value
 
 
 class OntologyStore:
@@ -33,13 +43,14 @@ class OntologyStore:
 
     def __init__(self, knowledge_dir: str | Path | None = None):
         if knowledge_dir is None:
-            knowledge_dir = Path(__file__).parent / "knowledge"
+            knowledge_dir = Path.home() / ".sap_cli" / "knowledge"
         self.knowledge_dir = Path(knowledge_dir)
         self.transactions_dir = self.knowledge_dir / "transactions"
         self.meta_edges_dir = self.knowledge_dir / "meta_edges"
         self.patterns_dir = self.knowledge_dir / "patterns"
 
         self._ensure_dirs()
+        self._seed_if_empty()
 
         self._meta_registry: MetaEdgeRegistry | None = None
         self._cross_space = CrossSpace()
@@ -48,12 +59,29 @@ class OntologyStore:
         for d in [self.transactions_dir, self.meta_edges_dir, self.patterns_dir]:
             d.mkdir(parents=True, exist_ok=True)
 
+    def _seed_if_empty(self) -> None:
+        """외부 디렉토리가 비어있으면 패키지 내 시드 데이터를 복사."""
+        if list(self.transactions_dir.glob("*.json")):
+            return
+        seed_dir = Path(__file__).parent / "knowledge"
+        if not seed_dir.exists():
+            return
+        for subdir in ("transactions", "patterns"):
+            src = seed_dir / subdir
+            dst = self.knowledge_dir / subdir
+            if src.exists():
+                for f in src.glob("*.json"):
+                    dest_file = dst / f.name
+                    if not dest_file.exists():
+                        shutil.copy2(f, dest_file)
+
     # -------------------------------------------------------------------
     # Transaction Ontology CRUD
     # -------------------------------------------------------------------
 
     def save_transaction(self, ontology: TransactionOntology) -> Path:
         """트랜잭션 온톨로지를 JSON으로 저장."""
+        _validate_id(ontology.tcode, "tcode")
         path = self.transactions_dir / f"{ontology.tcode}.json"
         data = ontology.model_dump(mode="json", exclude_none=True)
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -61,6 +89,7 @@ class OntologyStore:
 
     def load_transaction(self, tcode: str) -> TransactionOntology | None:
         """트랜잭션 온톨로지를 JSON에서 로드."""
+        _validate_id(tcode, "tcode")
         path = self.transactions_dir / f"{tcode.upper()}.json"
         if not path.exists():
             return None
@@ -73,6 +102,7 @@ class OntologyStore:
 
     def delete_transaction(self, tcode: str) -> bool:
         """트랜잭션 온톨로지 삭제."""
+        _validate_id(tcode, "tcode")
         path = self.transactions_dir / f"{tcode.upper()}.json"
         if path.exists():
             path.unlink()
@@ -152,11 +182,13 @@ class OntologyStore:
     # -------------------------------------------------------------------
 
     def save_pattern(self, name: str, pattern: dict[str, Any]) -> Path:
+        _validate_id(name, "pattern name")
         path = self.patterns_dir / f"{name}.json"
         path.write_text(json.dumps(pattern, ensure_ascii=False, indent=2), encoding="utf-8")
         return path
 
     def load_pattern(self, name: str) -> dict[str, Any] | None:
+        _validate_id(name, "pattern name")
         path = self.patterns_dir / f"{name}.json"
         if not path.exists():
             return None

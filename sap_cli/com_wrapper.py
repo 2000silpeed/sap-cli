@@ -16,13 +16,17 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import platform
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from .ontology.schema import (
     GuiComponentType,
     SapButton,
     SapField,
+    SapMenuItem,
     SapSession,
     SapStatusMessage,
     SapTable,
@@ -101,13 +105,22 @@ class SapGuiWrapper:
 
     @property
     def session(self) -> Any:
-        if self._session is None:
+        if not self.is_connected:
             raise SapGuiError("SAP GUI에 연결되지 않았습니다. connect()를 먼저 호출하세요.")
         return self._session
 
     @property
     def is_connected(self) -> bool:
-        return self._session is not None
+        if self._session is None:
+            return False
+        try:
+            _ = self._session.Info.User
+            return True
+        except Exception:
+            self._session = None
+            self._connection = None
+            self._application = None
+            return False
 
     def disconnect(self) -> None:
         self._session = None
@@ -240,8 +253,8 @@ class SapGuiWrapper:
                 type=StatusMessageType(msg_type),
                 message=statusbar.Text or "",
             )
-        except Exception:
-            return SapStatusMessage(type=StatusMessageType.INFO, message="")
+        except Exception as e:
+            raise SapGuiError(f"상태바 조회 실패: {e}") from e
 
     # -------------------------------------------------------------------
     # Screen Reading (GetObjectTree 기반)
@@ -266,8 +279,8 @@ class SapGuiWrapper:
                 self._parse_tree_to_ontology(tree_json, screen)
                 screen.raw_tree = tree_json
                 return screen
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("GetObjectTree 실패, 수동 탐색으로 전환: %s", e)
 
         self._manual_scan(window_id, screen)
         screen.status = self.get_status()
@@ -329,17 +342,52 @@ class SapGuiWrapper:
                 name=self._extract_name(node_id),
                 text=node_text,
             ))
+        elif comp_type in (GuiComponentType.TABLE_CONTROL, GuiComponentType.GRID_VIEW):
+            columns = []
+            for i, col_child in enumerate(node.get("children", [])):
+                col_props = col_child.get("properties", {})
+                columns.append(SapTableColumn(
+                    name=col_props.get("Name", col_props.get("Id", f"col_{i}")),
+                    title=col_props.get("Title", col_props.get("Text", "")),
+                    position=i,
+                ))
+            screen.tables.append(SapTable(
+                id=node_id,
+                name=self._extract_name(node_id),
+                type=comp_type,
+                row_count=props.get("RowCount", 0),
+                column_count=props.get("ColumnCount", len(columns)),
+                visible_rows=props.get("VisibleRowCount", 0),
+                columns=columns,
+            ))
+            return  # 테이블 자식은 컬럼으로 처리했으므로 재귀 중단
+        elif comp_type in (GuiComponentType.MENU_BAR, GuiComponentType.MENU):
+            menu_item = self._parse_menu_tree(node)
+            screen.menus.append(menu_item)
+            return  # 메뉴 자식은 _parse_menu_tree에서 처리
 
         for child in node.get("children", []):
             self._walk_tree(child, screen)
+
+    def _parse_menu_tree(self, node: dict[str, Any]) -> SapMenuItem:
+        """메뉴 노드를 SapMenuItem으로 재귀 파싱."""
+        props = node.get("properties", {})
+        children = []
+        for child in node.get("children", []):
+            children.append(self._parse_menu_tree(child))
+        return SapMenuItem(
+            id=props.get("Id", ""),
+            text=props.get("Text", ""),
+            children=children,
+        )
 
     def _manual_scan(self, window_id: str, screen: ScreenOntology) -> None:
         """GetObjectTree 미지원 시 수동 탐색으로 화면 요소 수집."""
         try:
             window = self.session.FindById(window_id)
             self._scan_children(window, screen)
-        except Exception:
-            pass
+        except Exception as e:
+            raise SapGuiError(f"화면 수동 탐색 실패 [{window_id}]: {e}") from e
 
     def _scan_children(self, container: Any, screen: ScreenOntology) -> None:
         """컨테이너의 자식 요소를 재귀 탐색."""
@@ -390,15 +438,40 @@ class SapGuiWrapper:
                         label=str(getattr(child, "Text", "")),
                         changeable=bool(getattr(child, "Changeable", False)),
                     ))
+                elif comp_type in (GuiComponentType.TABLE_CONTROL, GuiComponentType.GRID_VIEW):
+                    row_count = int(getattr(child, "RowCount", 0))
+                    col_count = int(getattr(child, "ColumnCount", 0))
+                    columns = []
+                    if comp_type == GuiComponentType.GRID_VIEW:
+                        for c in range(col_count):
+                            try:
+                                col_id = child.ColumnOrder(c)
+                                columns.append(SapTableColumn(
+                                    name=col_id,
+                                    title=str(child.GetColumnTitles(col_id) or col_id),
+                                    position=c,
+                                ))
+                            except Exception:
+                                columns.append(SapTableColumn(name=f"col_{c}", position=c))
+                    screen.tables.append(SapTable(
+                        id=child_id,
+                        name=self._extract_name(child_id),
+                        type=comp_type,
+                        row_count=row_count,
+                        column_count=col_count,
+                        visible_rows=int(getattr(child, "VisibleRowCount", 0)),
+                        columns=columns,
+                    ))
+                    continue  # 테이블 내부는 재귀 탐색 불필요
 
                 if hasattr(child, "Children"):
                     try:
                         if child.Children.Count > 0:
                             self._scan_children(child, screen)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+                    except Exception as e:
+                        logger.debug("자식 요소 탐색 건너뜀 [%s]: %s", child_id, e)
+        except Exception as e:
+            logger.warning("화면 요소 탐색 중 오류: %s", e)
 
     # -------------------------------------------------------------------
     # Table Operations
@@ -543,7 +616,7 @@ class SapGuiWrapper:
         try:
             return GuiComponentType(type_str)
         except ValueError:
-            return GuiComponentType.TEXT_FIELD
+            return GuiComponentType.UNKNOWN
 
     @staticmethod
     def _get_label_for(element: Any) -> str:

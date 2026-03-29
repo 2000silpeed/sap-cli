@@ -105,7 +105,8 @@ class OntologyGraph:
             ))
 
     def _add_screen(self, tx_id: str, screen_num: int, screen: ScreenOntology) -> None:
-        screen_id = f"screen:{screen_num}"
+        tcode = tx_id.removeprefix("tx:")
+        screen_id = f"screen:{tcode}:{screen_num}"
         self._add_node(GraphNode(
             id=screen_id,
             node_type="screen",
@@ -113,6 +114,7 @@ class OntologyGraph:
             properties={
                 "screen_number": screen_num,
                 "program": screen.program,
+                "tcode": tcode,
             },
         ))
         self._add_edge(GraphEdge(
@@ -122,7 +124,7 @@ class OntologyGraph:
         ))
 
         for field in screen.fields:
-            field_id = f"field:{field.name}"
+            field_id = f"field:{tcode}:{screen_num}:{field.name}"
             self._add_node(GraphNode(
                 id=field_id,
                 node_type="field",
@@ -131,6 +133,8 @@ class OntologyGraph:
                     "sap_field_name": field.semantic.sap_field_name or field.name,
                     "changeable": field.changeable,
                     "type": field.type,
+                    "tcode": tcode,
+                    "screen_number": screen_num,
                 },
             ))
             self._add_edge(GraphEdge(
@@ -208,17 +212,17 @@ class OntologyGraph:
         tx_id = f"tx:{tcode}"
         return self.get_neighbors(tx_id, edge_type=LinkType.TRANSACTION_HAS_SCREEN)
 
-    def get_screen_fields(self, screen_number: int) -> list[GraphNode]:
+    def get_screen_fields(self, tcode: str, screen_number: int) -> list[GraphNode]:
         """화면의 필드 목록."""
-        screen_id = f"screen:{screen_number}"
+        screen_id = f"screen:{tcode}:{screen_number}"
         return self.get_neighbors(screen_id, edge_type=LinkType.SCREEN_CONTAINS)
 
-    def get_field_impact(self, field_name: str, max_depth: int = 5) -> list[GraphNode]:
+    def get_field_impact(self, tcode: str, screen_number: int, field_name: str, max_depth: int = 5) -> list[GraphNode]:
         """필드 변경 시 영향받는 노드 목록 (인과 전파).
 
         SOS 인과공간: "변경 영향도 분석(Impact Analysis)"
         """
-        field_id = f"field:{field_name}"
+        field_id = f"field:{tcode}:{screen_number}:{field_name}"
         affected = []
         visited = {field_id}
         queue = [field_id]

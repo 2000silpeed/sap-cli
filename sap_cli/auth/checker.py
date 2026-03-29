@@ -1,0 +1,153 @@
+"""ReBAC 권한 판단 엔진."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from .policy import (
+    AgentPolicy,
+    Permission,
+    Policy,
+    Relation,
+    TOOL_PERMISSION_MAP,
+    match_resource,
+)
+
+
+class CheckResult:
+    __slots__ = ("allowed", "reason")
+
+    def __init__(self, allowed: bool, reason: str = ""):
+        self.allowed = allowed
+        self.reason = reason
+
+    def __bool__(self) -> bool:
+        return self.allowed
+
+
+class PermissionChecker:
+    """ReBAC 권한 판단기.
+
+    정책이 None이면 전체 허용 (하위 호환).
+    """
+
+    def __init__(self, policy: Policy | None = None) -> None:
+        self._policy = policy
+        self._agent: AgentPolicy | None = None
+        self._agent_name: str = ""
+        if policy and policy.active_agent:
+            self._agent_name = policy.active_agent
+            self._agent = policy.get_agent(policy.active_agent)
+
+    @property
+    def is_enforcing(self) -> bool:
+        return self._policy is not None and self._agent is not None
+
+    def set_agent(self, agent_name: str) -> None:
+        if self._policy:
+            self._agent_name = agent_name
+            self._agent = self._policy.get_agent(agent_name)
+
+    def check_tool(self, tool_name: str, arguments: dict[str, Any] | None = None) -> CheckResult:
+        """MCP 도구 호출 권한 체크."""
+        if not self.is_enforcing:
+            return CheckResult(True, "no_policy")
+
+        permission = TOOL_PERMISSION_MAP.get(tool_name)
+        if permission is None:
+            return CheckResult(False, f"알 수 없는 도구: {tool_name}")
+
+        resource = self._resolve_resource(tool_name, arguments or {})
+        return self._check_permission(resource, permission)
+
+    def check_transaction(self, tcode: str) -> CheckResult:
+        """트랜잭션 실행 권한 체크."""
+        if not self.is_enforcing:
+            return CheckResult(True, "no_policy")
+
+        resource = f"tx:{tcode.upper()}"
+
+        # 위험 트랜잭션 체크
+        dangerous = self._policy.get_dangerous_tcodes()
+        if tcode.upper() in dangerous:
+            return CheckResult(False, f"위험 트랜잭션: {dangerous[tcode.upper()]}")
+
+        return self._check_permission(resource, Permission.EXECUTE)
+
+    def requires_approval(self, tool_name: str, arguments: dict[str, Any] | None = None) -> str | None:
+        """승인이 필요하면 사유 반환, 아니면 None."""
+        if not self.is_enforcing:
+            return None
+
+        # 위험 트랜잭션 체크
+        tcode = self._extract_tcode(tool_name, arguments or {})
+        if tcode:
+            dangerous = self._policy.get_dangerous_tcodes()
+            if tcode.upper() in dangerous:
+                return dangerous[tcode.upper()]
+
+        # 에이전트별 승인 규칙 체크
+        if self._agent and self._agent.requires_approval:
+            permission = TOOL_PERMISSION_MAP.get(tool_name)
+            if permission and tcode:
+                for rule in self._agent.requires_approval:
+                    if rule.permission == permission and tcode.upper() in [t.upper() for t in rule.transactions]:
+                        return f"에이전트 정책: {self._agent_name}은 {tcode} {permission.value}에 승인 필요"
+
+        return None
+
+    def _check_permission(self, resource: str, permission: Permission) -> CheckResult:
+        if not self._agent:
+            return CheckResult(False, "에이전트 미설정")
+
+        # 1. 직접 리소스 매칭
+        for binding in self._agent.relations:
+            if match_resource(binding.resource, resource):
+                allowed_perms = self._policy.resolve_relation_permissions(binding.relation)
+                if permission in allowed_perms:
+                    return CheckResult(True, f"{binding.relation.value} on {binding.resource}")
+
+        # 2. 리소스가 tx: 형태면 와일드카드 탐색
+        parts = resource.split(":")
+        if len(parts) >= 2 and parts[0] == "tx":
+            for binding in self._agent.relations:
+                if match_resource(binding.resource, resource):
+                    allowed_perms = self._policy.resolve_relation_permissions(binding.relation)
+                    if permission in allowed_perms:
+                        return CheckResult(True, f"{binding.relation.value} on {binding.resource} (wildcard)")
+
+        # 3. 비-트랜잭션 리소스 (tool:, element:, vkey 등):
+        #    에이전트의 가장 높은 권한 수준으로 판단
+        if parts[0] != "tx":
+            for binding in self._agent.relations:
+                allowed_perms = self._policy.resolve_relation_permissions(binding.relation)
+                if permission in allowed_perms:
+                    return CheckResult(True, f"{binding.relation.value} (general permission)")
+
+        return CheckResult(False, f"권한 없음: {permission.value} on {resource}")
+
+    def _resolve_resource(self, tool_name: str, arguments: dict[str, Any]) -> str:
+        """도구 + 인자에서 리소스 식별."""
+        if tool_name == "sap_run":
+            tcode = arguments.get("tcode", "UNKNOWN")
+            return f"tx:{tcode.upper()}"
+        elif tool_name in ("sap_set_field", "sap_get_field", "sap_press"):
+            element_id = arguments.get("element_id", "")
+            return f"element:{element_id}"
+        elif tool_name == "sap_send_vkey":
+            return "vkey"
+        elif tool_name == "sap_table_read":
+            element_id = arguments.get("element_id", "")
+            return f"table:{element_id}"
+        elif tool_name == "sap_macro_play":
+            macro_id = arguments.get("macro_id", "")
+            return f"macro:{macro_id}"
+        elif tool_name == "sap_ontology_query":
+            tcode = arguments.get("tcode", "*")
+            return f"ontology:{tcode}"
+        return f"tool:{tool_name}"
+
+    def _extract_tcode(self, tool_name: str, arguments: dict[str, Any]) -> str | None:
+        if tool_name == "sap_run":
+            return arguments.get("tcode")
+        return None

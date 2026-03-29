@@ -102,9 +102,10 @@ class MacroRecorder:
         # tcode 자동 감지 (첫 RUN_TRANSACTION에서)
         if not self._tcode:
             for step in self._steps:
-                if step.action == ActionType.RUN_TRANSACTION and step.value:
-                    self._tcode = step.value
-                    break
+                if step.action == ActionType.RUN_TRANSACTION:
+                    self._tcode = step.value or step.target_id
+                    if self._tcode:
+                        break
 
         # 변수 치환: {"사용된 값": "설명"} → 값을 ${변수명}으로 치환
         if variables:
