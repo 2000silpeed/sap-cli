@@ -45,11 +45,46 @@ def main():
         tree_json = session.GetObjectTree("wnd[0]", None)
         tree = json.loads(tree_json)
         print(f"    성공! 최상위 키: {list(tree.keys())}")
+
+        # JSON 구조 확인 (파서가 올바른 키를 읽는지)
+        props = tree.get("properties", {})
+        print(f"    properties 키: {list(props.keys())[:10]}")
+        print(f"    properties.Type: {props.get('Type', '없음')}")
+        print(f"    properties.Id: {props.get('Id', '없음')}")
+
+        # 혹시 properties가 아닌 직접 키 방식인지
+        print(f"    직접 Type: {tree.get('Type', '없음')}")
+        print(f"    직접 Id: {tree.get('Id', '없음')}")
+        print(f"    직접 type: {tree.get('type', '없음')}")
+        print(f"    직접 id: {tree.get('id', '없음')}")
+
         children = tree.get("children", [])
         print(f"    자식 수: {len(children)}")
-        for c in children[:10]:
-            props = c.get("properties", {})
-            print(f"      - Type={props.get('Type', '?')}, Id={props.get('Id', '?')}")
+
+        if children:
+            first = children[0]
+            print(f"\n    --- 첫 번째 자식 구조 ---")
+            print(f"    키: {list(first.keys())}")
+            fp = first.get("properties", {})
+            print(f"    properties 키: {list(fp.keys())[:10]}")
+            print(f"    properties.Type: {fp.get('Type', '없음')}")
+            print(f"    직접 Type: {first.get('Type', '없음')}")
+
+            # 자식의 자식도 확인 (usr 영역 내부)
+            gc = first.get("children", [])
+            print(f"    첫째자식의 자식 수: {len(gc)}")
+            for g in gc[:5]:
+                gp = g.get("properties", {})
+                print(f"      Type={gp.get('Type', g.get('Type', '?'))}, Id={gp.get('Id', g.get('Id', '?'))}")
+
+        # 전체 JSON에서 GuiCTextField 검색 (어디에 숨어있는지)
+        raw = tree_json
+        ct_count = raw.count("GuiCTextField")
+        btn_count = raw.count("GuiButton")
+        print(f"\n    JSON 내 GuiCTextField 출현 횟수: {ct_count}")
+        print(f"    JSON 내 GuiButton 출현 횟수: {btn_count}")
+        print(f"    JSON 총 길이: {len(raw)} bytes")
+
     except AttributeError:
         print("    GetObjectTree 메서드 없음 (SAP GUI 버전이 낮음)")
     except Exception as e:
