@@ -283,7 +283,10 @@ class SapGuiWrapper:
             logger.warning("GetObjectTree 실패, 수동 탐색으로 전환: %s", e)
 
         self._manual_scan(window_id, screen)
-        screen.status = self.get_status()
+        try:
+            screen.status = self.get_status()
+        except Exception as e:
+            logger.warning("상태바 조회 실패 (화면 스캔에는 영향 없음): %s", e)
         return screen
 
     def _get_object_tree(self, window_id: str) -> dict[str, Any] | None:
@@ -382,12 +385,41 @@ class SapGuiWrapper:
         )
 
     def _manual_scan(self, window_id: str, screen: ScreenOntology) -> None:
-        """GetObjectTree 미지원 시 수동 탐색으로 화면 요소 수집."""
+        """GetObjectTree 미지원 시 수동 탐색으로 화면 요소 수집.
+
+        SAP GUI 윈도우 구조:
+          wnd[0]
+          ├── titl (titlebar)
+          ├── mbar (menubar)
+          ├── tbar[0] (system toolbar - Enter, Back, Save 등)
+          ├── tbar[1] (application toolbar)
+          ├── usr (user area - 필드, 테이블 등)
+          └── sbar (statusbar)
+
+        usr 영역과 각 tbar를 명시적으로 스캔하여 안정성을 높인다.
+        """
+        # 1. 사용자 영역 (필드, 테이블, 탭 등)
         try:
-            window = self.session.FindById(window_id)
-            self._scan_children(window, screen)
+            usr = self.session.FindById(f"{window_id}/usr")
+            self._scan_children(usr, screen)
         except Exception as e:
-            raise SapGuiError(f"화면 수동 탐색 실패 [{window_id}]: {e}") from e
+            logger.warning("사용자 영역 탐색 실패 [%s/usr]: %s", window_id, e)
+
+        # 2. 툴바 (버튼)
+        for tbar_idx in range(3):
+            try:
+                tbar = self.session.FindById(f"{window_id}/tbar[{tbar_idx}]")
+                self._scan_children(tbar, screen)
+            except Exception:
+                break  # tbar가 더 이상 없으면 중단
+
+        # 3. 전체 윈도우 fallback (usr/tbar에서 못 찾은 경우)
+        if not screen.fields and not screen.buttons:
+            try:
+                window = self.session.FindById(window_id)
+                self._scan_children(window, screen)
+            except Exception as e:
+                logger.warning("윈도우 전체 탐색 실패 [%s]: %s", window_id, e)
 
     def _scan_children(self, container: Any, screen: ScreenOntology) -> None:
         """컨테이너의 자식 요소를 재귀 탐색."""
@@ -404,6 +436,7 @@ class SapGuiWrapper:
                     GuiComponentType.TEXT_FIELD,
                     GuiComponentType.CTEXT_FIELD,
                     GuiComponentType.PASSWORD_FIELD,
+                    GuiComponentType.OK_CODE_FIELD,
                 ):
                     screen.fields.append(SapField(
                         id=child_id,
