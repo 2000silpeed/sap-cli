@@ -302,8 +302,11 @@ class SapGuiWrapper:
 
         GetObjectTree는 트리 구조(id + children)만 반환한다.
         실제 속성(Type, Text, Changeable 등)은 FindById로 별도 조회.
+
+        최적화: 리프 노드(자식 없는 요소)와 테이블/탭 후보만 FindById 호출.
+        컨테이너(usr, sub, tbar 등)는 건너뛰어 COM 호출 횟수를 최소화.
         """
-        ids = self._collect_ids(tree)
+        ids = self._collect_actionable_ids(tree)
         for element_id in ids:
             try:
                 obj = self.session.FindById(element_id)
@@ -311,17 +314,34 @@ class SapGuiWrapper:
             except Exception as e:
                 logger.debug("요소 조회 건너뜀 [%s]: %s", element_id, e)
 
-    def _collect_ids(self, node: dict[str, Any]) -> list[str]:
-        """GetObjectTree JSON에서 모든 요소 ID를 재귀 수집."""
+    def _collect_actionable_ids(self, node: dict[str, Any]) -> list[str]:
+        """리프 노드 + 테이블/탭 후보 ID만 수집 (컨테이너 제외)."""
         ids: list[str] = []
-        props = node.get("properties", {})
-        # id는 소문자일 수 있음
-        node_id = props.get("id", props.get("Id", ""))
-        if node_id:
-            ids.append(node_id)
-        for child in node.get("children", []):
-            ids.extend(self._collect_ids(child))
+        self._walk_tree_for_ids(node, ids)
         return ids
+
+    def _walk_tree_for_ids(self, node: dict[str, Any], ids: list[str]) -> None:
+        props = node.get("properties", {})
+        node_id = props.get("id", props.get("Id", ""))
+        children = node.get("children", [])
+
+        if not children and node_id:
+            # 리프 노드: 필드, 버튼, 체크박스 등
+            ids.append(node_id)
+        elif node_id and self._looks_like_widget(node_id):
+            # 자식이 있지만 위젯으로 보이는 것: 테이블, 탭스트립, 그리드
+            ids.append(node_id)
+
+        for child in children:
+            self._walk_tree_for_ids(child, ids)
+
+    @staticmethod
+    def _looks_like_widget(element_id: str) -> bool:
+        """ID 패턴으로 테이블/탭/쉘 등 위젯 여부 판단."""
+        last_part = element_id.rsplit("/", 1)[-1].lower()
+        return any(last_part.startswith(p) for p in (
+            "tbl", "shell", "tabs", "tabp",
+        ))
 
     def _add_element_to_screen(self, obj: Any, screen: ScreenOntology) -> None:
         """COM 객체를 ScreenOntology에 추가."""
