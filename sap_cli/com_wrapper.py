@@ -298,91 +298,115 @@ class SapGuiWrapper:
             return None
 
     def _parse_tree_to_ontology(self, tree: dict[str, Any], screen: ScreenOntology) -> None:
-        """GetObjectTree JSON을 ScreenOntology로 파싱."""
-        self._walk_tree(tree, screen)
+        """GetObjectTree JSON을 ScreenOntology로 파싱.
 
-    def _walk_tree(self, node: dict[str, Any], screen: ScreenOntology) -> None:
+        GetObjectTree는 트리 구조(id + children)만 반환한다.
+        실제 속성(Type, Text, Changeable 등)은 FindById로 별도 조회.
+        """
+        ids = self._collect_ids(tree)
+        for element_id in ids:
+            try:
+                obj = self.session.FindById(element_id)
+                self._add_element_to_screen(obj, screen)
+            except Exception as e:
+                logger.debug("요소 조회 건너뜀 [%s]: %s", element_id, e)
+
+    def _collect_ids(self, node: dict[str, Any]) -> list[str]:
+        """GetObjectTree JSON에서 모든 요소 ID를 재귀 수집."""
+        ids: list[str] = []
         props = node.get("properties", {})
-        node_id = props.get("Id", "")
-        node_type = props.get("Type", "")
-        node_text = props.get("Text", "")
+        # id는 소문자일 수 있음
+        node_id = props.get("id", props.get("Id", ""))
+        if node_id:
+            ids.append(node_id)
+        for child in node.get("children", []):
+            ids.extend(self._collect_ids(child))
+        return ids
 
-        comp_type = self._map_component_type(node_type)
+    def _add_element_to_screen(self, obj: Any, screen: ScreenOntology) -> None:
+        """COM 객체를 ScreenOntology에 추가."""
+        obj_type = str(obj.Type)
+        obj_id = str(obj.Id)
+        comp_type = self._map_component_type(obj_type)
 
         if comp_type in (
             GuiComponentType.TEXT_FIELD,
             GuiComponentType.CTEXT_FIELD,
             GuiComponentType.PASSWORD_FIELD,
-            GuiComponentType.COMBO_BOX,
+            GuiComponentType.OK_CODE_FIELD,
         ):
             screen.fields.append(SapField(
-                id=node_id,
-                name=self._extract_name(node_id),
+                id=obj_id,
+                name=self._extract_name(obj_id),
                 type=comp_type,
-                label=node_text,
-                value=node_text,
-                changeable=props.get("Changeable", False),
+                label=self._safe_attr(obj, "Text", ""),
+                value=self._safe_attr(obj, "Text", ""),
+                changeable=bool(self._safe_attr(obj, "Changeable", False)),
+            ))
+        elif comp_type == GuiComponentType.COMBO_BOX:
+            screen.fields.append(SapField(
+                id=obj_id,
+                name=self._extract_name(obj_id),
+                type=comp_type,
+                label=self._get_label_for(obj),
+                value=self._safe_attr(obj, "Value", ""),
+                changeable=bool(self._safe_attr(obj, "Changeable", False)),
             ))
         elif comp_type == GuiComponentType.BUTTON:
             screen.buttons.append(SapButton(
-                id=node_id,
-                name=self._extract_name(node_id),
-                text=node_text,
-                tooltip=props.get("Tooltip", ""),
-                icon_name=props.get("IconName", ""),
+                id=obj_id,
+                name=self._extract_name(obj_id),
+                text=self._safe_attr(obj, "Text", ""),
+                tooltip=self._safe_attr(obj, "Tooltip", ""),
+                icon_name=self._safe_attr(obj, "IconName", ""),
             ))
         elif comp_type in (GuiComponentType.CHECK_BOX, GuiComponentType.RADIO_BUTTON):
             screen.fields.append(SapField(
-                id=node_id,
-                name=self._extract_name(node_id),
+                id=obj_id,
+                name=self._extract_name(obj_id),
                 type=comp_type,
-                label=node_text,
-                changeable=props.get("Changeable", False),
+                label=self._safe_attr(obj, "Text", ""),
+                changeable=bool(self._safe_attr(obj, "Changeable", False)),
             ))
         elif comp_type == GuiComponentType.TAB:
             screen.tabs.append(SapButton(
-                id=node_id,
-                name=self._extract_name(node_id),
-                text=node_text,
+                id=obj_id,
+                name=self._extract_name(obj_id),
+                text=self._safe_attr(obj, "Text", ""),
             ))
         elif comp_type in (GuiComponentType.TABLE_CONTROL, GuiComponentType.GRID_VIEW):
+            row_count = int(self._safe_attr(obj, "RowCount", 0))
+            col_count = int(self._safe_attr(obj, "ColumnCount", 0))
             columns = []
-            for i, col_child in enumerate(node.get("children", [])):
-                col_props = col_child.get("properties", {})
-                columns.append(SapTableColumn(
-                    name=col_props.get("Name", col_props.get("Id", f"col_{i}")),
-                    title=col_props.get("Title", col_props.get("Text", "")),
-                    position=i,
-                ))
+            if comp_type == GuiComponentType.GRID_VIEW:
+                for c in range(col_count):
+                    try:
+                        col_id = obj.ColumnOrder(c)
+                        columns.append(SapTableColumn(
+                            name=col_id,
+                            title=str(obj.GetColumnTitles(col_id) or col_id),
+                            position=c,
+                        ))
+                    except Exception:
+                        columns.append(SapTableColumn(name=f"col_{c}", position=c))
             screen.tables.append(SapTable(
-                id=node_id,
-                name=self._extract_name(node_id),
+                id=obj_id,
+                name=self._extract_name(obj_id),
                 type=comp_type,
-                row_count=props.get("RowCount", 0),
-                column_count=props.get("ColumnCount", len(columns)),
-                visible_rows=props.get("VisibleRowCount", 0),
+                row_count=row_count,
+                column_count=col_count,
+                visible_rows=int(self._safe_attr(obj, "VisibleRowCount", 0)),
                 columns=columns,
             ))
-            return  # 테이블 자식은 컬럼으로 처리했으므로 재귀 중단
-        elif comp_type in (GuiComponentType.MENU_BAR, GuiComponentType.MENU):
-            menu_item = self._parse_menu_tree(node)
-            screen.menus.append(menu_item)
-            return  # 메뉴 자식은 _parse_menu_tree에서 처리
 
-        for child in node.get("children", []):
-            self._walk_tree(child, screen)
-
-    def _parse_menu_tree(self, node: dict[str, Any]) -> SapMenuItem:
-        """메뉴 노드를 SapMenuItem으로 재귀 파싱."""
-        props = node.get("properties", {})
-        children = []
-        for child in node.get("children", []):
-            children.append(self._parse_menu_tree(child))
-        return SapMenuItem(
-            id=props.get("Id", ""),
-            text=props.get("Text", ""),
-            children=children,
-        )
+    @staticmethod
+    def _safe_attr(obj: Any, attr: str, default: Any = "") -> Any:
+        """COM 객체 속성을 안전하게 읽기."""
+        try:
+            val = getattr(obj, attr, default)
+            return str(val) if val is not None else default
+        except Exception:
+            return default
 
     def _manual_scan(self, window_id: str, screen: ScreenOntology) -> None:
         """GetObjectTree 미지원 시 수동 탐색으로 화면 요소 수집.
