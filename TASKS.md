@@ -85,6 +85,33 @@ fcb4b0c 화면 스캔 속도 개선: GetObjectTree 대신 수동 탐색 직접 �
 ec29b59 Codex 리뷰 기반 10개 이슈 수정 + ReBAC 권한관리 구현
 ```
 
+### Phase 7: 데몬 모드 + Shell REPL (2026-03-31)
+
+| 작업 | 내용 | 상태 |
+|------|------|------|
+| 데몬 서버 | TCP 소켓 기반 상주 프로세스, COM 연결 유지 | 완료 |
+| Shell REPL | 대화형/파이프 모드, 데몬 자동 시작 | 완료 |
+| 중앙 dispatcher | CLI/데몬/MCP 통합 실행 경로 | 완료 |
+| command_parser | 트랜잭션 코드 추출 유틸리티 | 완료 |
+
+### Phase 8: Codex CC 코드리뷰 기반 수정 (2026-04-01)
+
+| # | 이슈 | 심각도 | 상태 |
+|---|------|--------|------|
+| 1 | MCP vkey 인자 불일치 (vkey→key KeyError) | major | 완료 |
+| 2 | 데몬 SAP 인스턴스 상태 불일치 | minor | 완료 |
+| 3 | Shell 파이프 모드 에러 시 exit code 미반환 | major | 완료 |
+| 4 | 트랜잭션 제한 정책 우회 (raw command fail-open) | major | 완료 |
+| 5 | modal/macro_show/macro_delete 권한 검사 우회 | major | 완료 |
+| 6 | 명령 정의 4중 중복 → 단일 COMMAND_REGISTRY 통합 | major | 완료 |
+
+## 커밋 이력 (2026-04-01)
+
+```
+2204d20 Codex 코드리뷰 6건 수정: registry 통합, 보안 강화, 버그 수정
+34f9e33 데몬 모드 추가: COM 연결 유지로 명령 실행 속도 5초→0.2초
+```
+
 ---
 
 ## 남은 작업
@@ -94,12 +121,13 @@ ec29b59 Codex 리뷰 기반 10개 이슈 수정 + ReBAC 권한관리 구현
 - P2: 온톨로지 그래프 기반 관계 상속 (필드 레벨 세밀 제어)
 - P3: 런타임 승인 워크플로우 (MCP sampling 활용)
 
-### 사내 검증 (SAP 환경 필요)
-- [ ] sap connect → sap screen 전체 동작 확인
-- [ ] MM03 자재 조회 자동화 시나리오 완주
-- [ ] 매크로 녹화 → 재생 사이클 검증
-- [ ] 온톨로지 학습 (sap learn) 동작 확인
-- [ ] MCP 서버 + Claude Code 연동 테스트
+### 사내 검증 (SAP 환경 필요) → VERIFICATION.md 참조
+- [ ] 시나리오 1: 기본 연결 및 화면 탐색
+- [ ] 시나리오 2: MM03 자재 조회 자동화
+- [ ] 시나리오 3: 매크로 녹화 → 재생 사이클
+- [ ] 시나리오 4: 온톨로지 학습
+- [ ] 시나리오 5: MCP 서버 + Claude Code 연동
+- [ ] 시나리오 6: 데몬 모드 + Shell
 
 ### 추가 온톨로지 보강 (SAP 환경 필요)
 - MM03 추가 화면 (MRP, 구매, 판매, 저장위치 뷰)
