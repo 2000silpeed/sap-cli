@@ -263,7 +263,9 @@ class SapGuiWrapper:
     def get_screen(self, window_id: str = "wnd[0]") -> ScreenOntology:
         """현재 화면의 전체 UI 구조를 ScreenOntology로 반환.
 
-        GetObjectTree()가 사용 가능하면 JSON 기반으로, 아니면 수동 탐색으로 수집.
+        수동 탐색(Children 재귀) 방식 사용. GetObjectTree는 id만 반환하여
+        각 요소마다 FindById COM 호출이 필요해 느림. 수동 탐색은 Children
+        한 번 호출로 모든 자식을 가져오므로 COM 왕복이 적다.
         """
         info = self.session.Info
         screen = ScreenOntology(
@@ -272,15 +274,6 @@ class SapGuiWrapper:
             program=info.Program,
             title=self.session.FindById(window_id).Text,
         )
-
-        try:
-            tree_json = self._get_object_tree(window_id)
-            if tree_json:
-                self._parse_tree_to_ontology(tree_json, screen)
-                screen.raw_tree = tree_json
-                return screen
-        except Exception as e:
-            logger.warning("GetObjectTree 실패, 수동 탐색으로 전환: %s", e)
 
         self._manual_scan(window_id, screen)
         try:
