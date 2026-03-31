@@ -135,6 +135,7 @@ class TestPermissionCheckerViewer:
 
     def test_execute_denied(self, checker):
         assert checker.check_tool("sap_run", {"tcode": "MM03"}).allowed is False
+        assert checker.check_tool("sap_command", {"cmd": "/nMM03"}).allowed is False
 
     def test_admin_denied(self, checker):
         assert checker.check_tool("sap_connect").allowed is False
@@ -156,6 +157,7 @@ class TestPermissionCheckerOperator:
 
     def test_execute_allowed(self, checker):
         assert checker.check_tool("sap_run", {"tcode": "MM03"}).allowed is True
+        assert checker.check_tool("sap_command", {"cmd": "/nMM03"}).allowed is True
 
     def test_admin_denied(self, checker):
         assert checker.check_tool("sap_connect").allowed is False
@@ -201,6 +203,11 @@ class TestDangerousTransactions:
 
     def test_requires_approval(self, checker):
         reason = checker.requires_approval("sap_run", {"tcode": "SM30"})
+        assert reason is not None
+        assert "테이블" in reason
+
+    def test_command_requires_approval(self, checker):
+        reason = checker.requires_approval("sap_command", {"cmd": "/nSM30"})
         assert reason is not None
         assert "테이블" in reason
 

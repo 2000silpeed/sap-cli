@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..command_parser import extract_tcode_from_command
 from .policy import (
     AgentPolicy,
     Permission,
@@ -47,6 +48,13 @@ class PermissionChecker:
         if self._policy:
             self._agent_name = agent_name
             self._agent = self._policy.get_agent(agent_name)
+
+    @property
+    def agent_name(self) -> str:
+        return self._agent_name
+
+    def resolve_resource(self, tool_name: str, arguments: dict[str, Any] | None = None) -> str:
+        return self._resolve_resource(tool_name, arguments or {})
 
     def check_tool(self, tool_name: str, arguments: dict[str, Any] | None = None) -> CheckResult:
         """MCP 도구 호출 권한 체크."""
@@ -131,6 +139,12 @@ class PermissionChecker:
         if tool_name == "sap_run":
             tcode = arguments.get("tcode", "UNKNOWN")
             return f"tx:{tcode.upper()}"
+        elif tool_name == "sap_command":
+            command = str(arguments.get("cmd", ""))
+            tcode = extract_tcode_from_command(command)
+            if tcode:
+                return f"tx:{tcode.upper()}"
+            return f"command:__unparsed__"
         elif tool_name in ("sap_set_field", "sap_get_field", "sap_press"):
             element_id = arguments.get("element_id", "")
             return f"element:{element_id}"
@@ -150,4 +164,6 @@ class PermissionChecker:
     def _extract_tcode(self, tool_name: str, arguments: dict[str, Any]) -> str | None:
         if tool_name == "sap_run":
             return arguments.get("tcode")
+        if tool_name == "sap_command":
+            return extract_tcode_from_command(str(arguments.get("cmd", "")))
         return None

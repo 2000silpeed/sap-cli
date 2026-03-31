@@ -21,6 +21,14 @@ import sys
 import tempfile
 import time
 
+from .com_wrapper import SapGuiError
+from .dispatcher import (
+    ApprovalRequiredError,
+    DispatchContext,
+    PermissionDeniedError,
+    dispatch_command,
+)
+
 logger = logging.getLogger(__name__)
 
 PORT = 18471
@@ -138,13 +146,24 @@ class _DaemonServer(socketserver.TCPServer):
             threading.Timer(0.1, self.shutdown).start()
             return {"ok": True, "data": {"message": "daemon stopped"}}
 
-        handler = getattr(self, f"_cmd_{cmd}", None)
-        if handler is None:
-            return {"ok": False, "error": f"알 수 없는 명령: {cmd}"}
-
         try:
-            return {"ok": True, "data": handler(args)}
-        except Exception as e:
+            data = dispatch_command(
+                cmd,
+                args,
+                DispatchContext(source="daemon"),
+            )
+            if cmd == "connect":
+                import sap_cli.service as _svc
+                self._sap = _svc._sap
+            return {"ok": True, "data": data}
+        except ApprovalRequiredError as e:
+            return {
+                "ok": False,
+                "approval_required": True,
+                "tool": e.tool_name,
+                "reason": e.reason,
+            }
+        except (PermissionDeniedError, ValueError, RuntimeError, SapGuiError) as e:
             return {"ok": False, "error": str(e)}
 
     # -- 명령 핸들러 --
