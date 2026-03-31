@@ -56,6 +56,20 @@ def _handle_error(e: Exception) -> None:
     raise typer.Exit(1)
 
 
+def _try_daemon(cmd: str, args: dict) -> bool:
+    """데몬으로 명령 전송 시도. 성공하면 결과 출력 후 True 반환."""
+    from . import daemon
+    result = daemon.send_command(cmd, args)
+    if result is None:
+        return False
+    if result["ok"]:
+        _output_json(result["data"])
+    else:
+        _output_json({"error": True, "message": result["error"]})
+        raise typer.Exit(1)
+    return True
+
+
 # -------------------------------------------------------------------
 # Commands
 # -------------------------------------------------------------------
@@ -66,6 +80,8 @@ def connect(
     session: int = typer.Option(0, "--session", "-s", help="세션 인덱스"),
 ) -> None:
     """실행 중인 SAP GUI에 연결."""
+    if _try_daemon("connect", {"connection": connection, "session": session}):
+        return
     try:
         import sap_cli.service as _svc
         sap = SapGuiWrapper()
@@ -82,6 +98,8 @@ def connect(
 @app.command("session")
 def session_info() -> None:
     """현재 세션 정보 조회."""
+    if _try_daemon("session", {}):
+        return
     try:
         sap = _get_sap()
         info = sap.get_session_info()
@@ -96,6 +114,8 @@ def screen(
     actions_only: bool = typer.Option(False, "--actions-only", "-a", help="가능한 액션만"),
 ) -> None:
     """현재 화면의 UI 구조를 JSON으로 출력."""
+    if _try_daemon("screen", {"fields_only": fields_only, "actions_only": actions_only}):
+        return
     try:
         sap = _get_sap()
         ontology = sap.get_screen()
@@ -123,6 +143,8 @@ def screen(
 @app.command()
 def run(tcode: str = typer.Argument(help="트랜잭션 코드 (예: MM03, VA01)")) -> None:
     """트랜잭션 실행."""
+    if _try_daemon("run", {"tcode": tcode}):
+        return
     try:
         sap = _get_sap()
         sap.run_transaction(tcode)
@@ -144,6 +166,8 @@ def set_field(
     value: str = typer.Argument(help="설정할 값"),
 ) -> None:
     """필드에 값 설정."""
+    if _try_daemon("set", {"element_id": element_id, "value": value}):
+        return
     try:
         sap = _get_sap()
         sap.set_field(element_id, value)
@@ -162,6 +186,8 @@ def get_field(
     element_id: str = typer.Argument(help="필드 ID"),
 ) -> None:
     """필드 값 읽기."""
+    if _try_daemon("get", {"element_id": element_id}):
+        return
     try:
         sap = _get_sap()
         value = sap.get_field(element_id)
@@ -178,6 +204,8 @@ def press(
     element_id: str = typer.Argument(help="버튼 ID (예: wnd[0]/tbar[0]/btn[0])"),
 ) -> None:
     """버튼 클릭."""
+    if _try_daemon("press", {"element_id": element_id}):
+        return
     try:
         sap = _get_sap()
         sap.press(element_id)
@@ -197,6 +225,8 @@ def vkey(
     key: int = typer.Argument(help="VKey 번호 (0=Enter, 3=Back, 8=Execute, 11=Save, 12=Cancel)"),
 ) -> None:
     """VKey 전송."""
+    if _try_daemon("vkey", {"key": key}):
+        return
     try:
         sap = _get_sap()
         sap.send_vkey(key)
@@ -215,6 +245,8 @@ def vkey(
 @app.command()
 def status() -> None:
     """상태바 메시지 조회."""
+    if _try_daemon("status", {}):
+        return
     try:
         sap = _get_sap()
         msg = sap.get_status()
@@ -228,6 +260,8 @@ def table(
     element_id: str = typer.Argument(help="테이블/그리드 ID"),
 ) -> None:
     """테이블 데이터 읽기."""
+    if _try_daemon("table", {"element_id": element_id}):
+        return
     try:
         sap = _get_sap()
         tbl = sap.read_table(element_id)
@@ -241,6 +275,8 @@ def command(
     cmd: str = typer.Argument(help="SAP 커맨드 (예: /nMM03, /oSE80)"),
 ) -> None:
     """커맨드 필드에 명령 실행."""
+    if _try_daemon("command", {"cmd": cmd}):
+        return
     try:
         sap = _get_sap()
         sap.send_command(cmd)
@@ -259,6 +295,8 @@ def command(
 @app.command()
 def modal() -> None:
     """모달 윈도우(팝업) 정보 조회."""
+    if _try_daemon("modal", {}):
+        return
     try:
         sap = _get_sap()
         has = sap.has_modal()
@@ -268,6 +306,52 @@ def modal() -> None:
         _output_json(result)
     except SapGuiError as e:
         _handle_error(e)
+
+
+# -------------------------------------------------------------------
+# Daemon Commands
+# -------------------------------------------------------------------
+
+@app.command("daemon")
+def daemon_cmd(
+    action: str = typer.Argument(help="start / stop / status"),
+) -> None:
+    """데몬 프로세스 관리 (명령 실행 속도 최적화).
+
+    start:  백그라운드 데몬 시작 (COM 연결 유지)
+    stop:   데몬 종료
+    status: 데몬 상태 확인
+    """
+    from . import daemon
+
+    if action == "start":
+        if daemon.is_running():
+            _output_json({"daemon": "already running", "port": daemon.PORT})
+            return
+        ok = daemon.start_daemon()
+        if ok:
+            _output_json({"daemon": "started", "port": daemon.PORT})
+        else:
+            _output_json({"error": True, "message": "데몬 시작 실패"})
+            raise typer.Exit(1)
+
+    elif action == "stop":
+        if daemon.stop_daemon():
+            _output_json({"daemon": "stopped"})
+        else:
+            _output_json({"error": True, "message": "데몬이 실행 중이지 않습니다"})
+
+    elif action == "status":
+        if daemon.is_running():
+            result = daemon.send_command("ping")
+            data = result.get("data", {}) if result else {}
+            _output_json({"daemon": "running", "port": daemon.PORT, **data})
+        else:
+            _output_json({"daemon": "not running"})
+
+    else:
+        _output_json({"error": True, "message": f"알 수 없는 액션: {action}. start/stop/status 중 선택"})
+        raise typer.Exit(1)
 
 
 # -------------------------------------------------------------------
