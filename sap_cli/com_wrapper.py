@@ -458,15 +458,28 @@ class SapGuiWrapper:
             except Exception as e:
                 logger.warning("윈도우 전체 탐색 실패 [%s]: %s", window_id, e)
 
-    def _scan_children(self, container: Any, screen: ScreenOntology) -> None:
-        """컨테이너의 자식 요소를 재귀 탐색."""
+    # 재귀 탐색 불필요한 컨테이너 타입
+    _SKIP_TYPES = frozenset({
+        "GuiLabel", "GuiTitlebar", "GuiStatusbar", "GuiStatusPane",
+        "GuiPicture", "GuiHTMLViewer", "GuiTextedit",
+    })
+
+    def _scan_children(self, container: Any, screen: ScreenOntology, depth: int = 0) -> None:
+        """컨테이너의 자식 요소를 재귀 탐색. 깊이 제한으로 속도 확보."""
+        if depth > 8:
+            return
         try:
             children = container.Children
-            for i in range(children.Count):
+            count = children.Count
+            for i in range(count):
                 child = children(i)
                 child_type = str(child.Type)
-                child_id = str(child.Id)
 
+                # 불필요한 타입은 즉시 건너뛰기 (COM 호출 최소화)
+                if child_type in self._SKIP_TYPES:
+                    continue
+
+                child_id = str(child.Id)
                 comp_type = self._map_component_type(child_type)
 
                 if comp_type in (
@@ -479,7 +492,7 @@ class SapGuiWrapper:
                         id=child_id,
                         name=self._extract_name(child_id),
                         type=comp_type,
-                        label=self._get_label_for(child),
+                        label=str(getattr(child, "Text", "")),
                         value=str(getattr(child, "Text", "")),
                         changeable=bool(getattr(child, "Changeable", False)),
                     ))
@@ -496,7 +509,7 @@ class SapGuiWrapper:
                         id=child_id,
                         name=self._extract_name(child_id),
                         type=comp_type,
-                        label=self._get_label_for(child),
+                        label=str(getattr(child, "Text", "")),
                         value=str(getattr(child, "Value", "")),
                         changeable=bool(getattr(child, "Changeable", False)),
                     ))
@@ -508,6 +521,13 @@ class SapGuiWrapper:
                         label=str(getattr(child, "Text", "")),
                         changeable=bool(getattr(child, "Changeable", False)),
                     ))
+                elif comp_type == GuiComponentType.TAB:
+                    screen.tabs.append(SapButton(
+                        id=child_id,
+                        name=self._extract_name(child_id),
+                        text=str(getattr(child, "Text", "")),
+                    ))
+                    continue
                 elif comp_type in (GuiComponentType.TABLE_CONTROL, GuiComponentType.GRID_VIEW):
                     row_count = int(getattr(child, "RowCount", 0))
                     col_count = int(getattr(child, "ColumnCount", 0))
@@ -532,14 +552,17 @@ class SapGuiWrapper:
                         visible_rows=int(getattr(child, "VisibleRowCount", 0)),
                         columns=columns,
                     ))
-                    continue  # 테이블 내부는 재귀 탐색 불필요
-
-                if hasattr(child, "Children"):
+                    continue
+                else:
+                    # 컨테이너: 재귀 탐색
                     try:
-                        if child.Children.Count > 0:
-                            self._scan_children(child, screen)
-                    except Exception as e:
-                        logger.debug("자식 요소 탐색 건너뜀 [%s]: %s", child_id, e)
+                        if hasattr(child, "Children") and child.Children.Count > 0:
+                            self._scan_children(child, screen, depth + 1)
+                    except Exception:
+                        pass
+                    continue
+
+                # 리프 요소는 재귀 불필요
         except Exception as e:
             logger.warning("화면 요소 탐색 중 오류: %s", e)
 
