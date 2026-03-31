@@ -215,7 +215,7 @@
             "validation": "",
             "domain_context": ""
           },
-          "max_length": 0
+          "max_length": 18
         },
         {
           "id": "wnd[0]/usr/txtMAKT-MAKTX",
