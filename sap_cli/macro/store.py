@@ -20,7 +20,7 @@ def _validate_id(value: str, label: str = "id") -> str:
 class MacroStore:
     """매크로 JSON 저장/로드/관리.
 
-    저장 경로: sap_cli/macro/library/
+    저장 경로: ~/.sap_cli/macros/
     파일명: {macro_id}.json
     """
 

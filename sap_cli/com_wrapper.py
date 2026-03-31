@@ -442,7 +442,20 @@ class SapGuiWrapper:
         except Exception as e:
             logger.warning("사용자 영역 탐색 실패 [%s/usr]: %s", window_id, e)
 
-        # 2. 툴바 (버튼)
+        # 2. 메뉴바 (menus)
+        try:
+            mbar = self.session.FindById(f"{window_id}/mbar")
+            children = mbar.Children
+            for i in range(children.Count):
+                menu = children(i)
+                screen.menus.append(SapMenuItem(
+                    id=str(menu.Id),
+                    text=str(getattr(menu, "Text", "")),
+                ))
+        except Exception:
+            pass  # 메뉴바 없는 화면 (모달 등)
+
+        # 3. 툴바 (버튼)
         for tbar_idx in range(3):
             try:
                 tbar = self.session.FindById(f"{window_id}/tbar[{tbar_idx}]")
@@ -450,7 +463,7 @@ class SapGuiWrapper:
             except Exception:
                 break  # tbar가 더 이상 없으면 중단
 
-        # 3. 전체 윈도우 fallback (usr/tbar에서 못 찾은 경우)
+        # 4. 전체 윈도우 fallback (usr/tbar에서 못 찾은 경우)
         if not screen.fields and not screen.buttons:
             try:
                 window = self.session.FindById(window_id)

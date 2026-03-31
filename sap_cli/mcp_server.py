@@ -31,11 +31,13 @@ from .auth.policy import load_policy, TOOL_PERMISSION_MAP
 from .com_wrapper import SapGuiError, SapGuiWrapper
 from .macro.player import MacroPlayer
 from .service import (
+    ACTION_MAP as _ACTION_MAP,
     get_sap as _get_sap,
     get_store as _get_store,
     get_learner as _get_learner,
     get_recorder as _get_recorder,
     get_macro_store as _get_macro_store,
+    map_action as _map_action,
     execute_sap_action as _execute_sap_action,
 )
 
@@ -279,13 +281,13 @@ def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     try:
         if name == "sap_connect":
+            import sap_cli.service as _svc
             sap = SapGuiWrapper()
             info = sap.connect(
                 arguments.get("connection_index", 0),
                 arguments.get("session_index", 0),
             )
-            global _sap
-            _sap = sap
+            _svc._sap = sap
             return _json_result({"connected": True, "session": info.model_dump(mode="json")})
 
         elif name == "sap_session":
@@ -405,9 +407,10 @@ def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             value = arguments.get("value")
             desc = arguments.get("description", "")
 
-            action_type = _ACTION_MAP.get(action.lower())
-            if action_type is None:
-                return _error_result(f"알 수 없는 액션: {action}")
+            try:
+                action_type = _map_action(action)
+            except ValueError as e:
+                return _error_result(str(e))
 
             # 실제 SAP 실행
             _execute_sap_action(sap, action.lower(), target, value)
@@ -415,10 +418,15 @@ def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             status = sap.get_status()
             info = sap.get_session_info()
 
+            # run/vkey는 target이 실행 값이므로 value에도 저장
+            record_value = value
+            if action.lower() in ("run", "vkey") and not value:
+                record_value = target
+
             step = recorder.record_step(
                 action=action_type,
                 target_id=target,
-                value=value,
+                value=record_value,
                 description=desc,
                 screen_number=info.screen_number,
             )

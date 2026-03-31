@@ -61,19 +61,20 @@ class OntologyStore:
 
     def _seed_if_empty(self) -> None:
         """외부 디렉토리가 비어있으면 패키지 내 시드 데이터를 복사."""
-        if list(self.transactions_dir.glob("*.json")):
-            return
         seed_dir = Path(__file__).parent / "knowledge"
         if not seed_dir.exists():
             return
         for subdir in ("transactions", "patterns"):
             src = seed_dir / subdir
             dst = self.knowledge_dir / subdir
-            if src.exists():
-                for f in src.glob("*.json"):
-                    dest_file = dst / f.name
-                    if not dest_file.exists():
-                        shutil.copy2(f, dest_file)
+            if not src.exists():
+                continue
+            if list(dst.glob("*.json")):
+                continue  # 이미 데이터가 있으면 건너뜀
+            for f in src.glob("*.json"):
+                dest_file = dst / f.name
+                if not dest_file.exists():
+                    shutil.copy2(f, dest_file)
 
     # -------------------------------------------------------------------
     # Transaction Ontology CRUD

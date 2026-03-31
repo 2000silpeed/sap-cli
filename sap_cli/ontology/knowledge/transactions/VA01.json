@@ -355,10 +355,10 @@
     },
     {
       "link_type": "FIELD_DEPENDS_ON",
-      "source_id": "screen:VA01:4011",
+      "source_id": "field:VA01:4011:VBAK-BSTNK",
       "target_id": "field:VA01:4001:VBAK-AUART",
       "properties": {"dependency_type": "field_activation"},
-      "description": "오더유형에 따라 오버뷰 화면의 필드 구성이 변경됨 (메타엣지)"
+      "description": "오더유형에 따라 오버뷰 화면의 필드 구성이 변경됨 (메타엣지, 대표 필드로 참조)"
     }
   ],
   "recorded_sequences": [],

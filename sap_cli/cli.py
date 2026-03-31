@@ -67,10 +67,10 @@ def connect(
 ) -> None:
     """실행 중인 SAP GUI에 연결."""
     try:
+        import sap_cli.service as _svc
         sap = SapGuiWrapper()
         info = sap.connect(connection, session)
-        global _sap
-        _sap = sap
+        _svc._sap = sap
         _output_json({
             "connected": True,
             "session": info.model_dump(mode="json"),
