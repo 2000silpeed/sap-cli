@@ -816,7 +816,7 @@
           <div class="section-head">
             <div>
               <strong>Concepts</strong>
-              <h2>sap_cli를 이해하는 핵심 개념 5개</h2>
+              <h2>sap_cli를 이해하는 핵심 개념 6개</h2>
               <p>
                 이 프로젝트는 여러 기능을 모아놓은 툴셋처럼 보이지만, 실제로는 각 층이 분명합니다.
                 왼쪽 개념을 눌러서 역할과 차이를 확인할 수 있습니다.
@@ -899,6 +899,7 @@
               <option value="action">실행 / 입력</option>
               <option value="guardrail">검토 / 감사</option>
               <option value="macro">매크로</option>
+              <option value="process">프로세스</option>
               <option value="ontology">온톨로지</option>
               <option value="runtime">런타임</option>
             </select>
@@ -1084,6 +1085,10 @@ active_agent: "standard"</pre>
             <summary>가장 먼저 검증할 명령은 무엇인가</summary>
             <p><code>sap connect</code>, <code>sap session</code>, <code>sap screen</code>입니다. 이 세 개가 안정적이면 나머지 기능 검증이 훨씬 쉬워집니다.</p>
           </details>
+          <details>
+            <summary>온톨로지와 BusinessProcess의 차이는</summary>
+            <p>온톨로지는 <strong>트랜잭션 1개</strong>의 화면/필드/액션 구조를 저장합니다. BusinessProcess는 <strong>여러 트랜잭션을 연결한 업무 흐름</strong>을 구조화합니다. 예를 들어 자재 조달은 MM01→ME21N→MIGO→MIRO 4개 트랜잭션의 연결이며, 앞 스텝의 출력(자재번호)이 뒤 스텝의 입력으로 자동 연결됩니다.</p>
+          </details>
         </section>
       </main>
     </div>
@@ -1091,7 +1096,7 @@ active_agent: "standard"</pre>
     <footer>
       이 문서는 <code>README.md</code>, <code>DESIGN.md</code>, <code>DESIGN_REBAC.md</code>,
       <code>VERIFICATION.md</code>, <code>skill/SKILL.md</code>, 그리고 현재 코드베이스 구조를 바탕으로
-      2026-04-01 기준으로 정리한 단일 파일 가이드입니다.
+      2026-04-02 기준으로 정리한 단일 파일 가이드입니다.
     </footer>
   </div>
 
@@ -1127,6 +1132,11 @@ active_agent: "standard"</pre>
       { cli: "sap macro-show", mcp: "sap_macro_show", category: "macro", permission: "read", surfaces: ["CLI", "MCP"], desc: "특정 매크로의 상세 정의를 조회합니다.", example: "sap macro-show material_lookup", hint: "매크로를 실행하기 전 구조 확인용입니다." },
       { cli: "sap macro-play", mcp: "sap_macro_play", category: "macro", permission: "execute", surfaces: ["CLI", "MCP"], desc: "저장된 매크로를 변수만 바꿔 재실행합니다.", example: "sap macro-play material_lookup --vars '{\"MATNR\":\"200-200\"}'", hint: "dry_run으로 사전 검토도 가능합니다." },
       { cli: "sap macro-delete", mcp: "sap_macro_delete", category: "macro", permission: "admin", surfaces: ["CLI", "MCP"], desc: "매크로를 삭제합니다.", example: "sap macro-delete material_lookup", hint: "관리 권한이 필요한 정리 작업입니다." },
+
+      { cli: "sap process list", mcp: "sap_process_list", category: "process", permission: "read", surfaces: ["CLI", "MCP"], desc: "등록된 업무 프로세스 목록을 조회합니다.", example: "sap process list", hint: "어떤 end-to-end 워크플로우가 정의되어 있는지 확인합니다." },
+      { cli: "sap process show", mcp: "sap_process_show", category: "process", permission: "read", surfaces: ["CLI", "MCP"], desc: "프로세스의 스텝과 데이터 흐름을 상세 조회합니다.", example: "sap process show procurement_basic", hint: "스텝 간 어떤 필드가 연결되는지 확인할 수 있습니다." },
+      { cli: "sap process create", mcp: "sap_process_create", category: "process", permission: "admin", surfaces: ["CLI", "MCP"], desc: "새 업무 프로세스를 등록합니다. 트랜잭션 순서와 데이터 흐름을 정의합니다.", example: "sap process create procurement_custom --name \"맞춤 조달\" --steps MM01,ME21N", hint: "무결성 검증(중복 스텝, 역방향 흐름)을 자동으로 수행합니다." },
+      { cli: "sap process delete", mcp: "sap_process_delete", category: "process", permission: "admin", surfaces: ["CLI", "MCP"], desc: "등록된 업무 프로세스를 삭제합니다.", example: "sap process delete old_process", hint: "관리 권한이 필요합니다." },
 
       { cli: "sap daemon", mcp: null, category: "runtime", permission: "runtime", surfaces: ["CLI", "Runtime"], desc: "백그라운드 데몬을 시작/종료/상태조회합니다.", example: "sap daemon start", hint: "COM 연결을 유지해서 응답 속도를 줄입니다." },
       { cli: "sap shell", mcp: null, category: "runtime", permission: "runtime", surfaces: ["CLI", "Shell", "Runtime"], desc: "대화형 셸로 반복 실행 지연을 줄입니다.", example: "sap shell", hint: "사람이 수동으로 여러 명령을 실험할 때 좋습니다." }
@@ -1181,6 +1191,16 @@ active_agent: "standard"</pre>
           "단순 로그 조회가 아니라 ‘다시 해도 되는가’를 판단하기 위한 단계입니다.",
           "transcript에서 tcode를 추론해 다시 열어볼 ontology 힌트까지 같이 제시합니다.",
           "운영 지식이 프롬프트가 아니라 시스템 출력으로 바뀝니다."
+        ]
+      },
+      {
+        key: "process",
+        title: "BusinessProcess는 트랜잭션을 연결한다",
+        summary: "단일 트랜잭션을 넘어 여러 트랜잭션을 순서대로 연결한 end-to-end 업무 흐름을 구조화합니다.",
+        points: [
+          "자재 조달(MM01→ME21N→MIGO→MIRO)처럼 실무 SAP 작업은 트랜잭션 여러 개의 연결입니다.",
+          "DataFlow로 앞 스텝의 출력(예: 자재번호)이 뒤 스텝의 입력으로 자동 연결됩니다.",
+          "AI가 ‘자재 조달해줘’라는 지시 하나로 전체 프로세스를 순서대로 실행할 수 있는 토대입니다."
         ]
       }
     ];
@@ -1379,6 +1399,13 @@ active_agent: "standard"</pre>
         cli: ["sap run MM03", "sap learn", "sap ontology MM03 --actions", "sap transcript --command learn"],
         mcp: ["sap_run", "sap_learn", "sap_ontology_query", "sap_transcript_query(command=\"learn\")"],
         note: "즐겨 쓰는 트랜잭션부터 조금씩 학습시키는 편이 현실적입니다."
+      },
+      process: {
+        title: "업무 프로세스 실행",
+        description: "여러 트랜잭션을 연결한 end-to-end 업무 흐름을 조회하고, 스텝별로 순서대로 실행하는 패턴입니다.",
+        cli: ["sap process list", "sap process show procurement_basic", "sap run MM01", "sap learn", "... (각 스텝 실행)", "sap process create my_flow --name \"내 프로세스\""],
+        mcp: ["sap_process_list", "sap_process_show", "sap_run", "sap_learn", "... (각 스텝 실행)", "sap_process_create"],
+        note: "data_flows를 보고 앞 스텝의 출력을 다음 스텝 입력에 넣어야 합니다."
       }
     };
 
