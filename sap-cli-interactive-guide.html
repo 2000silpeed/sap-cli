@@ -1361,6 +1361,21 @@ active_agent: "standard"</pre>
           ["필요 시 operator 재시도", "검토 결과를 바탕으로 보수적으로 재수행"]
         ],
         code: "SAP_CLI_AGENT=operator   # 실행\nSAP_CLI_AGENT=verifier   # 사후 검토"
+      },
+      {
+        key: "process",
+        title: "업무 프로세스 (트랜잭션 연결)",
+        blurb: "여러 트랜잭션을 연결한 end-to-end 업무 흐름을 조회하고 순서대로 실행하는 패턴입니다.",
+        why: "실무 SAP 작업은 단일 트랜잭션이 아니라 MM01→ME21N→MIGO→MIRO 같은 프로세스 단위입니다. 프로세스를 정의해두면 AI가 스텝 간 데이터 흐름을 이해하고 자율 실행할 수 있습니다.",
+        steps: [
+          ["sap process list", "등록된 업무 프로세스 목록을 확인합니다."],
+          ["sap process show procurement_basic", "프로세스의 스텝과 데이터 흐름(DataFlow)을 확인합니다."],
+          ["sap run MM01 → 스텝 실행", "첫 번째 스텝(자재 생성)을 실행하고 MATNR을 추출합니다."],
+          ["sap run ME21N → MATNR 입력", "앞 스텝의 출력(MATNR)을 다음 스텝의 입력으로 사용합니다."],
+          ["sap run MIGO → EBELN 입력", "구매오더 번호를 입고 화면에 전달합니다."],
+          ["sap run MIRO → MBLNR 입력", "입고 문서번호를 송장검증에 전달합니다."]
+        ],
+        code: "# 프로세스 조회\nsap process list\nsap process show procurement_basic\n\n# 스텝별 실행 (데이터 흐름 연결)\nsap run MM01          # → MATNR 생성\nsap run ME21N         # ← MATNR 입력, → EBELN 생성\nsap run MIGO          # ← EBELN 입력, → MBLNR 생성\nsap run MIRO          # ← MBLNR 입력\n\n# 새 프로세스 등록\nsap process create sales_basic --name \"판매 프로세스\" --steps VA01,VL01N,VF01"
       }
     ];
 
