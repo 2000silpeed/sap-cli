@@ -16,6 +16,7 @@ SOS(Study Ontology System)의 온톨로지 사상을 적용하여, 단순 스크
 4. [기본 사용법 (CLI)](#4-기본-사용법-cli)
 5. [매크로 녹화/재생](#5-매크로-녹화재생)
 6. [온톨로지 시스템](#6-온톨로지-시스템)
+6.5. [업무 프로세스 (BusinessProcess)](#65-업무-프로세스-businessprocess)
 7. [Claude Code MCP 연동](#7-claude-code-mcp-연동)
 8. [MCP 도구를 활용한 AI 자동화 시나리오](#8-mcp-도구를-활용한-ai-자동화-시나리오)
 9. [트러블슈팅](#9-트러블슈팅)
@@ -526,6 +527,70 @@ sap ontology MM03 --actions
 
 ---
 
+## 6.5 업무 프로세스 (BusinessProcess)
+
+온톨로지가 **트랜잭션 1개**의 화면/필드 구조를 저장한다면, 업무 프로세스는 **여러 트랜잭션을 연결한 end-to-end 워크플로우**를 구조화한다.
+
+실무에서 SAP 작업은 단일 트랜잭션이 아닌 일련의 흐름이다:
+- 자재 조달: MM01(자재 생성) → ME21N(구매오더) → MIGO(입고) → MIRO(송장검증)
+- 판매 처리: VA01(수주) → VL01N(출하) → VF01(대금청구)
+
+### 6.5.1 핵심 개념
+
+- **ProcessStep**: 프로세스의 각 스텝 = 트랜잭션 1회 실행. 고정 입력값과 예상 출력 필드를 정의한다.
+- **DataFlow**: 스텝 간 데이터 전달. 앞 스텝의 출력(예: 자재번호)이 뒤 스텝의 입력으로 자동 연결된다.
+
+### 6.5.2 프로세스 조회
+
+```powershell
+# 등록된 프로세스 목록
+sap process list
+
+# 프로세스 상세 조회
+sap process show procurement_basic
+```
+
+출력 예시:
+```json
+{
+  "id": "procurement_basic",
+  "name": "기본 자재 조달 프로세스",
+  "module": "MM",
+  "steps": [
+    {"step_number": 0, "tcode": "MM01", "description": "자재 마스터 생성",
+     "expected_output": ["MATNR"]},
+    {"step_number": 1, "tcode": "ME21N", "description": "구매오더 생성",
+     "expected_output": ["EBELN"]},
+    {"step_number": 2, "tcode": "MIGO", "description": "입고 처리"},
+    {"step_number": 3, "tcode": "MIRO", "description": "송장 검증"}
+  ],
+  "data_flows": [
+    {"source_step": 0, "source_field": "MATNR", "target_step": 1, "target_field": "MATNR",
+     "description": "생성된 자재번호를 구매오더에 입력"},
+    {"source_step": 1, "source_field": "EBELN", "target_step": 2, "target_field": "EBELN",
+     "description": "구매오더번호를 입고에 참조"}
+  ]
+}
+```
+
+### 6.5.3 MCP 도구
+
+MCP 서버에서도 동일한 기능을 사용할 수 있다:
+- `sap_process_list` — 프로세스 목록 조회
+- `sap_process_show` — 프로세스 상세 조회
+- `sap_process_create` — 새 프로세스 등록 (스텝과 데이터 흐름 정의)
+- `sap_process_delete` — 프로세스 삭제
+
+### 6.5.4 저장 위치
+
+```
+~/.sap_cli/knowledge/processes/
+├── procurement_basic.json     # 자재 조달 프로세스 (시드 데이터)
+└── ...                        # 사용자 정의 프로세스
+```
+
+---
+
 ## 7. Claude Code MCP 연동
 
 ### 7.1 설정
@@ -905,6 +970,7 @@ sap transcript-plan --command set --index 0
 │  │ ├── Meta-Edge (필드 종속성 규칙)    │     │
 │  │ ├── Graph (GraphRAG 탐색)          │     │
 │  │ ├── Analysis Space (6공간 분석)    │     │
+│  │ ├── BusinessProcess (업무 프로세스)  │     │
 │  │ └── Knowledge (시드 데이터)         │     │
 │  └────────────────────────────────────┘     │
 └──────────────┬──────────────────────────────┘
@@ -923,7 +989,7 @@ sap_cli/
 ├── sap_cli/
 │   ├── cli.py                  # CLI 엔트리포인트 (22개 커맨드)
 │   ├── com_wrapper.py          # SAP GUI COM 래퍼
-│   ├── mcp_server.py           # MCP 서버 (16개 도구)
+│   ├── mcp_server.py           # MCP 서버 (20개 도구)
 │   ├── service.py              # CLI/MCP 공통 서비스 레이어
 │   ├── learner.py              # 온톨로지 학습 엔진
 │   ├── auth/
@@ -945,6 +1011,7 @@ sap_cli/
 │       ├── store.py            # 온톨로지 저장소
 │       └── knowledge/          # 시드 데이터 (첫 실행 시 ~/.sap_cli/knowledge/로 복사됨)
 │           ├── transactions/   # MM03.json, VA01.json ...
+│           ├── processes/      # 업무 프로세스 (procurement_basic.json ...)
 │           ├── meta_edges/     # 메타엣지 규칙
 │           └── patterns/       # 공통 패턴 (메타온톨로지)
 └── tests/
