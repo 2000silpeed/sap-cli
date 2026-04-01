@@ -62,6 +62,10 @@ TOOL_PERMISSION_MAP: dict[str, Permission] = {
     "sap_modal": Permission.READ,
     "sap_macro_show": Permission.READ,
     "sap_macro_delete": Permission.ADMIN,
+    "sap_process_list": Permission.READ,
+    "sap_process_show": Permission.READ,
+    "sap_process_create": Permission.ADMIN,
+    "sap_process_delete": Permission.ADMIN,
 }
 
 

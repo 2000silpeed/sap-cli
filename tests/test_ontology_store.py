@@ -114,7 +114,7 @@ class TestBusinessProcess:
     @pytest.fixture
     def sample_process(self):
         return BusinessProcess(
-            id="procurement_basic",
+            id="test_procurement",
             name="기본 자재 조달",
             module="MM",
             description="자재 생성 → 구매오더 → 입고",
@@ -134,9 +134,9 @@ class TestBusinessProcess:
 
     def test_save_and_load(self, store, sample_process):
         store.save_process(sample_process)
-        loaded = store.load_process("procurement_basic")
+        loaded = store.load_process("test_procurement")
         assert loaded is not None
-        assert loaded.id == "procurement_basic"
+        assert loaded.id == "test_procurement"
         assert loaded.name == "기본 자재 조달"
         assert len(loaded.steps) == 2
         assert loaded.steps[0].tcode == "MM01"
@@ -144,7 +144,7 @@ class TestBusinessProcess:
 
     def test_data_flow(self, store, sample_process):
         store.save_process(sample_process)
-        loaded = store.load_process("procurement_basic")
+        loaded = store.load_process("test_procurement")
         assert len(loaded.data_flows) == 1
         df = loaded.data_flows[0]
         assert df.source_step == 0
@@ -154,12 +154,12 @@ class TestBusinessProcess:
 
     def test_list_processes(self, store, sample_process):
         store.save_process(sample_process)
-        assert "procurement_basic" in store.list_processes()
+        assert "test_procurement" in store.list_processes()
 
     def test_delete_process(self, store, sample_process):
         store.save_process(sample_process)
-        assert store.delete_process("procurement_basic") is True
-        assert store.load_process("procurement_basic") is None
+        assert store.delete_process("test_procurement") is True
+        assert store.load_process("test_procurement") is None
 
     def test_load_nonexistent(self, store):
         assert store.load_process("nonexistent") is None
@@ -170,6 +170,41 @@ class TestBusinessProcess:
     def test_path_traversal_rejected(self, store):
         with pytest.raises(ValueError):
             store.save_process(BusinessProcess(id="../../evil", name="bad"))
+
+    def test_validate_integrity_ok(self, sample_process):
+        assert sample_process.validate_integrity() == []
+
+    def test_validate_duplicate_step_numbers(self):
+        p = BusinessProcess(
+            id="dup", name="dup",
+            steps=[
+                ProcessStep(step_number=0, tcode="MM01"),
+                ProcessStep(step_number=0, tcode="ME21N"),
+            ],
+        )
+        errors = p.validate_integrity()
+        assert any("중복" in e for e in errors)
+
+    def test_validate_invalid_data_flow_ref(self):
+        p = BusinessProcess(
+            id="bad_ref", name="bad",
+            steps=[ProcessStep(step_number=0, tcode="MM01")],
+            data_flows=[DataFlow(source_step=0, source_field="X", target_step=9, target_field="Y")],
+        )
+        errors = p.validate_integrity()
+        assert any("target_step 9" in e for e in errors)
+
+    def test_validate_backward_data_flow(self):
+        p = BusinessProcess(
+            id="backward", name="backward",
+            steps=[
+                ProcessStep(step_number=0, tcode="MM01"),
+                ProcessStep(step_number=1, tcode="ME21N"),
+            ],
+            data_flows=[DataFlow(source_step=1, source_field="X", target_step=0, target_field="Y")],
+        )
+        errors = p.validate_integrity()
+        assert any("크거나 같습니다" in e for e in errors)
 
     def test_seed_process(self, tmp_path):
         """processes 시드 데이터도 복사되는지 확인."""

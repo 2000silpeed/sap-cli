@@ -652,6 +652,9 @@ def _dispatch_process_create(args: dict[str, Any]) -> dict[str, Any]:
         data_flows=data_flows,
         tags=args.get("tags", []),
     )
+    errors = process.validate_integrity()
+    if errors:
+        return {"error": True, "message": "프로세스 무결성 검증 실패", "errors": errors}
     store = _get_store()
     path = store.save_process(process)
     return {"saved": True, "process_id": process.id, "path": str(path)}

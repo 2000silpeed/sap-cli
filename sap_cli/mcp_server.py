@@ -288,6 +288,79 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "required": ["macro_id"],
         },
     },
+    {
+        "name": "sap_process_list",
+        "description": "등록된 업무 프로세스 목록을 조회합니다. 업무 프로세스는 여러 트랜잭션을 연결한 end-to-end 워크플로우입니다.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "sap_process_show",
+        "description": "업무 프로세스의 상세 정의를 조회합니다 (스텝, 데이터 흐름 포함).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "process_id": {"type": "string", "description": "프로세스 ID"},
+            },
+            "required": ["process_id"],
+        },
+    },
+    {
+        "name": "sap_process_create",
+        "description": "새 업무 프로세스를 등록합니다. 트랜잭션 간 순서와 데이터 흐름을 정의합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "description": "프로세스 ID (영문, _, - 만 허용)"},
+                "name": {"type": "string", "description": "프로세스 이름"},
+                "module": {"type": "string", "description": "SAP 모듈 (예: MM, SD)"},
+                "description": {"type": "string"},
+                "steps": {
+                    "type": "array",
+                    "description": "프로세스 스텝 목록",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "step_number": {"type": "integer"},
+                            "tcode": {"type": "string"},
+                            "description": {"type": "string"},
+                            "input_fields": {"type": "object"},
+                            "expected_output": {"type": "array", "items": {"type": "string"}},
+                            "optional": {"type": "boolean", "default": False},
+                        },
+                        "required": ["step_number", "tcode"],
+                    },
+                },
+                "data_flows": {
+                    "type": "array",
+                    "description": "스텝 간 데이터 흐름",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "source_step": {"type": "integer"},
+                            "source_field": {"type": "string"},
+                            "target_step": {"type": "integer"},
+                            "target_field": {"type": "string"},
+                            "description": {"type": "string"},
+                        },
+                        "required": ["source_step", "source_field", "target_step", "target_field"],
+                    },
+                },
+                "tags": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["id", "name", "steps"],
+        },
+    },
+    {
+        "name": "sap_process_delete",
+        "description": "등록된 업무 프로세스를 삭제합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "process_id": {"type": "string", "description": "프로세스 ID"},
+            },
+            "required": ["process_id"],
+        },
+    },
 ]
 
 TOOLS: list = []

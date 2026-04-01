@@ -466,6 +466,21 @@ class BusinessProcess(BaseModel):
     data_flows: list[DataFlow] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
 
+    def validate_integrity(self) -> list[str]:
+        """프로세스 무결성 검증. 문제가 있으면 에러 메시지 리스트 반환."""
+        errors: list[str] = []
+        step_numbers = [s.step_number for s in self.steps]
+        if len(step_numbers) != len(set(step_numbers)):
+            errors.append("중복된 step_number가 존재합니다")
+        for df in self.data_flows:
+            if df.source_step not in step_numbers:
+                errors.append(f"data_flow의 source_step {df.source_step}이 steps에 없습니다")
+            if df.target_step not in step_numbers:
+                errors.append(f"data_flow의 target_step {df.target_step}이 steps에 없습니다")
+            if df.source_step >= df.target_step:
+                errors.append(f"data_flow의 source_step({df.source_step})이 target_step({df.target_step})보다 크거나 같습니다")
+        return errors
+
 
 # TransactionOntology에서 참조하는 forward ref 해결
 SapTransaction.model_rebuild()

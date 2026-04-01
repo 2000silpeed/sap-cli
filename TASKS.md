@@ -169,8 +169,9 @@ AI가 end-to-end 업무를 자율 실행할 수 있다.
 | 1 | 스키마 정의 | `BusinessProcess`, `ProcessStep`, `DataFlow` 모델 (schema.py 확장) | 완료 |
 | 2 | 저장소 확장 | OntologyStore에 processes/ 디렉토리 + CRUD 메서드 추가 | 완료 |
 | 3 | 시드 데이터 | 자재 조달 프로세스 예시 JSON 1건 작성 | 완료 |
-| 4 | CLI/MCP 노출 | process list/show/create/delete 명령 추가 (dispatcher) | 완료 |
-| 5 | 테스트 | process CRUD + 데이터 흐름 + 시드 + 보안 검증 (8개 테스트) | 완료 |
+| 4 | CLI/MCP 노출 | process list/show/create/delete 명령 추가 (dispatcher + MCP) | 완료 |
+| 5 | 테스트 | process CRUD + 데이터 흐름 + 시드 + 보안 + 무결성 검증 (12개 테스트) | 완료 |
+| 6 | Codex 리뷰 수정 | TOOL_PERMISSION_MAP 등록, MCP 표면 노출, 무결성 검증, 테스트 개선 | 완료 |
 
 ### 1. 스키마 설계 (`sap_cli/ontology/schema.py` 확장)
 
