@@ -9,7 +9,22 @@ agents:
       - resource: "tx:*"
         relation: viewer
 
+  verifier:
+    description: "사후 확인과 검증 전용 에이전트"
+    relations:
+      - resource: "tx:*"
+        relation: viewer
+
   standard:
+    description: "일반 운영 에이전트 (조회+실행+입력)"
+    relations:
+      - resource: "tx:*"
+        relation: operator
+    requires_approval:
+      - permission: execute
+        transactions: ["SM30", "SE38", "SU01", "SE16"]
+
+  operator:
     description: "일반 운영 에이전트 (조회+실행+입력)"
     relations:
       - resource: "tx:*"
@@ -64,6 +79,12 @@ audit:
   enabled: true
   log_dir: "~/.sap_cli/audit"
   log_level: "all"
+
+transcript:
+  enabled: true
+  log_dir: "~/.sap_cli/transcripts"
+  include_reads: true
+  include_screen_summary: false
 
 # 활성 에이전트 (MCP 서버 시작 시 적용)
 active_agent: "standard"

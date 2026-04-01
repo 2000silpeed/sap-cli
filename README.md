@@ -248,6 +248,36 @@ sap status
 sap vkey 3
 ```
 
+### 4.11 Transcript 조회와 재실행 검토
+
+AI에게 SAP 도구를 주면 "무엇을 실행했는가"뿐 아니라 "왜 그렇게 실행했고 다시 해도 되는가"가 중요합니다.
+
+`sap_cli`는 모든 호출을 `~/.sap_cli/transcripts/`에 JSONL로 적재하고, 그 기록을 다시 읽어 review/replay planner로 사용할 수 있습니다.
+
+```powershell
+# 최근 10개 transcript 요약 조회
+sap transcript --limit 10
+
+# 승인 필요했던 항목만 보기
+sap transcript --outcome approval_required
+
+# MM03 관련 실행만 보기
+sap transcript --command run --text MM03
+
+# 가장 최근 set 단계에 대한 재실행 검토 계획 생성
+sap transcript-plan --command set --index 0
+```
+
+`sap transcript-plan`은 실제 재실행을 하지 않습니다. 대신 아래 내용을 요약합니다.
+
+- 위험도 (`low` / `medium` / `high`)
+- 원본 entry의 before/after transaction과 screen
+- 해당 transcript에서 추론한 트랜잭션의 ontology 존재 여부와 조회 힌트
+- 사람 승인 필요 여부
+- 재실행 전에 확인할 조건
+- 권장 확인 순서 (`sap session`, `sap ontology MM03`, `sap status`, `sap modal`, `sap screen --fields-only`)
+- 원본 단계를 다시 실행하려면 어떤 CLI 명령이 필요한지
+
 ---
 
 ## 5. 매크로 녹화/재생
@@ -420,6 +450,14 @@ sap macro-play abc123 --vars "{\"kunnr\": \"2001\", \"ketdat\": \"15.06.2026\", 
 
 SAP 트랜잭션의 화면/필드/액션 구조를 자동 학습하여 도메인 지식으로 축적.
 
+중요한 점은, 온톨로지와 transcript는 경쟁 관계가 아니라 서로 다른 층이라는 것입니다.
+
+- 온톨로지: "이 트랜잭션은 보통 어떤 화면/필드/액션으로 구성되는가"
+- transcript: "이번 실행에서는 실제로 어떤 화면에서 무엇을 했고 결과가 어땠는가"
+- planner: "그 기록을 다시 실행하려면 무엇을 먼저 확인해야 하는가"
+
+즉 온톨로지는 구조적 기억이고, transcript는 실행 기억입니다. `sap_cli`는 이 둘을 함께 유지합니다.
+
 ### 6.1 현재 화면 학습
 
 ```powershell
@@ -503,12 +541,12 @@ Windows의 Claude Code `settings.json`에 추가:
 }
 ```
 
-### 7.2 사용 가능한 MCP 도구 (16개)
+### 7.2 사용 가능한 MCP 도구 (22개)
 
 > `~/.sap_cli/policy.yaml` 파일이 존재하면 ReBAC 권한관리가 활성화되어 에이전트별로 허용된 도구만 호출할 수 있습니다. 정책 파일이 없으면 모든 도구가 허용됩니다 (하위 호환).
 
 
-#### 기본 SAP 조작 (8개)
+#### 기본 SAP 조작 (9개)
 
 | 도구 | 설명 |
 |------|------|
@@ -516,18 +554,22 @@ Windows의 Claude Code `settings.json`에 추가:
 | `sap_session` | 세션 정보 조회 |
 | `sap_screen` | 현재 화면 UI 구조 (JSON) |
 | `sap_run` | 트랜잭션 실행 |
+| `sap_command` | SAP 커맨드 필드에 명령 실행 |
 | `sap_set_field` | 필드 값 설정 |
 | `sap_get_field` | 필드 값 읽기 |
 | `sap_press` | 버튼 클릭 |
 | `sap_send_vkey` | VKey 전송 |
 
-#### 상태/데이터 (3개)
+#### 상태/지식/운영 (6개)
 
 | 도구 | 설명 |
 |------|------|
 | `sap_get_status` | 상태바 메시지 |
+| `sap_modal` | 모달 팝업 존재 여부와 텍스트 |
 | `sap_table_read` | 테이블 데이터 읽기 |
 | `sap_ontology_query` | 온톨로지 조회 |
+| `sap_transcript_query` | 최근 transcript 조회 |
+| `sap_transcript_plan` | transcript 재실행 검토 계획 생성 |
 
 #### 학습 (1개)
 
@@ -535,7 +577,7 @@ Windows의 Claude Code `settings.json`에 추가:
 |------|------|
 | `sap_learn` | 현재 화면을 온톨로지로 학습 |
 
-#### 매크로 (4개)
+#### 매크로 (6개)
 
 | 도구 | 설명 |
 |------|------|
@@ -543,6 +585,8 @@ Windows의 Claude Code `settings.json`에 추가:
 | `sap_macro_record_step` | 녹화 중 단계 기록 + SAP 실행 |
 | `sap_macro_play` | 매크로 재생 |
 | `sap_macro_list` | 매크로 목록 조회 |
+| `sap_macro_show` | 매크로 상세 조회 |
+| `sap_macro_delete` | 매크로 삭제 |
 
 ---
 
@@ -557,24 +601,32 @@ Windows의 Claude Code `settings.json`에 추가:
 copy sap_cli\auth\default_policy.yaml %USERPROFILE%\.sap_cli\policy.yaml
 ```
 
-### 에이전트 프리셋 (4종)
+### 에이전트 프리셋 (6종)
 
 | 프리셋 | 설명 |
 |--------|------|
 | `readonly` | 조회성 도구만 허용. 데이터 변경 불가 |
+| `verifier` | 조회 + 사후 검토 전용. transcript 조회/계획 포함 |
 | `standard` | 일반 업무용. 매크로 재생 허용, 녹화는 불가 |
+| `operator` | 일반 운영용. 표준 실행/입력 작업 허용 |
 | `mm_operator` | MM(자재관리) 도메인 특화. MM 트랜잭션 허용 |
 | `sd_operator` | SD(영업/배포) 도메인 특화. SD 트랜잭션 허용 |
 
 SM30, SE38, SU01 등 위험 트랜잭션은 모든 프리셋에서 차단됩니다.
 
-도구 호출 이력은 `~/.sap_cli/audit/` 경로에 감사 로그로 기록됩니다.
+정책 파일이 있으면 MCP 서버는 권한 검사만 하는 것이 아니라, 프로필에 맞지 않는 도구는 `list_tools` 단계에서 아예 숨깁니다.
+
+- `readonly` / `verifier`: `sap_run`, `sap_set_field`, `sap_send_vkey` 같은 mutating surface가 보이지 않음
+- `operator`: 실행/입력 도구는 보이지만 `sap_connect`, `sap_learn`, `sap_macro_delete` 같은 admin surface는 숨김
+- `mm_operator`, `sd_operator`: 실행 surface는 보이지만 실제 호출 시 트랜잭션 범위로 다시 제한
+
+도구 호출 이력은 `~/.sap_cli/audit/` 경로에 감사 로그로, 실행 전후 상태는 `~/.sap_cli/transcripts/` 경로에 transcript로 기록됩니다.
 
 ### 정책 파일 예시
 
 ```yaml
 version: 1
-active_agent: standard   # readonly | standard | mm_operator | sd_operator
+active_agent: verifier   # readonly | verifier | standard | operator | mm_operator | sd_operator
 
 agents:
   readonly:
@@ -596,9 +648,40 @@ dangerous_transactions:
 audit:
   enabled: true
   log_dir: "~/.sap_cli/audit"
+
+transcript:
+  enabled: true
+  log_dir: "~/.sap_cli/transcripts"
+  include_reads: true
+  include_screen_summary: false
 ```
 
 `active_agent` 값을 변경하면 다음 MCP 서버 재시작 시 적용됩니다. 권한 모델 상세는 `DESIGN_REBAC.md`를 참조하세요.
+
+### 7.6 Transcript와 Verifier 루프
+
+AI 운영에서 중요한 건 "실행"보다 "실행 후 검토"입니다.
+
+`sap_cli`는 mutating 작업 뒤 `post_action`에 아래 문맥을 자동으로 붙입니다.
+
+- `session`
+- `status`
+- `modal`
+- 선택적 `screen_summary`
+
+또한 같은 내용을 transcript로 적재해서, 다른 에이전트가 바로 읽을 수 있게 합니다.
+
+예시:
+
+```text
+operator:
+  sap_run -> sap_set_field -> sap_send_vkey
+
+verifier:
+  sap_transcript_query(outcome="success")
+  sap_transcript_plan(command="set", index=0)
+  sap_screen / sap_get_status 로 재확인
+```
 
 ---
 
@@ -692,6 +775,23 @@ Claude:
     sap_screen()  → 결과 수집
 ```
 
+### 시나리오 6: Operator / Verifier 협업
+
+```
+사용자: "방금 실행한 MM03 입력 단계를 다시 해도 안전한지 검토해줘"
+
+Verifier Agent:
+  sap_transcript_query(command="set", limit=5)
+  sap_transcript_plan(command="set", index=0)
+
+응답:
+  - 이 단계는 MM03 screen 4000에서 기록됨
+  - permission=write 이므로 위험도 high
+  - 재실행 전 sap session, sap screen --fields-only로 같은 화면인지 확인 필요
+  - 실제 후보 명령: sap set "wnd[0]/usr/ctxtRMMG1-MATNR" "100-100"
+  - 실행 직후 sap status, sap modal 확인 권장
+```
+
 ---
 
 ## 9. 트러블슈팅
@@ -720,6 +820,18 @@ Claude:
 - 에러 발생 스텝의 `error` 메시지 확인
 - SAP 시스템 상태가 녹화 시와 다를 수 있음 (데이터 의존적 화면)
 - `expected_screen`이 설정된 경우 화면번호 불일치로 실패할 수 있음
+
+### "AI가 왜 이런 행동을 했는지 모르겠습니다"
+
+```powershell
+sap transcript --limit 20
+sap transcript --outcome approval_required
+sap transcript-plan --command set --index 0
+```
+
+- `sap transcript`로 최근 before/after 상태와 결과를 확인
+- `sap transcript-plan`으로 같은 단계를 다시 실행하려면 어떤 확인이 필요한지 검토
+- verifier profile을 쓰면 mutating tool 없이도 transcript만 읽어 사후 분석 가능
 
 ### "GetObjectTree 지원 안 됨"
 

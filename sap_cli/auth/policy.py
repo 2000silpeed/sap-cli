@@ -47,6 +47,8 @@ TOOL_PERMISSION_MAP: dict[str, Permission] = {
     "sap_get_status": Permission.READ,
     "sap_table_read": Permission.READ,
     "sap_ontology_query": Permission.READ,
+    "sap_transcript_query": Permission.READ,
+    "sap_transcript_plan": Permission.READ,
     "sap_run": Permission.EXECUTE,
     "sap_press": Permission.EXECUTE,
     "sap_send_vkey": Permission.EXECUTE,
@@ -90,12 +92,20 @@ class AuditConfig(BaseModel):
     log_level: str = "all"
 
 
+class TranscriptConfig(BaseModel):
+    enabled: bool = True
+    log_dir: str = "~/.sap_cli/transcripts"
+    include_reads: bool = True
+    include_screen_summary: bool = False
+
+
 class Policy(BaseModel):
     version: int = 1
     agents: dict[str, AgentPolicy] = Field(default_factory=dict)
     relation_permissions: dict[str, list[str]] = Field(default_factory=dict)
     dangerous_transactions: list[DangerousTransaction] = Field(default_factory=list)
     audit: AuditConfig = Field(default_factory=AuditConfig)
+    transcript: TranscriptConfig = Field(default_factory=TranscriptConfig)
     active_agent: str = ""
 
     def get_agent(self, agent_name: str) -> AgentPolicy | None:

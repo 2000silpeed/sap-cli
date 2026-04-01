@@ -8,14 +8,17 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from .auth.audit import AuditLogger
 from .auth.checker import PermissionChecker
-from .auth.policy import TOOL_PERMISSION_MAP, Permission, load_policy
+from .auth.policy import TOOL_PERMISSION_MAP, Permission, Policy, load_policy
+from .auth.transcript import TranscriptLogger
 from .command_parser import extract_tcode_from_command
-from .com_wrapper import SapGuiError, SapGuiWrapper
+from .com_wrapper import SapGuiWrapper
 from .macro.player import MacroPlayer
+from .ontology.store import OntologyStore
 from .service import (
     execute_sap_action as _execute_sap_action,
     get_learner as _get_learner,
@@ -25,6 +28,8 @@ from .service import (
     get_store as _get_store,
     map_action as _map_action,
 )
+from .transcript_planner import TranscriptPlanner
+from .transcript_store import TranscriptStore
 
 @dataclass(slots=True)
 class CommandDef:
@@ -47,6 +52,8 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "command":        CommandDef("sap_command",           Permission.EXECUTE),
     "modal":          CommandDef("sap_modal",             Permission.READ),
     "ontology_query": CommandDef("sap_ontology_query",    Permission.READ),
+    "transcript_query": CommandDef("sap_transcript_query", Permission.READ),
+    "transcript_plan": CommandDef("sap_transcript_plan", Permission.READ),
     "learn":          CommandDef("sap_learn",             Permission.ADMIN),
     "record_step":    CommandDef("sap_macro_record_step", Permission.WRITE),
     "macro_control":  CommandDef("sap_macro_control",     Permission.ADMIN),
@@ -67,6 +74,12 @@ POST_ACTION_COMMANDS = {
     "vkey",
     "command",
     "record_step",
+    "macro_play",
+}
+
+TRANSCRIPT_OMIT_COMMANDS = {
+    "transcript_query",
+    "transcript_plan",
 }
 
 
@@ -91,12 +104,24 @@ class ApprovalRequiredError(Exception):
 
 
 @dataclass(slots=True)
+class AuthorizationDecision:
+    agent: str
+    permission: str
+    resource: str
+    allowed: bool
+    reason: str = ""
+    approval_required: bool = False
+    approval_reason: str = ""
+
+
+@dataclass(slots=True)
 class DispatchContext:
     source: str = "cli"
     tool_name: str | None = None
     agent_name: str | None = None
     enforce_auth: bool = True
     include_post_action_context: bool = True
+    include_screen_summary: bool = False
 
 
 def dispatch_command(
@@ -112,10 +137,99 @@ def dispatch_command(
 
     cmd_def = COMMAND_REGISTRY[command]
     tool_name = ctx.tool_name or cmd_def.tool_name
+    authz, policy = _evaluate_authorization(tool_name, args, ctx)
+    _audit_authorization(policy, authz, tool_name, args)
 
-    if ctx.enforce_auth and tool_name:
-        _authorize(tool_name, args, ctx)
+    transcript = TranscriptLogger(policy.transcript if policy else None)
+    should_log_transcript = transcript.should_log(authz.permission) and command not in TRANSCRIPT_OMIT_COMMANDS
+    transcript_with_screen_summary = transcript.include_screen_summary or ctx.include_screen_summary
+    before_state = None
+    if should_log_transcript:
+        before_state = _capture_transcript_state(
+            command,
+            include_screen_summary=transcript_with_screen_summary,
+        )
 
+    if not authz.allowed:
+        _log_transcript(
+            transcript,
+            should_log_transcript=should_log_transcript,
+            ctx=ctx,
+            command=command,
+            tool_name=tool_name,
+            authz=authz,
+            arguments=args,
+            outcome="denied",
+            before_state=before_state,
+        )
+        raise PermissionDeniedError(f"권한 없음: {authz.reason}")
+
+    if authz.approval_required:
+        _log_transcript(
+            transcript,
+            should_log_transcript=should_log_transcript,
+            ctx=ctx,
+            command=command,
+            tool_name=tool_name,
+            authz=authz,
+            arguments=args,
+            outcome="approval_required",
+            before_state=before_state,
+        )
+        raise ApprovalRequiredError(tool_name, authz.approval_reason)
+
+    try:
+        result = _execute_command(command, args, ctx, policy)
+    except Exception as exc:
+        after_state = None
+        if should_log_transcript:
+            after_state = _capture_transcript_state(
+                command,
+                include_screen_summary=transcript_with_screen_summary,
+            )
+        _log_transcript(
+            transcript,
+            should_log_transcript=should_log_transcript,
+            ctx=ctx,
+            command=command,
+            tool_name=tool_name,
+            authz=authz,
+            arguments=args,
+            outcome="error",
+            before_state=before_state,
+            after_state=after_state,
+            error=str(exc),
+        )
+        raise
+
+    after_state = _extract_transcript_state_from_result(result)
+    if should_log_transcript and after_state is None:
+        after_state = _capture_transcript_state(
+            command,
+            include_screen_summary=transcript_with_screen_summary,
+        )
+    _log_transcript(
+        transcript,
+        should_log_transcript=should_log_transcript,
+        ctx=ctx,
+        command=command,
+        tool_name=tool_name,
+        authz=authz,
+        arguments=args,
+        outcome="success",
+        before_state=before_state,
+        after_state=after_state,
+        result=result,
+    )
+    return result
+
+
+def _execute_command(
+    command: str,
+    args: dict[str, Any],
+    ctx: DispatchContext,
+    policy: Policy | None = None,
+) -> dict[str, Any]:
     if command == "connect":
         return _dispatch_connect(args, ctx)
     if command == "session":
@@ -186,9 +300,12 @@ def dispatch_command(
         return _dispatch_macro_delete(args)
     if command == "ontology_query":
         return _dispatch_ontology_query(args)
+    if command == "transcript_query":
+        return _dispatch_transcript_query(args, policy)
+    if command == "transcript_plan":
+        return _dispatch_transcript_plan(args, policy)
     if command == "learn":
         return _dispatch_learn()
-
     raise ValueError(f"미구현 명령: {command}")
 
 
@@ -424,6 +541,47 @@ def _dispatch_ontology_query(args: dict[str, Any]) -> dict[str, Any]:
     return {"error": True, "message": f"'{tcode}' 온톨로지가 없습니다."}
 
 
+def _dispatch_transcript_query(
+    args: dict[str, Any],
+    policy: Policy | None,
+) -> dict[str, Any]:
+    store = TranscriptStore(policy.transcript if policy else None)
+    return store.query(
+        limit=int(args.get("limit", 20)),
+        outcome=args.get("outcome"),
+        command=args.get("command"),
+        tool=args.get("tool"),
+        agent=args.get("agent"),
+        text=args.get("text"),
+        full=bool(args.get("full", False)),
+    )
+
+
+def _dispatch_transcript_plan(
+    args: dict[str, Any],
+    policy: Policy | None,
+) -> dict[str, Any]:
+    store = TranscriptStore(policy.transcript if policy else None)
+    planner = TranscriptPlanner(store, ontology_store=_make_ontology_store(policy))
+    return planner.plan(
+        limit=int(args.get("limit", 20)),
+        index=int(args.get("index", 0)),
+        outcome=args.get("outcome"),
+        command=args.get("command"),
+        tool=args.get("tool"),
+        agent=args.get("agent"),
+        text=args.get("text"),
+    )
+
+
+def _make_ontology_store(policy: Policy | None) -> OntologyStore:
+    if policy is None:
+        return OntologyStore()
+    transcript_dir = Path(policy.transcript.log_dir).expanduser()
+    knowledge_dir = transcript_dir.parent / "knowledge"
+    return OntologyStore(knowledge_dir=knowledge_dir)
+
+
 def _dispatch_learn() -> dict[str, Any]:
     screen = _get_learner().learn_current_screen()
     return {
@@ -435,52 +593,108 @@ def _dispatch_learn() -> dict[str, Any]:
     }
 
 
-def _authorize(tool_name: str, args: dict[str, Any], ctx: DispatchContext) -> None:
+def _evaluate_authorization(
+    tool_name: str,
+    args: dict[str, Any],
+    ctx: DispatchContext,
+) -> tuple[AuthorizationDecision, Policy | None]:
     policy = load_policy()
     checker = PermissionChecker(policy)
     configured_agent = _resolve_agent_name(policy, ctx.agent_name)
     if configured_agent:
         checker.set_agent(configured_agent)
-    auditor = AuditLogger(policy.audit if policy else None)
-
     check = checker.check_tool(tool_name, args)
     permission = TOOL_PERMISSION_MAP.get(tool_name, "")
     resource = checker.resolve_resource(tool_name, args)
     effective_agent = checker.agent_name or configured_agent or "anonymous"
 
-    if not check:
-        auditor.log(
-            agent=effective_agent,
-            tool_name=tool_name,
-            arguments=args,
-            allowed=False,
-            reason=check.reason,
-            permission=permission.value if permission else "",
-            resource=resource,
+    if not ctx.enforce_auth:
+        return (
+            AuthorizationDecision(
+                agent=effective_agent,
+                permission=permission.value if permission else "",
+                resource=resource,
+                allowed=True,
+                reason="auth_disabled",
+            ),
+            policy,
         )
-        raise PermissionDeniedError(f"권한 없음: {check.reason}")
+
+    if not check:
+        return (
+            AuthorizationDecision(
+                agent=effective_agent,
+                permission=permission.value if permission else "",
+                resource=resource,
+                allowed=False,
+                reason=check.reason,
+            ),
+            policy,
+        )
 
     approval_reason = checker.requires_approval(tool_name, args)
     if approval_reason:
-        auditor.log(
+        return (
+            AuthorizationDecision(
+                agent=effective_agent,
+                permission=permission.value if permission else "",
+                resource=resource,
+                allowed=True,
+                reason=check.reason,
+                approval_required=True,
+                approval_reason=approval_reason,
+            ),
+            policy,
+        )
+    return (
+        AuthorizationDecision(
             agent=effective_agent,
-            tool_name=tool_name,
-            arguments=args,
-            allowed=False,
-            reason=f"approval_required: {approval_reason}",
             permission=permission.value if permission else "",
             resource=resource,
-        )
-        raise ApprovalRequiredError(tool_name, approval_reason)
+            allowed=True,
+            reason=check.reason,
+        ),
+        policy,
+    )
 
+
+def _audit_authorization(
+    policy: Policy | None,
+    authz: AuthorizationDecision,
+    tool_name: str,
+    arguments: dict[str, Any],
+) -> None:
+    auditor = AuditLogger(policy.audit if policy else None)
+    if not authz.allowed:
+        auditor.log(
+            agent=authz.agent,
+            tool_name=tool_name,
+            arguments=arguments,
+            allowed=False,
+            reason=authz.reason,
+            permission=authz.permission,
+            resource=authz.resource,
+        )
+        return
+    if authz.approval_required:
+        auditor.log(
+            agent=authz.agent,
+            tool_name=tool_name,
+            arguments=arguments,
+            allowed=False,
+            reason=f"approval_required: {authz.approval_reason}",
+            permission=authz.permission,
+            resource=authz.resource,
+        )
+        return
     auditor.log(
-        agent=effective_agent,
+        agent=authz.agent,
         tool_name=tool_name,
-        arguments=args,
+        arguments=arguments,
         allowed=True,
-        reason=check.reason,
-        permission=permission.value if permission else "",
-        resource=resource,
+        reason=authz.reason,
+        permission=authz.permission,
+        resource=authz.resource,
     )
 
 
@@ -494,6 +708,96 @@ def _resolve_agent_name(policy: Any, explicit_agent_name: str | None) -> str | N
     return None
 
 
+def _log_transcript(
+    transcript: TranscriptLogger,
+    *,
+    should_log_transcript: bool,
+    ctx: DispatchContext,
+    command: str,
+    tool_name: str,
+    authz: AuthorizationDecision,
+    arguments: dict[str, Any],
+    outcome: str,
+    before_state: dict[str, Any] | None = None,
+    after_state: dict[str, Any] | None = None,
+    result: dict[str, Any] | None = None,
+    error: str = "",
+) -> None:
+    if not should_log_transcript:
+        return
+    reason = authz.approval_reason if authz.approval_required else authz.reason
+    transcript.log(
+        source=ctx.source,
+        command=command,
+        tool_name=tool_name,
+        agent=authz.agent,
+        arguments=arguments,
+        permission=authz.permission,
+        resource=authz.resource,
+        allowed=authz.allowed,
+        approval_required=authz.approval_required,
+        reason=reason,
+        outcome=outcome,
+        before=before_state,
+        after=after_state,
+        result=result,
+        error=error,
+    )
+
+
+def _capture_transcript_state(
+    command: str,
+    *,
+    include_screen_summary: bool,
+) -> dict[str, Any] | None:
+    if command not in COMMAND_REGISTRY:
+        return None
+    if command in {"ontology_query", "macro_control", "macro_list", "macro_show", "macro_delete", "transcript_query", "transcript_plan"}:
+        return None
+
+    sap = _get_existing_sap()
+    if sap is None:
+        return None
+
+    try:
+        state = {
+            "session": sap.get_session_info().model_dump(mode="json"),
+            "status": sap.get_status().model_dump(mode="json"),
+            "modal": _collect_modal(sap),
+        }
+        if include_screen_summary:
+            state["screen_summary"] = _collect_screen_summary(sap)
+        return state
+    except Exception as exc:  # pragma: no cover - defensive path
+        return {"capture_error": str(exc)}
+
+
+def _extract_transcript_state_from_result(result: dict[str, Any]) -> dict[str, Any] | None:
+    post_action = result.get("post_action")
+    if not isinstance(post_action, dict):
+        return None
+
+    state: dict[str, Any] = {}
+    for key in ("session", "status", "modal", "screen_summary"):
+        value = post_action.get(key)
+        if value is not None:
+            state[key] = value
+    return state or None
+
+
+def _get_existing_sap() -> SapGuiWrapper | None:
+    import sap_cli.service as _svc
+
+    sap = getattr(_svc, "_sap", None)
+    if sap is None:
+        return None
+    try:
+        is_connected = getattr(sap, "is_connected")
+    except Exception:  # pragma: no cover - defensive path
+        return sap
+    return sap if is_connected else None
+
+
 def _with_post_action(
     payload: dict[str, Any],
     sap: SapGuiWrapper,
@@ -501,7 +805,10 @@ def _with_post_action(
     ctx: DispatchContext,
 ) -> dict[str, Any]:
     if ctx.include_post_action_context and command in POST_ACTION_COMMANDS:
-        payload["post_action"] = _collect_post_action(sap)
+        payload["post_action"] = _collect_post_action(
+            sap,
+            include_screen_summary=ctx.include_screen_summary,
+        )
 
     post_action = payload.get("post_action")
     if post_action:
@@ -513,14 +820,75 @@ def _with_post_action(
     return payload
 
 
-def _collect_post_action(sap: SapGuiWrapper) -> dict[str, Any]:
-    session = sap.get_session_info().model_dump(mode="json")
-    status = sap.get_status().model_dump(mode="json")
-    return {
-        "session": session,
-        "status": status,
+def _collect_post_action(
+    sap: SapGuiWrapper,
+    *,
+    include_screen_summary: bool = False,
+) -> dict[str, Any]:
+    payload = {
+        "session": sap.get_session_info().model_dump(mode="json"),
+        "status": sap.get_status().model_dump(mode="json"),
         "modal": _collect_modal(sap),
     }
+    if include_screen_summary:
+        try:
+            payload["screen_summary"] = _collect_screen_summary(sap)
+        except Exception as exc:  # pragma: no cover - defensive path
+            payload["screen_summary_error"] = str(exc)
+    return payload
+
+
+def _collect_screen_summary(sap: SapGuiWrapper) -> dict[str, Any]:
+    screen = sap.get_screen()
+    changeable_fields = screen.get_changeable_fields()
+    required_fields = [field for field in changeable_fields if getattr(field, "required", False)]
+    available_actions = screen.get_available_actions()
+    return {
+        "transaction": screen.transaction,
+        "screen_number": screen.screen_number,
+        "program": screen.program,
+        "title": screen.title,
+        "field_count": len(screen.fields),
+        "changeable_field_count": len(changeable_fields),
+        "required_field_count": len(required_fields),
+        "button_count": len(screen.buttons),
+        "tab_count": len(screen.tabs),
+        "table_count": len(screen.tables),
+        "changeable_fields": [_summarize_field(field) for field in changeable_fields[:8]],
+        "required_fields": [_summarize_field(field) for field in required_fields[:5]],
+        "available_actions": [_summarize_action(action) for action in available_actions[:10]],
+    }
+
+
+def _summarize_field(field: Any) -> dict[str, Any]:
+    payload = {"id": str(getattr(field, "id", ""))}
+    if name := getattr(field, "name", ""):
+        payload["name"] = name
+    if label := getattr(field, "label", ""):
+        payload["label"] = label
+    if field_type := _enum_value(getattr(field, "type", None)):
+        payload["type"] = field_type
+    if value := getattr(field, "value", ""):
+        payload["value"] = value
+    if getattr(field, "required", False):
+        payload["required"] = True
+    return payload
+
+
+def _summarize_action(action: Any) -> dict[str, Any]:
+    payload = {
+        "type": _enum_value(getattr(action, "action_type", "")),
+        "target_id": str(getattr(action, "target_id", "")),
+    }
+    if label := getattr(action, "target_label", ""):
+        payload["label"] = label
+    if description := getattr(action, "description", ""):
+        payload["description"] = description
+    return payload
+
+
+def _enum_value(value: Any) -> Any:
+    return getattr(value, "value", value)
 
 
 def _collect_modal(sap: SapGuiWrapper) -> dict[str, Any]:

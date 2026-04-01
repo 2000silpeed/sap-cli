@@ -35,6 +35,8 @@ HELP_TEXT = """\
   table <ID>              테이블 읽기
   command <CMD>           커맨드 실행 (/nMM03 등)
   modal                   모달 팝업 확인
+  transcript [options]    최근 transcript 조회
+  transcript-plan [opts]  transcript 재실행 검토 계획 생성
   help                    이 도움말
   exit / quit             셸 종료
 """
@@ -126,6 +128,90 @@ def _parse_line(line: str) -> tuple[str, dict] | None:
 
     if cmd in ("status", "session", "modal"):
         return (cmd, {})
+
+    if cmd == "transcript":
+        args: dict = {"limit": 20}
+        i = 0
+        while i < len(rest):
+            token = rest[i]
+            if token in ("-n", "--limit") and i + 1 < len(rest):
+                try:
+                    args["limit"] = int(rest[i + 1])
+                except ValueError:
+                    print(json.dumps({"error": True, "message": "limit는 숫자여야 합니다."}))
+                    return None
+                i += 2
+                continue
+            if token in ("-o", "--outcome") and i + 1 < len(rest):
+                args["outcome"] = rest[i + 1]
+                i += 2
+                continue
+            if token in ("-c", "--command") and i + 1 < len(rest):
+                args["command"] = rest[i + 1]
+                i += 2
+                continue
+            if token in ("-t", "--tool") and i + 1 < len(rest):
+                args["tool"] = rest[i + 1]
+                i += 2
+                continue
+            if token in ("-a", "--agent") and i + 1 < len(rest):
+                args["agent"] = rest[i + 1]
+                i += 2
+                continue
+            if token == "--text" and i + 1 < len(rest):
+                args["text"] = rest[i + 1]
+                i += 2
+                continue
+            if token == "--full":
+                args["full"] = True
+                i += 1
+                continue
+            i += 1
+        return ("transcript_query", args)
+
+    if cmd == "transcript-plan":
+        args = {"limit": 20, "index": 0}
+        i = 0
+        while i < len(rest):
+            token = rest[i]
+            if token in ("-n", "--limit") and i + 1 < len(rest):
+                try:
+                    args["limit"] = int(rest[i + 1])
+                except ValueError:
+                    print(json.dumps({"error": True, "message": "limit는 숫자여야 합니다."}))
+                    return None
+                i += 2
+                continue
+            if token in ("-i", "--index") and i + 1 < len(rest):
+                try:
+                    args["index"] = int(rest[i + 1])
+                except ValueError:
+                    print(json.dumps({"error": True, "message": "index는 숫자여야 합니다."}))
+                    return None
+                i += 2
+                continue
+            if token in ("-o", "--outcome") and i + 1 < len(rest):
+                args["outcome"] = rest[i + 1]
+                i += 2
+                continue
+            if token in ("-c", "--command") and i + 1 < len(rest):
+                args["command"] = rest[i + 1]
+                i += 2
+                continue
+            if token in ("-t", "--tool") and i + 1 < len(rest):
+                args["tool"] = rest[i + 1]
+                i += 2
+                continue
+            if token in ("-a", "--agent") and i + 1 < len(rest):
+                args["agent"] = rest[i + 1]
+                i += 2
+                continue
+            if token == "--text" and i + 1 < len(rest):
+                args["text"] = rest[i + 1]
+                i += 2
+                continue
+            i += 1
+        return ("transcript_plan", args)
 
     # JSON 직접 입력 지원: {"cmd":"run","args":{"tcode":"MM03"}}
     if line.startswith("{"):

@@ -203,6 +203,60 @@ def modal() -> None:
     _run_command("modal", {}, allow_daemon=True)
 
 
+@app.command("transcript")
+def transcript_cmd(
+    limit: int = typer.Option(20, "--limit", "-n", help="최대 조회 개수"),
+    outcome: Optional[str] = typer.Option(None, "--outcome", "-o", help="success / denied / approval_required / error"),
+    command: Optional[str] = typer.Option(None, "--command", "-c", help="dispatcher 명령 필터"),
+    tool: Optional[str] = typer.Option(None, "--tool", "-t", help="tool 이름 필터"),
+    agent: Optional[str] = typer.Option(None, "--agent", "-a", help="agent 이름 필터"),
+    text: Optional[str] = typer.Option(None, "--text", help="전체 entry 텍스트 검색"),
+    full: bool = typer.Option(False, "--full", help="요약 대신 전체 entry 반환"),
+) -> None:
+    """기록된 transcript 조회."""
+    _output_json(
+        _dispatch_local(
+            "transcript_query",
+            {
+                "limit": limit,
+                "outcome": outcome,
+                "command": command,
+                "tool": tool,
+                "agent": agent,
+                "text": text,
+                "full": full,
+            },
+        )
+    )
+
+
+@app.command("transcript-plan")
+def transcript_plan_cmd(
+    limit: int = typer.Option(20, "--limit", "-n", help="검색할 최대 entry 수"),
+    index: int = typer.Option(0, "--index", "-i", help="필터 결과에서 선택할 entry 인덱스"),
+    outcome: Optional[str] = typer.Option(None, "--outcome", "-o", help="success / denied / approval_required / error"),
+    command: Optional[str] = typer.Option(None, "--command", "-c", help="dispatcher 명령 필터"),
+    tool: Optional[str] = typer.Option(None, "--tool", "-t", help="tool 이름 필터"),
+    agent: Optional[str] = typer.Option(None, "--agent", "-a", help="agent 이름 필터"),
+    text: Optional[str] = typer.Option(None, "--text", help="전체 entry 텍스트 검색"),
+) -> None:
+    """선택한 transcript entry의 재실행 검토 계획 생성."""
+    _output_json(
+        _dispatch_local(
+            "transcript_plan",
+            {
+                "limit": limit,
+                "index": index,
+                "outcome": outcome,
+                "command": command,
+                "tool": tool,
+                "agent": agent,
+                "text": text,
+            },
+        )
+    )
+
+
 # -------------------------------------------------------------------
 # Daemon Commands
 # -------------------------------------------------------------------

@@ -472,6 +472,55 @@ sap daemon stop
 
 ---
 
+## 시나리오 7: Transcript / Replay Review
+
+### 목표
+
+AI가 실행한 SAP 조작이 transcript로 남고, verifier가 이를 read-only로 검토할 수 있는지 확인.
+또한 이 기록이 온톨로지와 충돌하지 않고, 실제 실행 기억으로 보완되는지 확인.
+
+### 사전 준비
+
+- 시나리오 2 또는 시나리오 5를 통해 최소 1회 이상 SAP 조작 수행
+- `~/.sap_cli/transcripts/` 경로에 JSONL 파일이 생성되어 있어야 함
+- 가능하면 정책 파일의 `active_agent`를 `verifier`로 설정한 상태도 함께 확인
+
+### 실행 단계
+
+```powershell
+# 1. 최근 transcript 조회
+sap transcript --limit 10
+
+# 2. 승인 필요/에러 케이스만 조회
+sap transcript --outcome approval_required
+sap transcript --outcome error
+
+# 3. 특정 명령에 대한 재실행 검토 계획 생성
+sap transcript-plan --command set --index 0
+
+# 4. MCP 환경에서 verifier agent로 같은 조회 수행
+# Claude Code:
+# "최근 transcript 보여줘"
+# "가장 최근 set 단계 다시 실행해도 되는지 검토해줘"
+```
+
+### 기대 결과
+
+| 단계 | 확인 항목 |
+|------|----------|
+| transcript 조회 | before/after transaction, screen, status 요약 확인 |
+| transcript-plan | `risk_level`, `replayable`, `ontology_context`, `preconditions`, `proposed_sequence` 반환 |
+| verifier profile | `sap_transcript_query`, `sap_transcript_plan`, `sap_screen`, `sap_get_status`는 보이고 mutating tool은 숨겨짐 |
+| 승인 케이스 | `approval_required: true` 또는 위험도 `high`로 표시 |
+
+### 실패 시 확인사항
+
+- transcript가 비어 있음 → 실제 SAP 조작이 최소 1회 이상 실행됐는지 확인
+- transcript-plan이 항목을 못 찾음 → `sap transcript --limit 20`으로 먼저 필터 조건 확인
+- verifier에서 mutating tool이 보임 → `~/.sap_cli/policy.yaml`의 `active_agent` 값과 MCP 서버 재시작 여부 확인
+
+---
+
 ## 검증 결과 기록 양식
 
 각 시나리오 수행 후 아래 형식으로 결과를 기록합니다.

@@ -129,6 +129,8 @@ class TestPermissionCheckerViewer:
         assert checker.check_tool("sap_screen").allowed is True
         assert checker.check_tool("sap_get_field", {"element_id": "x"}).allowed is True
         assert checker.check_tool("sap_table_read", {"element_id": "x"}).allowed is True
+        assert checker.check_tool("sap_transcript_query").allowed is True
+        assert checker.check_tool("sap_transcript_plan").allowed is True
 
     def test_write_denied(self, checker):
         assert checker.check_tool("sap_set_field", {"element_id": "x", "value": "v"}).allowed is False
@@ -256,3 +258,36 @@ class TestAuditLogger:
         entry = json.loads(files[0].read_text().strip())
         assert "password" not in entry["arguments"]
         assert entry["arguments"]["host"] == "sap.company.com"
+
+
+class TestToolSurfaceVisibility:
+    def test_readonly_surface_hides_mutating_tools(self):
+        checker = PermissionChecker(_make_policy("readonly", [
+            {"resource": "tx:*", "relation": "viewer"},
+        ]))
+
+        assert checker.can_access_tool_surface("sap_session") is True
+        assert checker.can_access_tool_surface("sap_modal") is True
+        assert checker.can_access_tool_surface("sap_run") is False
+        assert checker.can_access_tool_surface("sap_command") is False
+        assert checker.can_access_tool_surface("sap_set_field") is False
+
+    def test_operator_surface_hides_admin_tools(self):
+        checker = PermissionChecker(_make_policy("operator", [
+            {"resource": "tx:*", "relation": "operator"},
+        ]))
+
+        assert checker.can_access_tool_surface("sap_run") is True
+        assert checker.can_access_tool_surface("sap_command") is True
+        assert checker.can_access_tool_surface("sap_set_field") is True
+        assert checker.can_access_tool_surface("sap_connect") is False
+        assert checker.can_access_tool_surface("sap_learn") is False
+
+    def test_module_operator_still_sees_transaction_surface(self):
+        checker = PermissionChecker(_make_policy("mm_only", [
+            {"resource": "tx:MM*", "relation": "operator"},
+            {"resource": "tx:*", "relation": "viewer"},
+        ]))
+
+        assert checker.can_access_tool_surface("sap_run") is True
+        assert checker.can_access_tool_surface("sap_command") is True

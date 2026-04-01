@@ -39,6 +39,8 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
 4. **필드 ID 동적 확인**: 필드 ID를 모르면 `sap_screen(fields_only=true)`로 확인한다
 5. **온톨로지 선행 조회**: 트랜잭션 구조를 모르면 `sap_ontology_query`로 먼저 조회한다
 6. **화면 전환 후 재확인**: 버튼/VKey 실행 후 모든 UI 요소 참조가 무효화되므로, 반드시 `sap_screen`으로 새 화면을 다시 읽는다
+7. **재시도 전 transcript 검토**: 직전 실패/경고/승인요청이 있으면 `sap_transcript_query`와 `sap_transcript_plan`으로 먼저 검토한다
+8. **온톨로지와 transcript를 같이 본다**: 온톨로지는 일반 구조를, transcript는 직전 실행 사실을 보여주므로 둘 중 하나만 믿지 않는다
 
 ---
 
@@ -58,6 +60,9 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
 | `sap_send_vkey` | 키보드 키 전송 | `vkey` (필수) |
 | `sap_get_status` | 상태바 메시지 조회 | - |
 | `sap_table_read` | 테이블/그리드 데이터 읽기 | `element_id` (필수) |
+| `sap_modal` | 모달 팝업 존재 여부와 텍스트 | - |
+| `sap_transcript_query` | 최근 실행 transcript 조회 | `limit`, `outcome`, `command`, `tool`, `agent`, `text`, `full` |
+| `sap_transcript_plan` | 선택한 transcript의 재실행 검토 계획 생성 | `limit`, `index`, `outcome`, `command`, `tool`, `agent`, `text` |
 
 ### 온톨로지
 
@@ -74,6 +79,8 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
 | `sap_macro_record_step` | 녹화 중 단계 기록+실행 | `action`, `target`, `value`, `description` |
 | `sap_macro_play` | 매크로 재생 | `macro_id`, `variables`, `dry_run` |
 | `sap_macro_list` | 매크로 목록 조회 | `tcode` (필터) |
+| `sap_macro_show` | 매크로 상세 조회 | `macro_id` |
+| `sap_macro_delete` | 매크로 삭제 | `macro_id` |
 
 ---
 
@@ -178,7 +185,33 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
 
 `dry_run=true`로 실행하면 실제 SAP 실행 없이 단계만 확인 가능.
 
-### 패턴 6: F4 검색 도움말
+### 패턴 6: transcript 기반 사후 검토
+
+실행 직후 결과가 애매하거나, 같은 단계를 다시 실행하려면:
+
+```
+1. sap_transcript_query(limit=10)                  # 최근 실행 흐름 확인
+2. sap_transcript_query(outcome="approval_required")
+3. sap_transcript_plan(command="set", index=0)     # 재실행 검토 계획 생성
+   → risk_level
+   → before/after transaction, screen
+   → ontology_context
+   → preconditions
+   → proposed_sequence
+4. 필요한 경우 sap_session / sap_screen / sap_get_status로 실제 화면 재검증
+```
+
+권장 사용처:
+- verifier agent가 operator의 작업을 사후 검토할 때
+- 에러/경고 이후 같은 단계를 반복 실행하기 전에
+- 왜 특정 승인 요청이 발생했는지 설명해야 할 때
+
+이 패턴은 온톨로지를 대체하지 않는다.
+- 온톨로지: 원래 이 트랜잭션이 어떤 구조인지 설명
+- transcript: 방금 실제로 어떤 화면에서 실패/성공했는지 설명
+- planner: 두 정보를 바탕으로 다음 액션을 보수적으로 정리하고, 다시 볼 ontology 힌트까지 준다
+
+### 패턴 7: F4 검색 도움말
 
 필드에서 가능한 값을 검색할 때:
 
@@ -325,6 +358,8 @@ ME21N은 Enjoy 트랜잭션으로 화면 구조가 다른 트랜잭션과 다름
 6. **날짜 형식**: SAP 시스템 설정에 따라 DD.MM.YYYY, MM/DD/YYYY, YYYY-MM-DD 등 형식이 다르다. `sap_session`에서 date format을 확인하거나, YYYYMMDD 형식을 사용하면 대부분 호환된다.
 
 7. **연결 상태**: MCP 서버는 한 번 연결하면 세션을 유지한다. 연결이 끊어지면 `sap_connect`로 재연결한다.
+
+8. **역할 분리**: operator는 실행하고 verifier는 `sap_transcript_query`, `sap_transcript_plan`, `sap_screen`, `sap_get_status` 같은 read-only surface로 검토하는 편이 안전하다.
 
 ---
 

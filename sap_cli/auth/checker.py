@@ -104,6 +104,19 @@ class PermissionChecker:
 
         return None
 
+    def can_access_tool_surface(self, tool_name: str) -> bool:
+        """현재 에이전트 프로필에 이 도구를 MCP surface에 노출할 수 있는지 판단."""
+        if not self.is_enforcing:
+            return True
+
+        permission = TOOL_PERMISSION_MAP.get(tool_name)
+        if permission is None:
+            return False
+
+        if tool_name in {"sap_run", "sap_command"}:
+            return self._has_transaction_capability(permission)
+        return self._has_general_capability(permission)
+
     def _check_permission(self, resource: str, permission: Permission) -> CheckResult:
         if not self._agent:
             return CheckResult(False, "에이전트 미설정")
@@ -133,6 +146,27 @@ class PermissionChecker:
                     return CheckResult(True, f"{binding.relation.value} (general permission)")
 
         return CheckResult(False, f"권한 없음: {permission.value} on {resource}")
+
+    def _has_general_capability(self, permission: Permission) -> bool:
+        if not self._agent or not self._policy:
+            return False
+
+        for binding in self._agent.relations:
+            allowed_perms = self._policy.resolve_relation_permissions(binding.relation)
+            if permission in allowed_perms:
+                return True
+        return False
+
+    def _has_transaction_capability(self, permission: Permission) -> bool:
+        if not self._agent or not self._policy:
+            return False
+
+        for binding in self._agent.relations:
+            if binding.resource == "*" or binding.resource.startswith("tx:"):
+                allowed_perms = self._policy.resolve_relation_permissions(binding.relation)
+                if permission in allowed_perms:
+                    return True
+        return False
 
     def _resolve_resource(self, tool_name: str, arguments: dict[str, Any]) -> str:
         """도구 + 인자에서 리소스 식별."""

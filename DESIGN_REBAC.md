@@ -12,6 +12,16 @@ SAP CLI의 MCP 서버가 AI 에이전트에게 노출하는 SAP 조작을 **ReBA
 2. **AI 에이전트 맥락**: 같은 에이전트라도 "조회 모드"와 "실행 모드"에서 허용 범위가 달라야 함.
 3. **온톨로지와 자연스러운 통합**: 이미 트랜잭션 → 화면 → 필드 그래프가 존재. 권한도 이 그래프 위의 관계로 표현 가능.
 
+## 온톨로지와 Transcript의 역할 분리
+
+이 설계에서 온톨로지는 버려지는 것이 아니다. 오히려 ReBAC과 transcript를 붙이면서 역할이 더 선명해진다.
+
+- 온톨로지: 구조적 의미 기억. 트랜잭션, 화면, 필드, 액션, 화면 전이의 일반 규칙을 담는다.
+- transcript: 사건 기록. 특정 시점에 어떤 agent가 어떤 tool을 어떤 화면에서 실행했고, before/after가 어땠는지 담는다.
+- replay review planner: transcript를 읽어 운영상 재실행 전제조건과 위험을 계산한다.
+
+즉 온톨로지는 "세상이 어떻게 생겼는가", transcript는 "방금 무슨 일이 있었는가"를 담당한다.
+
 ## 핵심 모델
 
 ### 1. 리소스 (Resource)
@@ -80,6 +90,12 @@ agents:
       - resource: "tx:*"
         relation: viewer
 
+  claude_verifier:
+    description: "실행 후 검토 전용 에이전트"
+    relations:
+      - resource: "tx:*"
+        relation: viewer
+
   claude_mm:
     description: "MM 모듈 운영 에이전트"
     relations:
@@ -118,7 +134,23 @@ audit:
   enabled: true
   log_dir: "~/.sap_cli/audit/"
   log_level: "all"  # all | write_only | dangerous_only
+
+transcript:
+  enabled: true
+  log_dir: "~/.sap_cli/transcripts/"
+  include_reads: true
+  include_screen_summary: false
 ```
+
+### 6. MCP Tool Surface 분리
+
+ReBAC는 실행 시점의 허용/거부만 담당하지 않는다. MCP 서버는 활성 agent profile에 따라 보이는 도구 자체를 줄인다.
+
+- `readonly`, `verifier`: read-only tool surface만 노출
+- `operator`: 실행/입력 tool surface 노출, admin surface 숨김
+- `mm_operator`, `sd_operator`: 실행 tool surface는 보이지만 실제 호출 시 리소스 범위로 재검사
+
+이 방식의 장점은 prompt로 "하지 마"라고 쓰는 것보다 훨씬 강하다는 점이다. verifier agent는 `sap_run`, `sap_set_field`, `sap_send_vkey`를 아예 보지 못한다.
 
 ## 구현 계획
 
@@ -164,6 +196,14 @@ def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 - MCP 프로토콜의 sampling 기능 활용
 - 승인/거부 이력 감사 로그에 기록
 
+### Phase 4: Transcript / Replay Review 계층
+
+- dispatcher가 before/after 상태를 JSONL transcript로 기록
+- `sap_transcript_query`로 최근 성공/실패/승인요청 흐름 조회
+- `sap_transcript_plan`으로 재실행 전제조건, 위험도, ontology 조회 힌트, 권장 확인 순서 생성
+- operator와 verifier를 같은 시스템 안에서 분리
+- 이후 단계에서 transcript의 `before_screen -> action -> after_screen`를 온톨로지 screen flow 후보로 승격 가능
+
 ## SAP Authorization Object 매핑
 
 ```
@@ -174,16 +214,32 @@ operator on tx:VA01 V_VBAK_AAT (수주)          01 (Create)
 supervisor on tx:*  S_TCODE (트랜잭션 권한)    *
 ```
 
-## 감사 로그 형식
+## 감사 로그와 Transcript 형식
 
 ```jsonl
 {"ts":"2026-03-29T10:30:00Z","agent":"claude_mm","tool":"sap_set_field","resource":"field:MM03:100:RMMG1-MATNR","permission":"write","allowed":true,"arguments":{"element_id":"wnd[0]/usr/ctxtRMMG1-MATNR","value":"100-100"}}
 {"ts":"2026-03-29T10:30:05Z","agent":"claude_mm","tool":"sap_run","resource":"tx:ME21N","permission":"execute","allowed":false,"reason":"dangerous_transaction:requires_approval"}
 ```
 
+Transcript 예시:
+
+```jsonl
+{"ts":"2026-04-01T12:00:00Z","source":"mcp","command":"set","tool":"sap_set_field","agent":"operator","permission":"write","resource":"element:wnd[0]/usr/ctxtRMMG1-MATNR","allowed":true,"approval_required":false,"outcome":"success","before":{"session":{"transaction":"MM03","screen_number":4000}},"after":{"session":{"transaction":"MM03","screen_number":4000},"status":{"type":"S","message":"ok"},"screen_summary":{"title":"Material Display"}}}
+```
+
+이 transcript를 바탕으로 `sap_transcript_plan`은 아래 같은 검토 결과를 만든다.
+
+- 위험도: `high`
+- replayable 여부
+- before/after transaction, screen
+- ontology_context (`available`, `tcode`, `query_hint`)
+- preconditions
+- proposed_sequence (`sap session` → `sap ontology MM03` → 후보 action → `sap status` → `sap modal`)
+
 ## 구현 우선순위
 
 1. **P0**: 정책 파일 로드 + read/write 모드 분리 + 트랜잭션 허용목록
-2. **P1**: 감사 로그 + 위험 트랜잭션 경고
-3. **P2**: 온톨로지 그래프 기반 관계 상속
-4. **P3**: 런타임 승인 워크플로우
+2. **P1**: 감사 로그 + 위험 트랜잭션 경고 + transcript 적재
+3. **P2**: MCP tool surface 분리 + transcript review planner
+4. **P3**: 온톨로지 그래프 기반 관계 상속
+5. **P4**: 런타임 승인 워크플로우

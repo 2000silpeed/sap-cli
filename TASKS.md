@@ -105,6 +105,18 @@ ec29b59 Codex 리뷰 기반 10개 이슈 수정 + ReBAC 권한관리 구현
 | 5 | modal/macro_show/macro_delete 권한 검사 우회 | major | 완료 |
 | 6 | 명령 정의 4중 중복 → 단일 COMMAND_REGISTRY 통합 | major | 완료 |
 
+### Phase 9: AI 운영 커널 강화 (2026-04-01)
+
+| 작업 | 내용 | 상태 |
+|------|------|------|
+| post_action 보강 | mutating action 뒤 session/status/modal/screen_summary 자동 첨부 | 완료 |
+| MCP surface 분리 | agent profile별 list_tools/call_tool 노출 제한 | 완료 |
+| transcript 적재 | before/after 상태, approval, 결과를 JSONL로 기록 | 완료 |
+| transcript 조회 | CLI/MCP/Shell에서 transcript query 지원 | 완료 |
+| replay review planner | transcript 기반 재실행 검토 계획 생성 | 완료 |
+| 문서 갱신 | README, DESIGN_REBAC, VERIFICATION, SKILL 반영 | 완료 |
+| 온톨로지 연결 방향 정리 | transcript를 실행 기억, 온톨로지를 구조 기억으로 문서화 | 완료 |
+
 ## 커밋 이력 (2026-04-01)
 
 ```
@@ -116,10 +128,12 @@ ec29b59 Codex 리뷰 기반 10개 이슈 수정 + ReBAC 권한관리 구현
 
 ## 남은 작업
 
-### ReBAC P1-P3 (설계만 완료, 구현 미착수)
-- P1: 감사 로그 강화 + 위험 트랜잭션 경고 UI
-- P2: 온톨로지 그래프 기반 관계 상속 (필드 레벨 세밀 제어)
-- P3: 런타임 승인 워크플로우 (MCP sampling 활용)
+### ReBAC / 운영 커널 후속 작업
+- transcript의 screen transition을 온톨로지 screen_flow 후보로 반영
+- 반복 성공한 action 패턴을 field dependency / action prior 후보로 반영
+- 온톨로지 그래프 기반 관계 상속 (필드 레벨 세밀 제어)
+- 런타임 승인 워크플로우 (MCP sampling 활용)
+- transcript 기반 replay executor 또는 verifier dashboard
 
 ### 사내 검증 (SAP 환경 필요) → VERIFICATION.md 참조
 - [ ] 시나리오 1: 기본 연결 및 화면 탐색
