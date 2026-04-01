@@ -61,6 +61,10 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "macro_list":     CommandDef("sap_macro_list",        Permission.READ),
     "macro_show":     CommandDef("sap_macro_show",        Permission.READ),
     "macro_delete":   CommandDef("sap_macro_delete",      Permission.ADMIN),
+    "process_list":   CommandDef("sap_process_list",      Permission.READ),
+    "process_show":   CommandDef("sap_process_show",      Permission.READ),
+    "process_create": CommandDef("sap_process_create",    Permission.ADMIN),
+    "process_delete": CommandDef("sap_process_delete",    Permission.ADMIN),
 }
 
 COMMAND_TOOL_MAP: dict[str, str] = {cmd: d.tool_name for cmd, d in COMMAND_REGISTRY.items()}
@@ -306,6 +310,14 @@ def _execute_command(
         return _dispatch_transcript_plan(args, policy)
     if command == "learn":
         return _dispatch_learn()
+    if command == "process_list":
+        return _dispatch_process_list()
+    if command == "process_show":
+        return _dispatch_process_show(args)
+    if command == "process_create":
+        return _dispatch_process_create(args)
+    if command == "process_delete":
+        return _dispatch_process_delete(args)
     raise ValueError(f"미구현 명령: {command}")
 
 
@@ -517,6 +529,7 @@ def _dispatch_ontology_query(args: dict[str, Any]) -> dict[str, Any]:
         return {
             "transactions": store.list_transactions(),
             "patterns": store.list_patterns(),
+            "processes": store.list_processes(),
         }
 
     tcode = args.get("tcode")
@@ -591,6 +604,63 @@ def _dispatch_learn() -> dict[str, Any]:
         "fields_count": len(screen.fields),
         "buttons_count": len(screen.buttons),
     }
+
+
+def _dispatch_process_list() -> dict[str, Any]:
+    store = _get_store()
+    process_ids = store.list_processes()
+    processes = []
+    for pid in process_ids:
+        p = store.load_process(pid)
+        if p:
+            processes.append({
+                "id": p.id,
+                "name": p.name,
+                "module": p.module,
+                "steps_count": len(p.steps),
+                "tags": p.tags,
+            })
+    return {"processes": processes, "count": len(processes)}
+
+
+def _dispatch_process_show(args: dict[str, Any]) -> dict[str, Any]:
+    process_id = str(args["process_id"])
+    store = _get_store()
+    process = store.load_process(process_id)
+    if not process:
+        return {"error": True, "message": f"프로세스 '{process_id}'를 찾을 수 없습니다."}
+    return process.model_dump(mode="json")
+
+
+def _dispatch_process_create(args: dict[str, Any]) -> dict[str, Any]:
+    from .ontology.schema import BusinessProcess, DataFlow, ProcessStep
+
+    process_id = str(args["id"])
+    name = str(args["name"])
+    steps_raw = args.get("steps", [])
+    data_flows_raw = args.get("data_flows", [])
+
+    steps = [ProcessStep(**s) for s in steps_raw]
+    data_flows = [DataFlow(**d) for d in data_flows_raw]
+
+    process = BusinessProcess(
+        id=process_id,
+        name=name,
+        module=str(args.get("module", "")),
+        description=str(args.get("description", "")),
+        steps=steps,
+        data_flows=data_flows,
+        tags=args.get("tags", []),
+    )
+    store = _get_store()
+    path = store.save_process(process)
+    return {"saved": True, "process_id": process.id, "path": str(path)}
+
+
+def _dispatch_process_delete(args: dict[str, Any]) -> dict[str, Any]:
+    process_id = str(args["process_id"])
+    deleted = _get_store().delete_process(process_id)
+    return {"deleted": deleted, "process_id": process_id}
 
 
 def _evaluate_authorization(

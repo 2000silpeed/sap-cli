@@ -433,5 +433,39 @@ class TransactionOntology(BaseModel):
         return fields
 
 
+# ---------------------------------------------------------------------------
+# Business Process (업무 프로세스 - 트랜잭션 간 연결)
+# ---------------------------------------------------------------------------
+
+class DataFlow(BaseModel):
+    """스텝 간 데이터 전달 — 앞 스텝 출력 → 뒤 스텝 입력."""
+    source_step: int
+    source_field: str
+    target_step: int
+    target_field: str
+    description: str = ""
+
+
+class ProcessStep(BaseModel):
+    """업무 프로세스의 단일 스텝 = 트랜잭션 1회 실행."""
+    step_number: int
+    tcode: str
+    description: str = ""
+    input_fields: dict[str, str] = Field(default_factory=dict)
+    expected_output: list[str] = Field(default_factory=list)
+    optional: bool = False
+
+
+class BusinessProcess(BaseModel):
+    """여러 트랜잭션을 연결한 업무 프로세스."""
+    id: str
+    name: str
+    module: str = ""
+    description: str = ""
+    steps: list[ProcessStep] = Field(default_factory=list)
+    data_flows: list[DataFlow] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+
 # TransactionOntology에서 참조하는 forward ref 해결
 SapTransaction.model_rebuild()

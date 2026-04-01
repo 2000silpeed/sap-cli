@@ -16,7 +16,7 @@ from typing import Any
 
 from .analysis_space import CrossSpace
 from .meta_edge import MetaEdge, MetaEdgeRegistry, create_default_registry
-from .schema import ScreenOntology, TransactionOntology
+from .schema import BusinessProcess, ScreenOntology, TransactionOntology
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_\-]+$")
 
@@ -48,6 +48,7 @@ class OntologyStore:
         self.transactions_dir = self.knowledge_dir / "transactions"
         self.meta_edges_dir = self.knowledge_dir / "meta_edges"
         self.patterns_dir = self.knowledge_dir / "patterns"
+        self.processes_dir = self.knowledge_dir / "processes"
 
         self._ensure_dirs()
         self._seed_if_empty()
@@ -56,7 +57,7 @@ class OntologyStore:
         self._cross_space = CrossSpace()
 
     def _ensure_dirs(self) -> None:
-        for d in [self.transactions_dir, self.meta_edges_dir, self.patterns_dir]:
+        for d in [self.transactions_dir, self.meta_edges_dir, self.patterns_dir, self.processes_dir]:
             d.mkdir(parents=True, exist_ok=True)
 
     def _seed_if_empty(self) -> None:
@@ -64,7 +65,7 @@ class OntologyStore:
         seed_dir = Path(__file__).parent / "knowledge"
         if not seed_dir.exists():
             return
-        for subdir in ("transactions", "patterns"):
+        for subdir in ("transactions", "patterns", "processes"):
             src = seed_dir / subdir
             dst = self.knowledge_dir / subdir
             if not src.exists():
@@ -197,6 +198,36 @@ class OntologyStore:
 
     def list_patterns(self) -> list[str]:
         return [p.stem for p in self.patterns_dir.glob("*.json")]
+
+    # -------------------------------------------------------------------
+    # Business Process CRUD
+    # -------------------------------------------------------------------
+
+    def save_process(self, process: BusinessProcess) -> Path:
+        _validate_id(process.id, "process id")
+        path = self.processes_dir / f"{process.id}.json"
+        data = process.model_dump(mode="json", exclude_none=True)
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return path
+
+    def load_process(self, process_id: str) -> BusinessProcess | None:
+        _validate_id(process_id, "process id")
+        path = self.processes_dir / f"{process_id}.json"
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return BusinessProcess.model_validate(data)
+
+    def list_processes(self) -> list[str]:
+        return [p.stem for p in self.processes_dir.glob("*.json")]
+
+    def delete_process(self, process_id: str) -> bool:
+        _validate_id(process_id, "process id")
+        path = self.processes_dir / f"{process_id}.json"
+        if path.exists():
+            path.unlink()
+            return True
+        return False
 
     # -------------------------------------------------------------------
     # Query (온톨로지 검색)

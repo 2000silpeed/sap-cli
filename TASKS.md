@@ -147,3 +147,108 @@ ec29b59 Codex 리뷰 기반 10개 이슈 수정 + ReBAC 권한관리 구현
 - MM03 추가 화면 (MRP, 구매, 판매, 저장위치 뷰)
 - VA01 하위 탭 (가격조건, 출하, 대금청구, 파트너)
 - ME21N, FB01 등 추가 트랜잭션 온톨로지
+
+---
+
+## 2026-04-02: Phase 10 — BusinessProcess (업무 프로세스) 레이어
+
+### 배경
+현재 온톨로지는 **트랜잭션 1개 = 1파일** 단위로 저장된다.
+하지만 실무 SAP 작업은 여러 트랜잭션을 순서대로 실행하는 **업무 프로세스** 단위:
+- 자재 조달: MM01 → ME21N → MIGO → MIRO
+- 판매 처리: VA01 → VL01N → VF01
+- 자재 변경: MM02 → MM03(확인)
+
+트랜잭션 간 **데이터 흐름**(앞 스텝의 출력이 뒤 스텝의 입력)까지 구조화해야
+AI가 end-to-end 업무를 자율 실행할 수 있다.
+
+### 구현 계획
+
+| # | 작업 | 내용 | 상태 |
+|---|------|------|------|
+| 1 | 스키마 정의 | `BusinessProcess`, `ProcessStep`, `DataFlow` 모델 (schema.py 확장) | 완료 |
+| 2 | 저장소 확장 | OntologyStore에 processes/ 디렉토리 + CRUD 메서드 추가 | 완료 |
+| 3 | 시드 데이터 | 자재 조달 프로세스 예시 JSON 1건 작성 | 완료 |
+| 4 | CLI/MCP 노출 | process list/show/create/delete 명령 추가 (dispatcher) | 완료 |
+| 5 | 테스트 | process CRUD + 데이터 흐름 + 시드 + 보안 검증 (8개 테스트) | 완료 |
+
+### 1. 스키마 설계 (`sap_cli/ontology/schema.py` 확장)
+
+```python
+class DataFlow(BaseModel):
+    """스텝 간 데이터 전달 — 앞 스텝 출력 → 뒤 스텝 입력."""
+    source_step: int          # 출력 스텝 번호 (0-based)
+    source_field: str         # 출력 필드 (예: "MATNR", "$document_number")
+    target_step: int          # 입력 스텝 번호
+    target_field: str         # 입력 필드 (예: "MATNR", "EBELN")
+    description: str = ""
+
+class ProcessStep(BaseModel):
+    """업무 프로세스의 단일 스텝 = 트랜잭션 1회 실행."""
+    step_number: int          # 0-based 순서
+    tcode: str                # 트랜잭션 코드
+    description: str = ""     # "자재 마스터 생성"
+    input_fields: dict[str, str] = {}   # 고정 입력값 {"MTART": "ROH"}
+    expected_output: list[str] = []     # 추출할 출력 필드명 ["MATNR", "$status"]
+    optional: bool = False    # 실패해도 프로세스 계속 가능 여부
+
+class BusinessProcess(BaseModel):
+    """여러 트랜잭션을 연결한 업무 프로세스."""
+    id: str                   # "procurement_basic"
+    name: str                 # "기본 자재 조달 프로세스"
+    module: str = ""          # "MM"
+    description: str = ""
+    steps: list[ProcessStep] = []
+    data_flows: list[DataFlow] = []     # 스텝 간 데이터 연결
+    tags: list[str] = []                # ["조달", "구매", "입고"]
+```
+
+### 2. 저장소 구조
+
+```
+~/.sap_cli/knowledge/
+├── transactions/       # 기존 (트랜잭션별)
+├── processes/          # 신규 (업무 프로세스별)
+│   ├── procurement_basic.json
+│   └── sales_order_to_billing.json
+├── meta_edges/
+└── patterns/
+```
+
+### 3. 시드 데이터 예시 — 자재 조달 프로세스
+
+```json
+{
+  "id": "procurement_basic",
+  "name": "기본 자재 조달 프로세스",
+  "module": "MM",
+  "description": "자재 생성 → 구매오더 → 입고 → 송장검증",
+  "steps": [
+    {"step_number": 0, "tcode": "MM01", "description": "자재 마스터 생성",
+     "input_fields": {"MTART": "ROH", "MBRSH": "M"},
+     "expected_output": ["MATNR"]},
+    {"step_number": 1, "tcode": "ME21N", "description": "구매오더 생성",
+     "expected_output": ["EBELN"]},
+    {"step_number": 2, "tcode": "MIGO", "description": "입고 처리",
+     "expected_output": ["MBLNR"]},
+    {"step_number": 3, "tcode": "MIRO", "description": "송장 검증",
+     "expected_output": ["BELNR"]}
+  ],
+  "data_flows": [
+    {"source_step": 0, "source_field": "MATNR", "target_step": 1, "target_field": "MATNR",
+     "description": "생성된 자재번호를 구매오더에 입력"},
+    {"source_step": 1, "source_field": "EBELN", "target_step": 2, "target_field": "EBELN",
+     "description": "구매오더번호를 입고에 참조"},
+    {"source_step": 2, "source_field": "MBLNR", "target_step": 3, "target_field": "MBLNR",
+     "description": "입고 문서번호를 송장검증에 참조"}
+  ],
+  "tags": ["조달", "구매", "입고", "송장"]
+}
+```
+
+### 4. CLI/MCP 명령
+
+- `sap process list` — 등록된 프로세스 목록
+- `sap process show <id>` — 프로세스 상세 (스텝 + 데이터 흐름)
+- `sap process create <id> --name "..." --steps MM01,ME21N,MIGO` — 신규 생성
+- MCP: `process_list`, `process_show`, `process_create` 도구 추가

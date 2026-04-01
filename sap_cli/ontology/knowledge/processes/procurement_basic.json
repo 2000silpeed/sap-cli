@@ -1,0 +1,60 @@
+{
+  "id": "procurement_basic",
+  "name": "기본 자재 조달 프로세스",
+  "module": "MM",
+  "description": "자재 생성 → 구매오더 → 입고 → 송장검증의 표준 조달 프로세스",
+  "steps": [
+    {
+      "step_number": 0,
+      "tcode": "MM01",
+      "description": "자재 마스터 생성",
+      "input_fields": {"MTART": "ROH", "MBRSH": "M"},
+      "expected_output": ["MATNR"]
+    },
+    {
+      "step_number": 1,
+      "tcode": "ME21N",
+      "description": "구매오더 생성",
+      "input_fields": {},
+      "expected_output": ["EBELN"]
+    },
+    {
+      "step_number": 2,
+      "tcode": "MIGO",
+      "description": "입고 처리",
+      "input_fields": {},
+      "expected_output": ["MBLNR"]
+    },
+    {
+      "step_number": 3,
+      "tcode": "MIRO",
+      "description": "송장 검증",
+      "input_fields": {},
+      "expected_output": ["BELNR"]
+    }
+  ],
+  "data_flows": [
+    {
+      "source_step": 0,
+      "source_field": "MATNR",
+      "target_step": 1,
+      "target_field": "MATNR",
+      "description": "생성된 자재번호를 구매오더에 입력"
+    },
+    {
+      "source_step": 1,
+      "source_field": "EBELN",
+      "target_step": 2,
+      "target_field": "EBELN",
+      "description": "구매오더번호를 입고에 참조"
+    },
+    {
+      "source_step": 2,
+      "source_field": "MBLNR",
+      "target_step": 3,
+      "target_field": "MBLNR",
+      "description": "입고 문서번호를 송장검증에 참조"
+    }
+  ],
+  "tags": ["조달", "구매", "입고", "송장"]
+}

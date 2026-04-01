@@ -5,6 +5,9 @@ from pathlib import Path
 
 from sap_cli.ontology.store import OntologyStore, _validate_id
 from sap_cli.ontology.schema import (
+    BusinessProcess,
+    DataFlow,
+    ProcessStep,
     ScreenOntology,
     SapField,
     TransactionOntology,
@@ -105,6 +108,75 @@ class TestPatterns:
     def test_pattern_path_traversal_rejected(self, store):
         with pytest.raises(ValueError):
             store.save_pattern("../../etc", {"bad": True})
+
+
+class TestBusinessProcess:
+    @pytest.fixture
+    def sample_process(self):
+        return BusinessProcess(
+            id="procurement_basic",
+            name="기본 자재 조달",
+            module="MM",
+            description="자재 생성 → 구매오더 → 입고",
+            steps=[
+                ProcessStep(step_number=0, tcode="MM01", description="자재 생성",
+                            expected_output=["MATNR"]),
+                ProcessStep(step_number=1, tcode="ME21N", description="구매오더 생성",
+                            expected_output=["EBELN"]),
+            ],
+            data_flows=[
+                DataFlow(source_step=0, source_field="MATNR",
+                         target_step=1, target_field="MATNR",
+                         description="자재번호 전달"),
+            ],
+            tags=["조달", "구매"],
+        )
+
+    def test_save_and_load(self, store, sample_process):
+        store.save_process(sample_process)
+        loaded = store.load_process("procurement_basic")
+        assert loaded is not None
+        assert loaded.id == "procurement_basic"
+        assert loaded.name == "기본 자재 조달"
+        assert len(loaded.steps) == 2
+        assert loaded.steps[0].tcode == "MM01"
+        assert loaded.steps[1].tcode == "ME21N"
+
+    def test_data_flow(self, store, sample_process):
+        store.save_process(sample_process)
+        loaded = store.load_process("procurement_basic")
+        assert len(loaded.data_flows) == 1
+        df = loaded.data_flows[0]
+        assert df.source_step == 0
+        assert df.source_field == "MATNR"
+        assert df.target_step == 1
+        assert df.target_field == "MATNR"
+
+    def test_list_processes(self, store, sample_process):
+        store.save_process(sample_process)
+        assert "procurement_basic" in store.list_processes()
+
+    def test_delete_process(self, store, sample_process):
+        store.save_process(sample_process)
+        assert store.delete_process("procurement_basic") is True
+        assert store.load_process("procurement_basic") is None
+
+    def test_load_nonexistent(self, store):
+        assert store.load_process("nonexistent") is None
+
+    def test_delete_nonexistent(self, store):
+        assert store.delete_process("nonexistent") is False
+
+    def test_path_traversal_rejected(self, store):
+        with pytest.raises(ValueError):
+            store.save_process(BusinessProcess(id="../../evil", name="bad"))
+
+    def test_seed_process(self, tmp_path):
+        """processes 시드 데이터도 복사되는지 확인."""
+        store = OntologyStore(knowledge_dir=tmp_path / "fresh")
+        seed_dir = Path(__file__).parent.parent / "sap_cli" / "ontology" / "knowledge"
+        if (seed_dir / "processes" / "procurement_basic.json").exists():
+            assert store.load_process("procurement_basic") is not None
 
 
 class TestSeedData:
