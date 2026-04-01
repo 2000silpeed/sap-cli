@@ -482,5 +482,31 @@ class BusinessProcess(BaseModel):
         return errors
 
 
+# ---------------------------------------------------------------------------
+# Process Execution (업무 프로세스 실행 기록)
+# ---------------------------------------------------------------------------
+
+class StepResult(BaseModel):
+    """단일 스텝의 실행 결과."""
+    step_number: int
+    tcode: str
+    status: str = ""  # "success", "error", "skipped"
+    outputs: dict[str, str] = Field(default_factory=dict)
+    error: str = ""
+    timestamp: str = ""
+
+
+class ProcessExecution(BaseModel):
+    """업무 프로세스 1회 실행 기록."""
+    process_id: str
+    process_name: str = ""
+    started_at: str = ""
+    finished_at: str = ""
+    status: str = ""  # "running", "completed", "failed", "aborted"
+    context: dict[str, str] = Field(default_factory=dict)
+    step_results: list[StepResult] = Field(default_factory=list)
+    current_step: int = 0
+
+
 # TransactionOntology에서 참조하는 forward ref 해결
 SapTransaction.model_rebuild()

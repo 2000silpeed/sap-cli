@@ -361,6 +361,36 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "required": ["process_id"],
         },
     },
+    {
+        "name": "sap_process_start",
+        "description": "업무 프로세스 실행을 시작합니다. 스텝별로 실행하면서 데이터를 전달할 준비를 합니다. 시작 후 process_step으로 각 스텝 완료를 보고하고, process_status로 다음 스텝에 넣을 입력값을 확인하세요.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "process_id": {"type": "string", "description": "실행할 프로세스 ID"},
+            },
+            "required": ["process_id"],
+        },
+    },
+    {
+        "name": "sap_process_step",
+        "description": "프로세스 스텝 실행 결과를 보고합니다. outputs에 이 스텝에서 생성/추출한 값(예: 자재번호, 문서번호)을 넣으면 DataFlow에 따라 다음 스텝 입력에 자동 연결됩니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "step_number": {"type": "integer", "description": "완료한 스텝 번호"},
+                "status": {"type": "string", "enum": ["success", "error", "skipped"], "default": "success"},
+                "outputs": {"type": "object", "description": "이 스텝의 출력값. 예: {\"MATNR\": \"100-100\", \"EBELN\": \"4500012345\"}"},
+                "error": {"type": "string", "description": "에러 메시지 (status가 error일 때)"},
+            },
+            "required": ["step_number"],
+        },
+    },
+    {
+        "name": "sap_process_status",
+        "description": "현재 실행 중인 프로세스의 상태를 조회합니다. 다음 스텝에 입력할 값(pending_inputs)과 지금까지 수집된 데이터(context)를 보여줍니다.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
 ]
 
 TOOLS: list = []

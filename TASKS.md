@@ -172,6 +172,7 @@ AI가 end-to-end 업무를 자율 실행할 수 있다.
 | 4 | CLI/MCP 노출 | process list/show/create/delete 명령 추가 (dispatcher + MCP) | 완료 |
 | 5 | 테스트 | process CRUD + 데이터 흐름 + 시드 + 보안 + 무결성 검증 (12개 테스트) | 완료 |
 | 6 | Codex 리뷰 수정 | TOOL_PERMISSION_MAP 등록, MCP 표면 노출, 무결성 검증, 테스트 개선 | 완료 |
+| 7 | 실행 엔진 | ProcessExecutor — 스텝별 실행, 출력 추출, DataFlow 연결, 실행 기록 저장 | 완료 |
 
 ### 1. 스키마 설계 (`sap_cli/ontology/schema.py` 확장)
 

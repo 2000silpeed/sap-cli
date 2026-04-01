@@ -66,6 +66,9 @@ TOOL_PERMISSION_MAP: dict[str, Permission] = {
     "sap_process_show": Permission.READ,
     "sap_process_create": Permission.ADMIN,
     "sap_process_delete": Permission.ADMIN,
+    "sap_process_start": Permission.EXECUTE,
+    "sap_process_step": Permission.EXECUTE,
+    "sap_process_status": Permission.READ,
 }
 
 

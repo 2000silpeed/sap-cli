@@ -65,6 +65,9 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "process_show":   CommandDef("sap_process_show",      Permission.READ),
     "process_create": CommandDef("sap_process_create",    Permission.ADMIN),
     "process_delete": CommandDef("sap_process_delete",    Permission.ADMIN),
+    "process_start":  CommandDef("sap_process_start",     Permission.EXECUTE),
+    "process_step":   CommandDef("sap_process_step",      Permission.EXECUTE),
+    "process_status": CommandDef("sap_process_status",    Permission.READ),
 }
 
 COMMAND_TOOL_MAP: dict[str, str] = {cmd: d.tool_name for cmd, d in COMMAND_REGISTRY.items()}
@@ -318,6 +321,12 @@ def _execute_command(
         return _dispatch_process_create(args)
     if command == "process_delete":
         return _dispatch_process_delete(args)
+    if command == "process_start":
+        return _dispatch_process_start(args)
+    if command == "process_step":
+        return _dispatch_process_step(args)
+    if command == "process_status":
+        return _dispatch_process_status()
     raise ValueError(f"미구현 명령: {command}")
 
 
@@ -664,6 +673,69 @@ def _dispatch_process_delete(args: dict[str, Any]) -> dict[str, Any]:
     process_id = str(args["process_id"])
     deleted = _get_store().delete_process(process_id)
     return {"deleted": deleted, "process_id": process_id}
+
+
+_active_executor: Any = None  # ProcessExecutor | None
+
+
+def _dispatch_process_start(args: dict[str, Any]) -> dict[str, Any]:
+    global _active_executor
+    from .ontology.process_executor import ProcessExecutor
+
+    process_id = str(args["process_id"])
+    store = _get_store()
+    process = store.load_process(process_id)
+    if not process:
+        return {"error": True, "message": f"프로세스 '{process_id}'를 찾을 수 없습니다."}
+
+    _active_executor = ProcessExecutor(process)
+    _active_executor.start()
+    return _active_executor.get_status()
+
+
+def _dispatch_process_step(args: dict[str, Any]) -> dict[str, Any]:
+    global _active_executor
+    if _active_executor is None:
+        return {"error": True, "message": "실행 중인 프로세스가 없습니다. process_start를 먼저 호출하세요."}
+
+    step_number = int(args["step_number"])
+    status = str(args.get("status", "success"))
+    outputs = args.get("outputs", {}) or {}
+    error = str(args.get("error", ""))
+
+    if status == "skipped":
+        try:
+            _active_executor.skip_step(step_number, error)
+        except ValueError as e:
+            return {"error": True, "message": str(e)}
+    else:
+        _active_executor.complete_step(
+            step_number, outputs=outputs, status=status, error=error,
+        )
+
+    remaining = [
+        s for s in _active_executor.process.steps
+        if s.step_number > step_number
+        and not any(r.step_number == s.step_number for r in _active_executor.execution.step_results)
+    ]
+
+    result = _active_executor.get_status()
+
+    if not remaining:
+        has_error = any(r.status == "error" for r in _active_executor.execution.step_results)
+        final_status = "failed" if has_error else "completed"
+        path = _active_executor.finish(final_status)
+        result["saved_to"] = str(path)
+        result["status"] = final_status
+        _active_executor = None
+
+    return result
+
+
+def _dispatch_process_status() -> dict[str, Any]:
+    if _active_executor is None:
+        return {"error": True, "message": "실행 중인 프로세스가 없습니다."}
+    return _active_executor.get_status()
 
 
 def _evaluate_authorization(
