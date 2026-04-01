@@ -4,6 +4,8 @@ SAP GUI Scripting API를 CLI/MCP로 래핑하여, AI 에이전트가 SAP 시스�
 
 SOS(Study Ontology System)의 온톨로지 사상을 적용하여, 단순 스크립트 실행이 아닌 **SAP 도메인을 이해하는 AI**를 구축한다.
 
+인터랙티브 개요 문서는 [sap-cli-interactive-guide.html](./sap-cli-interactive-guide.html)에서 바로 볼 수 있다.
+
 ---
 
 ## 목차
