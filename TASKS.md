@@ -253,4 +253,54 @@ class BusinessProcess(BaseModel):
 - `sap process list` — 등록된 프로세스 목록
 - `sap process show <id>` — 프로세스 상세 (스텝 + 데이터 흐름)
 - `sap process create <id> --name "..." --steps MM01,ME21N,MIGO` — 신규 생성
-- MCP: `process_list`, `process_show`, `process_create` 도구 추가
+- `sap process delete <id>` — 프로세스 삭제
+- MCP: `process_list`, `process_show`, `process_create`, `process_delete` 도구 추가
+
+### 5. ProcessExecutor — 실행 엔진 (`sap_cli/ontology/process_executor.py`)
+
+BusinessProcess가 "설계도"라면, ProcessExecutor는 **실행 컨텍스트를 관리하는 런타임**이다.
+AI 에이전트가 스텝을 수동으로 실행하면서 결과를 보고하면, executor가 DataFlow 기반으로 다음 스텝 입력값을 자동 연결한다.
+
+**사용 흐름:**
+```
+1. sap_process_start("procurement_basic")
+   → status: running, current_step: 0, pending_inputs: {MTART: "ROH"}
+
+2. AI가 MM01 실행 → 자재 생성 → 상태바에서 번호 추출
+   → sap_process_step(0, outputs: {MATNR: "100-100"})
+   → context에 step0.MATNR = "100-100" 저장
+
+3. sap_process_status 호출
+   → current_step: 1, pending_inputs: {MATNR: "100-100"}  (DataFlow 자동)
+
+4. AI가 ME21N 실행 → MATNR "100-100" 입력 → 구매오더 생성
+   → sap_process_step(1, outputs: {EBELN: "4500012345"})
+
+5. ... 반복 ...
+
+6. 마지막 스텝 완료 시 자동으로 실행 기록 JSON 저장
+   → ~/.sap_cli/executions/procurement_basic_20260402T....json
+```
+
+**추가된 MCP 도구:**
+- `sap_process_start` — 프로세스 실행 시작, 컨텍스트 초기화
+- `sap_process_step` — 스텝 완료 보고 + 출력값 등록 (DataFlow 자동 연결)
+- `sap_process_status` — 현재 상태, 다음 입력값(pending_inputs), 컨텍스트 조회
+
+**핵심 메서드:**
+- `get_step_inputs(step)` — 고정 입력 + DataFlow에서 온 값 합산
+- `complete_step(step, outputs)` — 출력을 context에 저장, 다음 스텝으로 이동
+- `skip_step(step)` — optional 스텝 건너뛰기
+- `extract_document_number(msg)` — SAP 상태바 메시지에서 문서번호 파싱
+- `finish()` / `abort()` — 실행 기록 JSON 저장
+
+## 커밋 이력 (2026-04-02)
+
+```
+bce060e feat: ProcessExecutor 추가 — 스텝별 실행, DataFlow 연결, 실행 기록 저장
+97b42dd docs: 인터랙티브 가이드 플레이북에 업무 프로세스 시나리오 추가
+0022d0d docs: 인터랙티브 가이드에 BusinessProcess 섹션 추가
+717ddc1 docs: README에 업무 프로세스(BusinessProcess) 섹션 추가
+f08f1ee fix: Codex 리뷰 4건 수정 — 권한맵, MCP 노출, 무결성 검증, 테스트 격리
+9a19d63 feat: BusinessProcess 레이어 추가 — 트랜잭션 간 업무 프로세스 구조화
+```
