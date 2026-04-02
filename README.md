@@ -573,21 +573,61 @@ sap process show procurement_basic
 }
 ```
 
-### 6.5.3 MCP 도구
+### 6.5.3 프로세스 실행 (ProcessExecutor)
 
-MCP 서버에서도 동일한 기능을 사용할 수 있다:
+프로세스 정의가 "설계도"라면, ProcessExecutor는 **스텝 간 데이터를 자동 연결하는 런타임**이다.
+AI 에이전트가 각 스텝을 실행하고 결과를 보고하면, 다음 스텝에 넣을 입력값을 자동으로 알려준다.
+
+```powershell
+# 1. 프로세스 실행 시작
+sap process start procurement_basic
+# → status: running, current_step: 0, pending_inputs: {MTART: "ROH"}
+
+# 2. AI가 MM01 실행 → 자재 생성 → 상태바에서 번호 추출
+#    sap run MM01 → 필드 입력 → 저장
+sap process step 0 --outputs '{"MATNR": "100-100"}'
+# → context에 저장, pending_inputs: {MATNR: "100-100"} (DataFlow 자동)
+
+# 3. 다음 스텝 입력 확인
+sap process status
+# → current_step: 1, current_tcode: ME21N, pending_inputs: {MATNR: "100-100"}
+
+# 4. AI가 ME21N 실행 → MATNR 입력 → 구매오더 생성
+sap process step 1 --outputs '{"EBELN": "4500012345"}'
+
+# 5. ... 반복 → 마지막 스텝 완료 시 실행 기록 자동 저장
+```
+
+### 6.5.4 MCP 도구
+
+프로세스 관리:
 - `sap_process_list` — 프로세스 목록 조회
 - `sap_process_show` — 프로세스 상세 조회
 - `sap_process_create` — 새 프로세스 등록 (스텝과 데이터 흐름 정의)
 - `sap_process_delete` — 프로세스 삭제
 
-### 6.5.4 저장 위치
+프로세스 실행:
+- `sap_process_start` — 프로세스 실행 시작, 컨텍스트 초기화
+- `sap_process_step` — 스텝 완료 보고 + 출력값 등록 (DataFlow 자동 연결)
+- `sap_process_status` — 현재 상태, 다음 입력값(pending_inputs) 조회
+
+### 6.5.5 저장 위치
 
 ```
 ~/.sap_cli/knowledge/processes/
-├── procurement_basic.json     # 자재 조달 프로세스 (시드 데이터)
-└── ...                        # 사용자 정의 프로세스
+├── procurement_basic.json     # 자재 조달 (MM01→ME21N→MIGO→MIRO)
+└── sales_to_billing.json      # 판매 (VA01→VL01N→VF01)
+
+~/.sap_cli/executions/
+└── procurement_basic_20260402T....json  # 실행 기록
 ```
+
+### 6.5.6 시드 트랜잭션 온톨로지
+
+프로세스의 각 스텝에 해당하는 트랜잭션 온톨로지가 시드로 제공된다:
+
+- 조달: MM03(자재조회), ME21N(구매오더), MIGO(입고), MIRO(송장검증)
+- 판매: VA01(수주), VL01N(출하), VF01(대금청구)
 
 ---
 
@@ -971,6 +1011,7 @@ sap transcript-plan --command set --index 0
 │  │ ├── Graph (GraphRAG 탐색)          │     │
 │  │ ├── Analysis Space (6공간 분석)    │     │
 │  │ ├── BusinessProcess (업무 프로세스)  │     │
+│  │ ├── ProcessExecutor (실행 엔진)    │     │
 │  │ └── Knowledge (시드 데이터)         │     │
 │  └────────────────────────────────────┘     │
 └──────────────┬──────────────────────────────┘
@@ -989,7 +1030,7 @@ sap_cli/
 ├── sap_cli/
 │   ├── cli.py                  # CLI 엔트리포인트 (22개 커맨드)
 │   ├── com_wrapper.py          # SAP GUI COM 래퍼
-│   ├── mcp_server.py           # MCP 서버 (20개 도구)
+│   ├── mcp_server.py           # MCP 서버 (23개 도구)
 │   ├── service.py              # CLI/MCP 공통 서비스 레이어
 │   ├── learner.py              # 온톨로지 학습 엔진
 │   ├── auth/
@@ -1009,9 +1050,10 @@ sap_cli/
 │       ├── analysis_space.py   # 6공간 분석 프레임워크
 │       ├── graph.py            # GraphRAG 관계 그래프
 │       ├── store.py            # 온톨로지 저장소
+│       ├── process_executor.py # 업무 프로세스 실행 엔진
 │       └── knowledge/          # 시드 데이터 (첫 실행 시 ~/.sap_cli/knowledge/로 복사됨)
-│           ├── transactions/   # MM03.json, VA01.json ...
-│           ├── processes/      # 업무 프로세스 (procurement_basic.json ...)
+│           ├── transactions/   # MM03, ME21N, MIGO, MIRO, VA01, VL01N, VF01
+│           ├── processes/      # procurement_basic, sales_to_billing
 │           ├── meta_edges/     # 메타엣지 규칙
 │           └── patterns/       # 공통 패턴 (메타온톨로지)
 └── tests/

@@ -1137,6 +1137,9 @@ active_agent: "standard"</pre>
       { cli: "sap process show", mcp: "sap_process_show", category: "process", permission: "read", surfaces: ["CLI", "MCP"], desc: "프로세스의 스텝과 데이터 흐름을 상세 조회합니다.", example: "sap process show procurement_basic", hint: "스텝 간 어떤 필드가 연결되는지 확인할 수 있습니다." },
       { cli: "sap process create", mcp: "sap_process_create", category: "process", permission: "admin", surfaces: ["CLI", "MCP"], desc: "새 업무 프로세스를 등록합니다. 트랜잭션 순서와 데이터 흐름을 정의합니다.", example: "sap process create procurement_custom --name \"맞춤 조달\" --steps MM01,ME21N", hint: "무결성 검증(중복 스텝, 역방향 흐름)을 자동으로 수행합니다." },
       { cli: "sap process delete", mcp: "sap_process_delete", category: "process", permission: "admin", surfaces: ["CLI", "MCP"], desc: "등록된 업무 프로세스를 삭제합니다.", example: "sap process delete old_process", hint: "관리 권한이 필요합니다." },
+      { cli: "sap process start", mcp: "sap_process_start", category: "process", permission: "execute", surfaces: ["CLI", "MCP"], desc: "업무 프로세스 실행을 시작합니다. 스텝 간 데이터 전달 컨텍스트를 초기화합니다.", example: "sap process start procurement_basic", hint: "시작 후 process step으로 각 스텝 완료를 보고합니다." },
+      { cli: "sap process step", mcp: "sap_process_step", category: "process", permission: "execute", surfaces: ["CLI", "MCP"], desc: "스텝 완료를 보고하고 출력값을 등록합니다. DataFlow에 따라 다음 스텝 입력에 자동 연결됩니다.", example: "sap process step 0 --outputs '{\"MATNR\": \"100-100\"}'", hint: "outputs에 이 스텝에서 추출한 문서번호 등을 넣으세요." },
+      { cli: "sap process status", mcp: "sap_process_status", category: "process", permission: "read", surfaces: ["CLI", "MCP"], desc: "현재 실행 중인 프로세스의 상태와 다음 스텝에 입력할 값(pending_inputs)을 조회합니다.", example: "sap process status", hint: "다음에 뭘 해야 하는지 확인할 때 사용합니다." },
 
       { cli: "sap daemon", mcp: null, category: "runtime", permission: "runtime", surfaces: ["CLI", "Runtime"], desc: "백그라운드 데몬을 시작/종료/상태조회합니다.", example: "sap daemon start", hint: "COM 연결을 유지해서 응답 속도를 줄입니다." },
       { cli: "sap shell", mcp: null, category: "runtime", permission: "runtime", surfaces: ["CLI", "Shell", "Runtime"], desc: "대화형 셸로 반복 실행 지연을 줄입니다.", example: "sap shell", hint: "사람이 수동으로 여러 명령을 실험할 때 좋습니다." }
@@ -1196,11 +1199,11 @@ active_agent: "standard"</pre>
       {
         key: "process",
         title: "BusinessProcess는 트랜잭션을 연결한다",
-        summary: "단일 트랜잭션을 넘어 여러 트랜잭션을 순서대로 연결한 end-to-end 업무 흐름을 구조화합니다.",
+        summary: "단일 트랜잭션을 넘어 여러 트랜잭션을 순서대로 연결한 end-to-end 업무 흐름을 구조화하고, ProcessExecutor가 스텝 간 데이터를 자동 전달합니다.",
         points: [
-          "자재 조달(MM01→ME21N→MIGO→MIRO)처럼 실무 SAP 작업은 트랜잭션 여러 개의 연결입니다.",
-          "DataFlow로 앞 스텝의 출력(예: 자재번호)이 뒤 스텝의 입력으로 자동 연결됩니다.",
-          "AI가 ‘자재 조달해줘’라는 지시 하나로 전체 프로세스를 순서대로 실행할 수 있는 토대입니다."
+          "조달(MM01→ME21N→MIGO→MIRO), 판매(VA01→VL01N→VF01) 같은 실무 워크플로우를 정의합니다.",
+          "ProcessExecutor가 스텝 간 실행 컨텍스트를 관리합니다. process_start → 스텝 실행 → process_step(출력 보고) → 다음 pending_inputs 자동 계산.",
+          "실행 완료 후 기록이 JSON으로 저장되어 사후 검토와 반복 실행의 토대가 됩니다."
         ]
       }
     ];
