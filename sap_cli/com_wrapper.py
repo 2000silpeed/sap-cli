@@ -202,11 +202,15 @@ class SapGuiWrapper:
             raise SapGuiError(f"버튼 클릭 실패 [{element_id}]: {e}") from e
 
     def send_vkey(self, vkey: int) -> None:
-        """VKey 전송 (Enter=0, Back=3, Execute=8, Save=11, Cancel=12)."""
+        """VKey 전송 (Enter=0, Back=3, Execute=8, Save=11, Cancel=12).
+
+        모달(wnd[1])이 떠 있으면 모달에 전송, 없으면 메인 윈도우(wnd[0])에 전송.
+        """
+        window_id = "wnd[1]" if self.has_modal() else "wnd[0]"
         try:
-            self.session.FindById("wnd[0]").SendVKey(vkey)
+            self.session.FindById(window_id).SendVKey(vkey)
         except Exception as e:
-            raise SapGuiError(f"VKey 전송 실패 [{vkey}]: {e}") from e
+            raise SapGuiError(f"VKey 전송 실패 [{vkey}] on {window_id}: {e}") from e
 
     def select_menu(self, menu_id: str) -> None:
         """메뉴 항목 선택."""
@@ -260,13 +264,19 @@ class SapGuiWrapper:
     # Screen Reading (GetObjectTree 기반)
     # -------------------------------------------------------------------
 
-    def get_screen(self, window_id: str = "wnd[0]") -> ScreenOntology:
+    def get_screen(self, window_id: str | None = None) -> ScreenOntology:
         """현재 화면의 전체 UI 구조를 ScreenOntology로 반환.
+
+        window_id를 지정하지 않으면 모달(wnd[1])이 있을 때 모달을,
+        없으면 메인 윈도우(wnd[0])를 스캔한다.
 
         수동 탐색(Children 재귀) 방식 사용. GetObjectTree는 id만 반환하여
         각 요소마다 FindById COM 호출이 필요해 느림. 수동 탐색은 Children
         한 번 호출로 모든 자식을 가져오므로 COM 왕복이 적다.
         """
+        if window_id is None:
+            window_id = "wnd[1]" if self.has_modal() else "wnd[0]"
+
         info = self.session.Info
         screen = ScreenOntology(
             transaction=info.Transaction,
