@@ -1,0 +1,98 @@
+{
+  "tcode": "VF01",
+  "title": "Create Billing Document",
+  "module": "SD (Sales & Distribution)",
+  "description": "대금청구(빌링) 문서 생성. 출하(납품) 문서를 참조하여 인보이스를 발행하고 회계 전기를 수행한다.",
+  "screens": {
+    "1000": {
+      "transaction": "VF01",
+      "screen_number": 1000,
+      "program": "SAPMV60A",
+      "title": "Create Billing Document",
+      "fields": [
+        {
+          "id": "wnd[0]/usr/ctxtKOMFK-VBELN",
+          "name": "KOMFK-VBELN",
+          "type": "GuiCTextField",
+          "label": "Document",
+          "value": "",
+          "changeable": true,
+          "required": true,
+          "max_length": 10,
+          "semantic": {
+            "raw_label": "Document",
+            "sap_field_name": "VBELN",
+            "description": "참조 문서번호 - 출하(납품) 문서 또는 판매오더 번호",
+            "synonyms": ["문서번호", "납품번호", "출하번호", "Delivery Number"],
+            "validation": "10자리 숫자",
+            "domain_context": "VL01N에서 생성된 출하 문서 참조. 입력 후 Enter 시 품목/가격 자동 로드"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/ctxtKOMFK-FKDAT",
+          "name": "KOMFK-FKDAT",
+          "type": "GuiCTextField",
+          "label": "Billing Date",
+          "value": "",
+          "changeable": true,
+          "required": false,
+          "max_length": 10,
+          "semantic": {
+            "raw_label": "Billing Date",
+            "sap_field_name": "FKDAT",
+            "description": "청구일 - 인보이스 발행일",
+            "synonyms": ["청구일", "빌링일", "Invoice Date"],
+            "validation": "날짜 형식 (DD.MM.YYYY)",
+            "domain_context": "회계 전기일과 매출 인식 시점에 영향"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/ctxtKOMFK-FKART",
+          "name": "KOMFK-FKART",
+          "type": "GuiCTextField",
+          "label": "Billing Type",
+          "value": "",
+          "changeable": true,
+          "required": false,
+          "max_length": 4,
+          "semantic": {
+            "raw_label": "Billing Type",
+            "sap_field_name": "FKART",
+            "description": "빌링유형 - 인보이스, 크레딧메모, 데빗메모 등",
+            "synonyms": ["빌링유형", "청구유형", "Invoice Type"],
+            "validation": "4자리 코드 (F2=인보이스, G2=크레딧메모, RE=반품크레딧)",
+            "domain_context": "출하 문서에서 자동 결정되지만 수동 변경 가능"
+          }
+        }
+      ],
+      "tables": [],
+      "buttons": [
+        {
+          "id": "wnd[0]/tbar[0]/btn[11]",
+          "name": "btn[11]",
+          "text": "",
+          "tooltip": "Save (Ctrl+S)",
+          "icon_name": "ICON_SAVE",
+          "vkey": 11,
+          "emphasized": false
+        },
+        {
+          "id": "wnd[0]/tbar[0]/btn[3]",
+          "name": "btn[3]",
+          "text": "",
+          "tooltip": "Back (F3)",
+          "icon_name": "ICON_BACK",
+          "vkey": 3,
+          "emphasized": false
+        }
+      ],
+      "menus": [],
+      "tabs": [],
+      "status": null
+    }
+  },
+  "screen_flow": [],
+  "field_dependencies": [],
+  "recorded_sequences": [],
+  "related_transactions": ["VF02", "VF03", "VF04"]
+}

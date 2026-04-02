@@ -1,0 +1,46 @@
+{
+  "id": "sales_to_billing",
+  "name": "판매 프로세스 (수주→출하→대금청구)",
+  "module": "SD",
+  "description": "판매오더 생성 → 출하(납품) 생성 → 대금청구(빌링)의 표준 SD 프로세스",
+  "steps": [
+    {
+      "step_number": 0,
+      "tcode": "VA01",
+      "description": "판매오더(수주) 생성",
+      "input_fields": {"AUART": "OR"},
+      "expected_output": ["VBELN"]
+    },
+    {
+      "step_number": 1,
+      "tcode": "VL01N",
+      "description": "출하(납품) 문서 생성",
+      "input_fields": {},
+      "expected_output": ["VBELN_DLV"]
+    },
+    {
+      "step_number": 2,
+      "tcode": "VF01",
+      "description": "대금청구(빌링) 생성",
+      "input_fields": {},
+      "expected_output": ["VBELN_INV"]
+    }
+  ],
+  "data_flows": [
+    {
+      "source_step": 0,
+      "source_field": "VBELN",
+      "target_step": 1,
+      "target_field": "VBELN",
+      "description": "판매오더번호를 출하 문서 생성에 참조"
+    },
+    {
+      "source_step": 1,
+      "source_field": "VBELN_DLV",
+      "target_step": 2,
+      "target_field": "VBELN",
+      "description": "출하 문서번호를 대금청구에 참조"
+    }
+  ],
+  "tags": ["판매", "수주", "출하", "납품", "빌링", "대금청구"]
+}

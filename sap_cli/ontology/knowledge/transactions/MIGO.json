@@ -1,0 +1,142 @@
+{
+  "tcode": "MIGO",
+  "title": "Goods Movement",
+  "module": "MM (Material Management)",
+  "description": "입출고 처리. 구매오더 기반 입고(GR), 생산오더 입고, 재고이전, 출고 등 모든 재고 이동을 처리한다.",
+  "screens": {
+    "1": {
+      "transaction": "MIGO",
+      "screen_number": 1,
+      "program": "SAPLMIGO",
+      "title": "Goods Receipt Purchase Order",
+      "fields": [
+        {
+          "id": "wnd[0]/usr/ssubSUB_HEADER:SAPLMIGO:0001/ctxtGODFUNCSEL-ACTION",
+          "name": "GODFUNCSEL-ACTION",
+          "type": "GuiCTextField",
+          "label": "Action",
+          "value": "A01",
+          "changeable": true,
+          "required": true,
+          "max_length": 3,
+          "semantic": {
+            "raw_label": "Action",
+            "sap_field_name": "ACTION",
+            "description": "재고이동 유형 - 입고(A01), 출고(A07), 이전전기(A04) 등",
+            "synonyms": ["액션", "이동유형", "Movement Action"],
+            "validation": "A01=입고, A02=반품, A04=이전전기, A07=출고",
+            "domain_context": "액션에 따라 참조 문서 유형이 달라짐"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/ssubSUB_HEADER:SAPLMIGO:0001/ctxtGODFUNCSEL-REFDOC",
+          "name": "GODFUNCSEL-REFDOC",
+          "type": "GuiCTextField",
+          "label": "Ref. Document",
+          "value": "R01",
+          "changeable": true,
+          "required": true,
+          "max_length": 3,
+          "semantic": {
+            "raw_label": "Reference Document",
+            "sap_field_name": "REFDOC",
+            "description": "참조 문서 유형 - 구매오더(R01), 생산오더(R02), 자재전표(R05) 등",
+            "synonyms": ["참조문서", "Reference Doc Type"],
+            "validation": "R01=구매오더, R02=생산오더, R05=자재전표, R08=예약",
+            "domain_context": "입고 시 보통 R01(구매오더 참조)"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/ssubSUB_HEADER:SAPLMIGO:0001/txtGODFUNCSEL-EBELN",
+          "name": "GODFUNCSEL-EBELN",
+          "type": "GuiTextField",
+          "label": "Purchase Order",
+          "value": "",
+          "changeable": true,
+          "required": true,
+          "max_length": 10,
+          "semantic": {
+            "raw_label": "Purchase Order",
+            "sap_field_name": "EBELN",
+            "description": "구매오더 번호 - 입고 참조할 PO",
+            "synonyms": ["구매오더번호", "PO번호", "PO Number"],
+            "validation": "10자리 숫자",
+            "domain_context": "ME21N에서 생성된 구매오더 참조. 입력 후 Enter 시 품목 자동 로드"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/ssubSUB_HEADER:SAPLMIGO:0002/txtGODFUNCSEL-EBELP",
+          "name": "GODFUNCSEL-EBELP",
+          "type": "GuiTextField",
+          "label": "PO Item",
+          "value": "",
+          "changeable": true,
+          "required": false,
+          "max_length": 5,
+          "semantic": {
+            "raw_label": "PO Item",
+            "sap_field_name": "EBELP",
+            "description": "구매오더 품목번호 - 특정 품목만 입고할 때 지정",
+            "synonyms": ["품목번호", "PO Item Number"],
+            "validation": "5자리 숫자 (보통 10, 20, 30...)",
+            "domain_context": "비워두면 전체 품목 표시"
+          }
+        }
+      ],
+      "tables": [],
+      "buttons": [
+        {
+          "id": "wnd[0]/tbar[0]/btn[11]",
+          "name": "btn[11]",
+          "text": "",
+          "tooltip": "Save (Ctrl+S)",
+          "icon_name": "ICON_SAVE",
+          "vkey": 11,
+          "emphasized": false
+        },
+        {
+          "id": "wnd[0]/tbar[0]/btn[3]",
+          "name": "btn[3]",
+          "text": "",
+          "tooltip": "Back (F3)",
+          "icon_name": "ICON_BACK",
+          "vkey": 3,
+          "emphasized": false
+        },
+        {
+          "id": "wnd[0]/tbar[1]/btn[0]",
+          "name": "btn[0]",
+          "text": "Check",
+          "tooltip": "Check",
+          "icon_name": "ICON_CHECK",
+          "vkey": null,
+          "emphasized": false
+        },
+        {
+          "id": "wnd[0]/tbar[1]/btn[1]",
+          "name": "btn[1]",
+          "text": "Post",
+          "tooltip": "Post",
+          "icon_name": "ICON_OKAY",
+          "vkey": null,
+          "emphasized": true
+        }
+      ],
+      "menus": [],
+      "tabs": [],
+      "status": null
+    }
+  },
+  "screen_flow": [],
+  "field_dependencies": [
+    {
+      "link_type": "FIELD_DEPENDS_ON",
+      "source_id": "field:MIGO:EBELN",
+      "target_id": "field:MIGO:REFDOC",
+      "properties": {},
+      "description": "참조 문서가 R01(구매오더)일 때 EBELN 입력 가능"
+    }
+  ],
+  "recorded_sequences": [],
+  "related_transactions": ["MB03", "MB51", "ME23N"]
+}

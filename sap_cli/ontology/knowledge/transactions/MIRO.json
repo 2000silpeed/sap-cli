@@ -1,0 +1,125 @@
+{
+  "tcode": "MIRO",
+  "title": "Enter Incoming Invoice",
+  "module": "MM (Material Management)",
+  "description": "송장검증(Invoice Verification). 공급업체 청구서를 입력하고 구매오더/입고와 3-way 매칭 후 전기한다.",
+  "screens": {
+    "1": {
+      "transaction": "MIRO",
+      "screen_number": 1,
+      "program": "SAPLMR1M",
+      "title": "Enter Incoming Invoice",
+      "fields": [
+        {
+          "id": "wnd[0]/usr/ssubHEADER_SCREEN:SAPLMR1M:6001/ctxtINVFO-BLDAT",
+          "name": "INVFO-BLDAT",
+          "type": "GuiCTextField",
+          "label": "Invoice Date",
+          "value": "",
+          "changeable": true,
+          "required": true,
+          "max_length": 10,
+          "semantic": {
+            "raw_label": "Invoice Date",
+            "sap_field_name": "BLDAT",
+            "description": "송장 발행일 (공급업체 청구서 날짜)",
+            "synonyms": ["송장일", "청구일", "Invoice Date"],
+            "validation": "날짜 형식 (DD.MM.YYYY)",
+            "domain_context": "전기일(BUDAT)과 다를 수 있음. 지급 기한 계산의 기준"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/ssubHEADER_SCREEN:SAPLMR1M:6001/txtINVFO-WRBTR",
+          "name": "INVFO-WRBTR",
+          "type": "GuiTextField",
+          "label": "Amount",
+          "value": "",
+          "changeable": true,
+          "required": true,
+          "max_length": 16,
+          "semantic": {
+            "raw_label": "Amount",
+            "sap_field_name": "WRBTR",
+            "description": "송장 총액",
+            "synonyms": ["금액", "송장금액", "Invoice Amount", "총액"],
+            "validation": "숫자, 소수점 허용, 통화에 따라 형식 다름",
+            "domain_context": "PO 금액과 3-way 매칭 시 허용 오차 범위 확인"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/ssubHEADER_SCREEN:SAPLMR1M:6001/ctxtINVFO-SGTXT",
+          "name": "INVFO-SGTXT",
+          "type": "GuiCTextField",
+          "label": "Text",
+          "value": "",
+          "changeable": true,
+          "required": false,
+          "max_length": 50,
+          "semantic": {
+            "raw_label": "Text",
+            "sap_field_name": "SGTXT",
+            "description": "송장 헤더 텍스트 (참조 메모)",
+            "synonyms": ["텍스트", "참조", "Header Text"],
+            "validation": "50자리 자유 텍스트",
+            "domain_context": "검색/조회 시 참조용"
+          }
+        },
+        {
+          "id": "wnd[0]/usr/ssubPO_SCREEN:SAPLMR1M:6101/ctxtINVFO-EBELN",
+          "name": "INVFO-EBELN",
+          "type": "GuiCTextField",
+          "label": "Purchase Order",
+          "value": "",
+          "changeable": true,
+          "required": true,
+          "max_length": 10,
+          "semantic": {
+            "raw_label": "Purchase Order",
+            "sap_field_name": "EBELN",
+            "description": "참조 구매오더 번호",
+            "synonyms": ["구매오더번호", "PO번호", "PO Number"],
+            "validation": "10자리 숫자",
+            "domain_context": "ME21N에서 생성된 PO 참조. 입력 후 Enter 시 품목/금액 자동 로드"
+          }
+        }
+      ],
+      "tables": [],
+      "buttons": [
+        {
+          "id": "wnd[0]/tbar[0]/btn[11]",
+          "name": "btn[11]",
+          "text": "",
+          "tooltip": "Save (Ctrl+S)",
+          "icon_name": "ICON_SAVE",
+          "vkey": 11,
+          "emphasized": false
+        },
+        {
+          "id": "wnd[0]/tbar[0]/btn[3]",
+          "name": "btn[3]",
+          "text": "",
+          "tooltip": "Back (F3)",
+          "icon_name": "ICON_BACK",
+          "vkey": 3,
+          "emphasized": false
+        },
+        {
+          "id": "wnd[0]/tbar[1]/btn[7]",
+          "name": "btn[7]",
+          "text": "Simulate",
+          "tooltip": "Simulate",
+          "icon_name": "",
+          "vkey": null,
+          "emphasized": false
+        }
+      ],
+      "menus": [],
+      "tabs": [],
+      "status": null
+    }
+  },
+  "screen_flow": [],
+  "field_dependencies": [],
+  "recorded_sequences": [],
+  "related_transactions": ["MIR4", "MIR5", "MRBR"]
+}

@@ -92,8 +92,8 @@ class TestGraphConstruction:
     def test_builds_nodes(self, graph_with_data):
         stats = graph_with_data.stats()
         assert stats["total_nodes"] > 0
-        assert stats["node_types"]["transaction"] == 2
-        assert stats["node_types"]["screen"] >= 3  # MM03(2) + VA01(1)
+        assert stats["node_types"]["transaction"] >= 2
+        assert stats["node_types"]["screen"] >= 3
 
     def test_transaction_node_exists(self, graph_with_data):
         node = graph_with_data.get_node("tx:MM03")
