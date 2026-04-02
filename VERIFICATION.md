@@ -99,16 +99,28 @@ sap vkey 0
 # 7. 상태 확인 — 에러가 없는지 체크
 sap status
 
-# 8-1. 뷰 선택 팝업이 나타난 경우
+# 8. 뷰 선택 처리 — 팝업 또는 일반 화면 두 가지 경우가 있음
 sap modal
-# → has_modal: true면 팝업이 뜬 것
+# → has_modal: true면 팝업 방식, false면 일반 화면 방식
 
-# 8-2. 뷰 선택에서 Enter (기본 뷰로 진입)
+# 8a. 팝업 방식 (has_modal: true)
+#     sap screen/vkey는 모달(wnd[1])을 자동 감지하므로 별도 처리 불필요
+sap screen --fields-only
+# → 팝업 안의 필드/테이블/버튼이 보임 (wnd[1] 자동 스캔)
 sap vkey 0
+# → 팝업에 Enter 전송 (wnd[1] 자동 감지)
+
+# 8b. 일반 화면 방식 (has_modal: false, SAP HANA 등)
+#     뷰 선택이 일반 화면(예: screen 70)으로 나타나는 경우
+sap screen --actions-only
+# → "Select View" 같은 버튼 ID 확인
+sap press "해당_버튼_ID"
+# → 뷰 선택 후 Enter
 
 # 9. 자재 기본데이터 화면 확인
 sap screen --fields-only
 # → MARA-MAKTX(자재내역), MARA-MEINS(기본단위) 등 필드
+# 참고: SAP 버전에 따라 필드 ID가 다를 수 있음. 실제 출력 기준으로 판단
 
 # 10. 특정 필드값 읽기
 sap get "wnd[0]/usr/txtMARA-MAKTX"
@@ -128,6 +140,8 @@ sap vkey 3
 | get 자재번호 | 입력한 값과 일치 |
 | vkey 0 (Enter) | 에러 없이 화면 이동 |
 | status | message_type이 E가 아닌 것 |
+| modal 감지 | 팝업이 떴으면 has_modal: true, screen/vkey가 wnd[1] 자동 타겟 |
+| screen -f (팝업) | 팝업 안의 뷰 선택 테이블/필드가 보임 |
 | screen -f (기본데이터) | 자재 관련 필드 5개 이상 |
 | get 자재내역 | 비어있지 않은 문자열 |
 | vkey 3 (Back) | MM03 초기 화면 또는 이전 화면으로 복귀 |
@@ -138,6 +152,8 @@ sap vkey 3
 - vkey 0 후 화면이 안 바뀜 → `sap status` 확인 (필수 입력 누락 가능)
 - 필드 ID가 다름 → `sap screen --fields-only`로 실제 ID 확인 (시스템마다 커스텀 가능)
 - 뷰 선택 팝업 없이 바로 진입 → 사용자 설정에 따라 팝업 생략될 수 있음 (정상)
+- **팝업인데 screen에 안 잡힘** → com_wrapper가 wnd[1] 자동 감지. `sap modal`로 먼저 확인
+- **SAP HANA 버전에서 화면번호가 다름** → 시드 데이터(4004)와 실제(70 등)가 다를 수 있음. `sap session`으로 실제 화면번호 확인 후 `sap learn`으로 시드 갱신
 
 ---
 
