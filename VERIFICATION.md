@@ -521,6 +521,315 @@ sap transcript-plan --command set --index 0
 
 ---
 
+## 시나리오 8: 업무 프로세스 조회 및 관리
+
+### 목표
+
+등록된 업무 프로세스(BusinessProcess)를 조회하고, 새 프로세스를 생성/삭제하는 CRUD를 검증.
+
+### 사전 준비
+
+- 시나리오 1이 성공한 상태 (SAP 연결 불필요, 온톨로지만 사용)
+- 시드 데이터 확인: `~/.sap_cli/knowledge/processes/` 에 JSON 파일 존재
+
+### 실행 단계
+
+```powershell
+# 1. 프로세스 목록 조회
+sap process list
+# → procurement_basic, sales_to_billing 2개 반환
+
+# 2. 조달 프로세스 상세 조회
+sap process show procurement_basic
+# → steps 4개 (MM01→ME21N→MIGO→MIRO), data_flows 3개
+
+# 3. 판매 프로세스 상세 조회
+sap process show sales_to_billing
+# → steps 3개 (VA01→VL01N→VF01), data_flows 2개
+
+# 4. 프로세스 구조 검증 — 데이터 흐름 확인
+# procurement_basic:
+#   step0.MATNR → step1.MATNR (자재번호)
+#   step1.EBELN → step2.EBELN (구매오더번호)
+#   step2.MBLNR → step3.MBLNR (입고문서번호)
+
+# 5. 온톨로지 목록에서 프로세스도 보이는지 확인
+sap ontology --list-all
+# → transactions, patterns, processes 모두 반환
+
+# 6. 새 프로세스 생성 테스트 (MCP 환경에서)
+# Claude Code: "자재 변경 프로세스를 만들어줘. MM02로 변경하고 MM03으로 확인하는 2스텝"
+# 기대: sap_process_create 호출
+
+# 7. 생성된 프로세스 확인
+sap process list
+sap process show <생성된_id>
+
+# 8. 프로세스 삭제 테스트
+sap process delete <생성된_id>
+sap process list
+# → 삭제된 프로세스가 목록에서 사라짐
+```
+
+### 기대 결과
+
+| 단계 | 확인 항목 |
+|------|----------|
+| process list | count: 2, id/name/module/steps_count/tags 필드 존재 |
+| process show (조달) | steps 4개, data_flows 3개, 스텝별 tcode/description 확인 |
+| process show (판매) | steps 3개, data_flows 2개 |
+| data_flows | source_step < target_step, source_field/target_field 정확 |
+| ontology --list-all | processes 배열에 2개 포함 |
+| process create | saved: true, process_id 반환, 무결성 검증 통과 |
+| process delete | deleted: true, 목록에서 제거 |
+
+### 실패 시 확인사항
+
+- process list가 비어있음 → `~/.sap_cli/knowledge/processes/` 디렉토리에 JSON 파일 존재 확인
+- 시드 데이터 없음 → 패키지 내 `sap_cli/ontology/knowledge/processes/` 에서 복사되었는지 확인
+- process create에서 무결성 에러 → 중복 step_number, 역방향 data_flow, 존재하지 않는 step 참조 확인
+
+---
+
+## 시나리오 9: 업무 프로세스 실행 (ProcessExecutor)
+
+### 목표
+
+조달 프로세스를 ProcessExecutor로 실행하면서 스텝 간 데이터 흐름이 자동 연결되는지 검증.
+AI 에이전트가 각 스텝을 수동 실행하고, 결과(문서번호)를 보고하면 다음 스텝 입력값이 자동으로 계산되는지 확인.
+
+### 사전 준비
+
+- 시나리오 1, 8이 성공한 상태
+- SAP 시스템에 자재 생성(MM01) 권한이 있어야 실제 실행 가능
+- 권한이 없으면 Phase A(데이터 흐름 검증)만으로도 핵심 검증 가능
+
+### Phase A: 프로세스 실행 시작 및 데이터 흐름 검증 (SAP 없이 가능)
+
+```powershell
+# 1. 조달 프로세스 실행 시작
+sap process start procurement_basic
+# → status: running, current_step: 0
+# → pending_inputs: {MTART: "ROH", MBRSH: "M"} (고정 입력)
+
+# 2. 현재 상태 확인
+sap process status
+# → current_step: 0, current_tcode: MM01
+# → pending_inputs: 고정 입력값
+# → context: {} (아직 비어있음)
+
+# 3. Step 0 완료 보고 (MM01 — 자재 생성 결과)
+sap process step 0 --status success --outputs '{"MATNR": "100-100"}'
+# → context에 step0.MATNR = "100-100" 저장
+
+# 4. 다음 스텝 입력값 확인 — 핵심 검증 포인트
+sap process status
+# → current_step: 1, current_tcode: ME21N
+# → pending_inputs: {MATNR: "100-100"}  ← DataFlow 자동 연결!
+
+# 5. Step 1 완료 보고 (ME21N — 구매오더 생성)
+sap process step 1 --status success --outputs '{"EBELN": "4500012345"}'
+
+# 6. 다음 스텝 입력값 확인
+sap process status
+# → current_step: 2, current_tcode: MIGO
+# → pending_inputs: {EBELN: "4500012345"}  ← DataFlow 자동!
+
+# 7. Step 2 완료 보고 (MIGO — 입고)
+sap process step 2 --status success --outputs '{"MBLNR": "5000000001"}'
+
+# 8. 다음 스텝 입력값 확인
+sap process status
+# → current_step: 3, current_tcode: MIRO
+# → pending_inputs: {MBLNR: "5000000001"}
+
+# 9. Step 3 완료 보고 (MIRO — 송장검증)
+sap process step 3 --status success --outputs '{"BELNR": "5100000001"}'
+# → 마지막 스텝이므로 자동 완료
+# → saved_to: ~/.sap_cli/executions/procurement_basic_...json
+# → status: completed
+```
+
+### Phase B: 실제 SAP 연동 실행 (SAP 환경 필요)
+
+```powershell
+# 1. 프로세스 시작
+sap process start procurement_basic
+
+# 2. 상태 확인 → pending_inputs 보고 고정 입력값 확인
+sap process status
+
+# 3. Step 0: MM01 실행
+sap run MM01
+sap screen --fields-only
+# → 필드 ID 확인 후 입력
+sap set "wnd[0]/usr/..." "ROH"    # MTART
+# ... 나머지 필드 입력 ...
+sap vkey 11                        # 저장
+sap status
+# → "Material 100-XXX created" 같은 상태 메시지 확인
+# → 자재번호 추출
+
+# 4. Step 0 완료 보고
+sap process step 0 --status success --outputs '{"MATNR": "추출한자재번호"}'
+
+# 5. 다음 입력 확인
+sap process status
+# → pending_inputs에 MATNR이 자동으로 들어있음
+
+# 6. Step 1: ME21N 실행 → pending_inputs의 MATNR 사용
+sap run ME21N
+# ... MATNR, LIFNR, 수량 등 입력 → 저장
+sap status
+# → "Standard PO 4500XXXXXX has been created"
+
+# 7. Step 1 완료 보고
+sap process step 1 --status success --outputs '{"EBELN": "추출한PO번호"}'
+
+# 8. Step 2: MIGO 실행 → pending_inputs의 EBELN 사용
+sap run MIGO
+# ... 구매오더번호 입력 → Check → Post
+sap status
+
+# 9. Step 2 완료 보고
+sap process step 2 --status success --outputs '{"MBLNR": "추출한입고문서번호"}'
+
+# 10. Step 3: MIRO 실행 → pending_inputs의 MBLNR 사용
+sap run MIRO
+# ... 구매오더번호/금액 입력 → 저장
+sap status
+
+# 11. Step 3 완료 → 자동 저장
+sap process step 3 --status success --outputs '{"BELNR": "추출한전표번호"}'
+# → saved_to 경로 확인
+```
+
+### Phase C: MCP 환경에서 AI 자율 실행
+
+Claude Code 대화창에서:
+
+```
+조달 프로세스 실행해줘. 자재번호 ROH, 공급업체 1000, 구매조직 1000으로.
+```
+
+기대: Claude가 아래 순서로 도구를 호출:
+1. `sap_process_show` — 프로세스 구조 확인
+2. `sap_process_start` — 실행 시작
+3. `sap_run(MM01)` → 필드 입력 → 저장 → `sap_process_step(0, outputs)`
+4. `sap_process_status` — 다음 입력 확인
+5. `sap_run(ME21N)` → pending_inputs 기반 입력 → 저장 → `sap_process_step(1, outputs)`
+6. ... 반복 → 완료
+
+### Phase D: 에러 및 스킵 케이스
+
+```powershell
+# 에러 케이스
+sap process start procurement_basic
+sap process step 0 --status error --error "자재유형이 유효하지 않습니다"
+sap process status
+# → failed_steps: 1, status: running (계속 가능)
+
+# Optional 스텝 스킵 (MIRO가 optional인 프로세스를 별도 정의한 경우)
+sap process step 2 --status skipped --error "입고 불필요"
+```
+
+### Phase E: 실행 기록 확인
+
+```powershell
+# 실행 기록 파일 확인
+ls ~/.sap_cli/executions/
+# → procurement_basic_20260402T... .json
+
+# 기록 내용 확인 (JSON)
+# → process_id, started_at, finished_at, status,
+#    context (모든 스텝 출력값), step_results (각 스텝 결과)
+```
+
+### 기대 결과
+
+| 단계 | 확인 항목 |
+|------|----------|
+| process start | status: running, current_step: 0 |
+| process status | pending_inputs에 고정값 + DataFlow 값 정확히 표시 |
+| process step (성공) | context에 outputs 저장, current_step 증가 |
+| DataFlow 자동 연결 | step0.MATNR → step1의 pending_inputs에 MATNR 자동 표시 |
+| 체인 연결 | step1.EBELN → step2, step2.MBLNR → step3 순차 전달 |
+| 마지막 스텝 완료 | status: completed, saved_to 경로 반환 |
+| 실행 기록 | JSON에 process_id, context, step_results, timestamps 포함 |
+| 에러 보고 | status: error인 스텝은 step_results에 error 메시지 포함 |
+
+### 실패 시 확인사항
+
+- "실행 중인 프로세스가 없습니다" → `sap process start`를 먼저 호출했는지 확인
+- pending_inputs가 비어있음 → `sap process show`로 data_flows 정의 확인
+- 실행 기록이 안 만들어짐 → `~/.sap_cli/executions/` 디렉토리 존재 확인
+- MCP에서 도구가 안 보임 → TOOL_PERMISSION_MAP에 process 도구가 등록되어 있는지 확인
+- 상태바에서 문서번호 추출 실패 → `sap status`로 원문 확인 후 수동으로 outputs에 입력
+
+---
+
+## 시나리오 10: 시드 트랜잭션 온톨로지 검증
+
+### 목표
+
+시드로 제공되는 7개 트랜잭션 온톨로지가 실제 SAP 화면과 일치하는지 검증.
+
+### 대상 트랜잭션
+
+| 트랜잭션 | 모듈 | 시드 화면 | 핵심 필드 |
+|----------|------|----------|----------|
+| MM03 | MM | 4000, 4004, 4200 | MATNR, WERKS, LGORT |
+| ME21N | MM | 1 | BSART, LIFNR, EKORG, MATNR, MENGE |
+| MIGO | MM | 1 | ACTION, REFDOC, EBELN |
+| MIRO | MM | 1 | BLDAT, WRBTR, EBELN |
+| VA01 | SD | 4001, 4002 | AUART, VKORG, VTWEG, MATNR |
+| VL01N | SD | 4000 | VSTEL, VBELN |
+| VF01 | SD | 1000 | VBELN, FKDAT, FKART |
+
+### 실행 단계
+
+```powershell
+# 각 트랜잭션에 대해 반복:
+sap connect
+sap run [TCODE]
+
+# 1. 실제 화면의 필드 목록
+sap screen --fields-only
+
+# 2. 시드 데이터의 필드 목록
+sap ontology --tcode [TCODE]
+
+# 3. 비교
+# 시드의 필드 ID가 실제 화면과 일치하는지
+# changeable, required 속성이 맞는지
+# max_length가 맞는지
+
+# 4. 불일치 시 실제 화면을 학습하여 시드 갱신
+sap learn
+sap ontology --tcode [TCODE]
+
+# 5. 뒤로가기
+sap vkey 3
+```
+
+### 기대 결과
+
+| 확인 항목 | 성공 기준 |
+|----------|----------|
+| 필드 ID 일치 | 시드의 element ID가 실제 화면과 동일 |
+| 필드 속성 일치 | changeable, required, max_length가 실제와 일치 |
+| 화면번호 일치 | 시드의 screen_number가 실제와 동일 |
+| 프로그램명 일치 | 시드의 program이 실제와 동일 |
+
+### 실패 시 확인사항
+
+- 필드 ID가 다름 → SAP 시스템의 커스터마이징에 따라 달라질 수 있음. `sap learn`으로 해당 시스템에 맞게 갱신
+- 화면번호가 다름 → Enjoy 트랜잭션(ME21N 등)은 SAP 버전에 따라 다를 수 있음
+- 필드가 존재하지 않음 → 시스템 설정/권한에 따라 일부 필드가 숨겨질 수 있음
+- required 불일치 → 시스템 커스텀(SHD0 등)에 따라 필수 여부가 달라질 수 있음
+
+---
+
 ## 검증 결과 기록 양식
 
 각 시나리오 수행 후 아래 형식으로 결과를 기록합니다.
