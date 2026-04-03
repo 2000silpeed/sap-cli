@@ -258,7 +258,13 @@ def _execute_command(
         sap = _get_sap()
         element_id = str(args["element_id"])
         value = str(args["value"])
-        sap.set_field(element_id, value)
+        if "/chk" in element_id:
+            checked = value.lower() not in ("", "0", "false", "off", "no")
+            sap.set_checkbox(element_id, checked)
+        elif "/rad" in element_id:
+            sap.select_radio(element_id)
+        else:
+            sap.set_field(element_id, value)
         payload = {
             "field": element_id,
             "value_set": value,
