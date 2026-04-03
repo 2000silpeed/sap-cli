@@ -575,6 +575,12 @@ class SapGuiWrapper:
                         visible_rows=int(getattr(child, "VisibleRowCount", 0)),
                         columns=columns,
                     ))
+                    # 테이블 안의 체크박스/필드도 스캔
+                    try:
+                        if hasattr(child, "Children") and child.Children.Count > 0:
+                            self._scan_children(child, screen, depth + 1)
+                    except Exception:
+                        pass
                     continue
                 else:
                     # 컨테이너: 재귀 탐색
