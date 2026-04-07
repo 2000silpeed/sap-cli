@@ -234,7 +234,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "action": {"type": "string", "enum": ["set", "press", "vkey", "run", "checkbox", "radio", "combo", "tab", "menu"]},
+                "action": {"type": "string", "enum": ["set", "press", "vkey", "run", "checkbox", "radio", "combo", "tab", "menu", "table-select"]},
                 "target": {"type": "string", "description": "대상 ID 또는 값"},
                 "value": {"type": "string", "description": "값 (set/vkey/checkbox/combo용)"},
                 "description": {"type": "string", "description": "단계 설명"},
