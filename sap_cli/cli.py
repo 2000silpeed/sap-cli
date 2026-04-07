@@ -189,6 +189,15 @@ def table(
     _run_command("table", {"element_id": element_id}, allow_daemon=True)
 
 
+@app.command("table-select")
+def table_select(
+    element_id: str = typer.Argument(help="테이블 ID"),
+    row: int = typer.Argument(help="선택할 행 번호 (0-based)"),
+) -> None:
+    """테이블에서 행 선택 (MM03 뷰 선택 등)."""
+    _run_command("table_select", {"element_id": element_id, "row": row}, allow_daemon=True)
+
+
 @app.command()
 def command(
     cmd: str = typer.Argument(help="SAP 커맨드 (예: /nMM03, /oSE80)"),
