@@ -380,6 +380,9 @@ def _dispatch_connect(args: dict[str, Any], ctx: DispatchContext) -> dict[str, A
 def _dispatch_screen(args: dict[str, Any]) -> dict[str, Any]:
     sap = _get_sap()
     screen = sap.get_screen()
+    search = args.get("search")
+    if search:
+        return _search_screen(screen, search)
     if args.get("fields_only"):
         fields = screen.get_changeable_fields()
         result: dict[str, Any] = {
@@ -398,6 +401,54 @@ def _dispatch_screen(args: dict[str, Any]) -> dict[str, Any]:
             "available_actions": [action.model_dump(mode="json") for action in actions],
         }
     return screen.model_dump(mode="json")
+
+
+def _search_screen(screen: Any, pattern: str) -> dict[str, Any]:
+    """화면 요소를 패턴으로 검색 (ID, 이름, 라벨, 텍스트 부분 일치)."""
+    p = pattern.lower()
+
+    def _match(text: str) -> bool:
+        return p in text.lower()
+
+    matched_fields = []
+    for f in screen.fields:
+        if any(_match(s) for s in [f.id, f.name, f.label, getattr(f, "value", ""),
+                                    getattr(f.semantic, "sap_field_name", ""),
+                                    getattr(f.semantic, "description", "")] +
+               getattr(f.semantic, "synonyms", [])):
+            matched_fields.append(f.model_dump(mode="json"))
+
+    matched_buttons = []
+    for b in screen.buttons:
+        if any(_match(s) for s in [b.id, b.name, b.text, b.tooltip]):
+            matched_buttons.append(b.model_dump(mode="json"))
+
+    matched_tabs = []
+    for t in screen.tabs:
+        if any(_match(s) for s in [t.id, t.name, t.text]):
+            matched_tabs.append(t.model_dump(mode="json"))
+
+    matched_tables = []
+    for t in screen.tables:
+        if any(_match(s) for s in [t.id, t.name]):
+            matched_tables.append(t.model_dump(mode="json"))
+
+    total = len(matched_fields) + len(matched_buttons) + len(matched_tabs) + len(matched_tables)
+    result: dict[str, Any] = {
+        "transaction": screen.transaction,
+        "screen_number": screen.screen_number,
+        "search": pattern,
+        "total_matches": total,
+    }
+    if matched_fields:
+        result["fields"] = matched_fields
+    if matched_buttons:
+        result["buttons"] = matched_buttons
+    if matched_tabs:
+        result["tabs"] = matched_tabs
+    if matched_tables:
+        result["tables"] = matched_tables
+    return result
 
 
 def _dispatch_record_step(

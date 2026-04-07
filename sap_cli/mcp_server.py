@@ -69,12 +69,13 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_screen",
-        "description": "현재 SAP 화면의 전체 UI 구조를 JSON으로 반환합니다. 필드, 버튼, 탭, 테이블 등 모든 요소를 포함합니다.",
+        "description": "현재 SAP 화면의 전체 UI 구조를 JSON으로 반환합니다. 필드, 버튼, 탭, 테이블 등 모든 요소를 포함합니다. search로 특정 요소를 패턴 검색할 수 있습니다.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "fields_only": {"type": "boolean", "default": False, "description": "입력 가능한 필드만 반환"},
                 "actions_only": {"type": "boolean", "default": False, "description": "가능한 액션만 반환"},
+                "search": {"type": "string", "description": "필드/버튼/테이블을 패턴으로 검색 (ID, 이름, 라벨, 시맨틱 부분 일치)"},
             },
         },
     },

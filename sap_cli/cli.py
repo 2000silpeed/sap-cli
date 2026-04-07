@@ -123,11 +123,12 @@ def session_info() -> None:
 def screen(
     fields_only: bool = typer.Option(False, "--fields-only", "-f", help="입력 가능 필드만"),
     actions_only: bool = typer.Option(False, "--actions-only", "-a", help="가능한 액션만"),
+    search: str = typer.Option(None, "--search", "-s", help="필드/버튼/테이블을 패턴으로 검색 (부분 일치)"),
 ) -> None:
     """현재 화면의 UI 구조를 JSON으로 출력."""
     _run_command(
         "screen",
-        {"fields_only": fields_only, "actions_only": actions_only},
+        {"fields_only": fields_only, "actions_only": actions_only, "search": search},
         allow_daemon=True,
     )
 
