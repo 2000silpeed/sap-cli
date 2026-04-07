@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -585,13 +586,29 @@ def _dispatch_macro_list(args: dict[str, Any]) -> dict[str, Any]:
     return {"macros": macros, "count": len(macros)}
 
 
+def _utc_to_local(iso_str: str) -> str:
+    """UTC ISO 문자열을 유저 로컬 타임존으로 변환."""
+    if not iso_str:
+        return iso_str
+    try:
+        dt = datetime.fromisoformat(iso_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone().isoformat()
+    except (ValueError, TypeError):
+        return iso_str
+
+
 def _dispatch_macro_show(args: dict[str, Any]) -> dict[str, Any]:
     store = _get_macro_store()
     macro_id = str(args["macro_id"])
     macro = store.load(macro_id)
     if not macro:
         return {"error": True, "message": f"매크로 '{macro_id}'를 찾을 수 없습니다."}
-    return macro.model_dump(mode="json")
+    data = macro.model_dump(mode="json")
+    data["created_at"] = _utc_to_local(data.get("created_at", ""))
+    data["updated_at"] = _utc_to_local(data.get("updated_at", ""))
+    return data
 
 
 def _dispatch_macro_delete(args: dict[str, Any]) -> dict[str, Any]:
