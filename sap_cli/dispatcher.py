@@ -382,11 +382,14 @@ def _dispatch_screen(args: dict[str, Any]) -> dict[str, Any]:
     screen = sap.get_screen()
     if args.get("fields_only"):
         fields = screen.get_changeable_fields()
-        return {
+        result: dict[str, Any] = {
             "transaction": screen.transaction,
             "screen_number": screen.screen_number,
             "changeable_fields": [field.model_dump(mode="json") for field in fields],
         }
+        if screen.tables:
+            result["tables"] = [t.model_dump(mode="json") for t in screen.tables]
+        return result
     if args.get("actions_only"):
         actions = screen.get_available_actions()
         return {
