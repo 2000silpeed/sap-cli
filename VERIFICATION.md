@@ -235,7 +235,7 @@ sap record-step set "wnd[0]/usr/ctxtRMMG1-MATNR" "자재번호1"
 sap record-step vkey 0
 
 # 7. 뷰 선택 팝업에서 테이블 행 선택 (녹화됨, 팝업이 뜬 경우만)
-sap record-step table-select "wnd[1]/usr/tblSAPLMGMWTC_VIEW" 0
+sap record-step table-select "wnd[1]/usr/tblSAPLMGMMTC_VIEW" 0
 
 # 8. 뷰 선택 Enter (녹화됨)
 sap record-step vkey 0
