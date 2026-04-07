@@ -374,7 +374,10 @@ def record_finish(
     try:
         vars_dict: dict[str, str] | None = None
         if variables:
-            vars_dict = json.loads(variables)
+            try:
+                vars_dict = json.loads(variables)
+            except json.JSONDecodeError:
+                vars_dict = json.loads(variables.replace("'", '"'))
         _output_json(
             _dispatch_local(
                 "macro_control",
