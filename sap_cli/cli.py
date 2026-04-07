@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import re
 import sys
 from typing import Optional
 
@@ -39,6 +40,35 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+
+
+def _parse_vars(raw: str) -> dict[str, str]:
+    """다양한 형식의 --vars 값을 dict로 파싱.
+
+    지원: '{"k":"v"}', "{'k':'v'}", "{k:v}", "k:v,k2:v2"
+    """
+    # 1) 정상 JSON
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+    # 2) 작은따옴표 JSON
+    try:
+        return json.loads(raw.replace("'", '"'))
+    except json.JSONDecodeError:
+        pass
+    # 3) 따옴표 없는 {k:v, k2:v2} 또는 k:v,k2:v2
+    stripped = raw.strip().strip("{}")
+    pairs = re.split(r"\s*,\s*", stripped)
+    result: dict[str, str] = {}
+    for pair in pairs:
+        if ":" not in pair:
+            continue
+        k, v = pair.split(":", 1)
+        result[k.strip().strip("'\"")] = v.strip().strip("'\"")
+    if not result:
+        raise ValueError(f"변수 파싱 실패: {raw}")
+    return result
 
 
 def _output_json(data: dict | list) -> None:
@@ -374,10 +404,7 @@ def record_finish(
     try:
         vars_dict: dict[str, str] | None = None
         if variables:
-            try:
-                vars_dict = json.loads(variables)
-            except json.JSONDecodeError:
-                vars_dict = json.loads(variables.replace("'", '"'))
+            vars_dict = _parse_vars(variables)
         _output_json(
             _dispatch_local(
                 "macro_control",
