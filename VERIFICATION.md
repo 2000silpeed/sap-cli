@@ -34,13 +34,17 @@ sap session
 # 3. 전체 화면 구조 조회
 sap screen
 
-# 4. 입력 가능한 필드만 조회
+# 4. 입력 가능한 필드만 조회 (테이블 정보 포함)
 sap screen --fields-only
 
 # 5. 액션(버튼) 목록 조회
 sap screen --actions-only
 
-# 6. 상태바 메시지 확인
+# 6. 패턴으로 화면 요소 검색 (필드/버튼/탭/테이블 부분 일치)
+sap screen --search "Enter"
+# → ID, 이름, 라벨, 텍스트, 시맨틱 동의어 모두 검색
+
+# 7. 상태바 메시지 확인
 sap status
 ```
 
@@ -51,8 +55,9 @@ sap status
 | connect | `"connected": true` + 세션 정보(user, system_name, client) |
 | session | user, language, transaction, system_name 필드 존재 |
 | screen | transaction, screen_number, fields, buttons 포함된 JSON |
-| screen -f | changeable_fields 배열에 1개 이상 필드 |
+| screen -f | changeable_fields 배열에 1개 이상 필드 + tables 배열 (테이블이 있는 화면) |
 | screen -a | available_actions 배열에 1개 이상 액션 |
+| screen -s "키워드" | search, total_matches, 매칭된 fields/buttons/tabs/tables 반환 |
 | status | message_type(S/W/E/I/A), message 필드 존재 |
 
 ### 실패 시 확인사항
@@ -85,7 +90,13 @@ sap run MM03
 
 # 3. 초기 화면 확인 — 자재번호 입력 필드 확인
 sap screen --fields-only
-# → wnd[0]/usr/ctxtRMMG1-MATNR 필드 확인
+# → 자재번호 필드 + 테이블 정보가 함께 출력됨
+
+# 3a. 필드를 패턴으로 검색 (ID, 이름, 라벨, 시맨틱 부분 일치)
+sap screen --search "MATNR"
+# → MATNR 관련 필드만 필터링하여 출력
+sap screen --search "자재"
+# → 한글 라벨/시맨틱 동의어로도 검색 가능
 
 # 4. 자재번호 입력
 sap set "wnd[0]/usr/ctxtRMMG1-MATNR" "자재번호"
@@ -107,21 +118,44 @@ sap modal
 # 8a. 팝업 방식 (has_modal: true)
 #     sap screen/vkey는 모달(wnd[1])을 자동 감지하므로 별도 처리 불필요
 sap screen --fields-only
-# → 팝업 안의 필드/테이블/버튼이 보임 (wnd[1] 자동 스캔)
+# → 팝업 안의 필드/테이블/체크박스가 보임 (wnd[1] 자동 스캔)
+# → tables 항목에 뷰 선택 테이블 ID 표시 (예: wnd[1]/usr/tblSAPLMGMMTC_VIEW)
+
+# 8a-1. 테이블에서 뷰 검색
+sap screen --search "VIEW"
+# → 뷰 선택 테이블 ID 확인
+
+# 8a-2. 테이블 내용 읽기 (어떤 뷰가 있는지 확인)
+sap table "wnd[1]/usr/tblSAPLMGMMTC_VIEW"
+# → rows에 MSICHTAUSW-DYTXT 항목들 (Basic Data 1, MRP 1 등)
+
+# 8a-3. 원하는 뷰 행 선택
+sap table-select "wnd[1]/usr/tblSAPLMGMMTC_VIEW" 0
+# → 첫 번째 행 (Basic Data 1) 선택
+
+# 8a-4. 체크박스가 별도로 있는 경우 (시스템에 따라 다름)
+sap set "wnd[1]/usr/chkUSRM1-AAUSW" "true"
+# → /chk 접두사 자동 감지하여 체크박스 처리
+
+# 8a-5. Enter로 진입
 sap vkey 0
 # → 팝업에 Enter 전송 (wnd[1] 자동 감지)
 
 # 8b. 일반 화면 방식 (has_modal: false, SAP HANA 등)
 #     뷰 선택이 일반 화면(예: screen 70)으로 나타나는 경우
-sap screen --actions-only
+sap screen --search "Select"
 # → "Select View" 같은 버튼 ID 확인
 sap press "해당_버튼_ID"
 # → 뷰 선택 후 Enter
 
 # 9. 자재 기본데이터 화면 확인
 sap screen --fields-only
-# → MARA-MAKTX(자재내역), MARA-MEINS(기본단위) 등 필드
+# → MARA-MAKTX(자재내역), MARA-MEINS(기본단위) 등 필드 + 테이블 정보
 # 참고: SAP 버전에 따라 필드 ID가 다를 수 있음. 실제 출력 기준으로 판단
+
+# 9a. 특정 필드 검색
+sap screen --search "MAKTX"
+# → 자재 내역 필드 ID/값 확인
 
 # 10. 특정 필드값 읽기
 sap get "wnd[0]/usr/txtMARA-MAKTX"
@@ -137,12 +171,16 @@ sap vkey 3
 | 단계 | 확인 항목 |
 |------|----------|
 | run MM03 | `"executed": "MM03"` |
+| screen --search "MATNR" | 자재번호 필드가 검색됨 (fields에 1건 이상) |
 | set 자재번호 | `"value_set": "자재번호"` |
 | get 자재번호 | 입력한 값과 일치 |
 | vkey 0 (Enter) | 에러 없이 화면 이동 |
 | status | message_type이 E가 아닌 것 |
 | modal 감지 | 팝업이 떴으면 has_modal: true, screen/vkey가 wnd[1] 자동 타겟 |
-| screen -f (팝업) | 팝업 안의 뷰 선택 테이블/필드가 보임 |
+| screen -f (팝업) | 팝업 안의 테이블/체크박스가 보임 (tables 항목 포함) |
+| table (뷰 목록) | rows에 뷰 이름(MSICHTAUSW-DYTXT) 목록 반환 |
+| table-select | `"selected": true` + 원하는 행 선택 |
+| set chk (체크박스) | /chk 자동 감지하여 체크박스 on/off |
 | screen -f (기본데이터) | 자재 관련 필드 5개 이상 |
 | get 자재내역 | 비어있지 않은 문자열 |
 | vkey 3 (Back) | MM03 초기 화면 또는 이전 화면으로 복귀 |
@@ -151,8 +189,13 @@ sap vkey 3
 
 - `"자재가 존재하지 않습니다"` → 실제 존재하는 자재번호로 변경
 - vkey 0 후 화면이 안 바뀜 → `sap status` 확인 (필수 입력 누락 가능)
-- 필드 ID가 다름 → `sap screen --fields-only`로 실제 ID 확인 (시스템마다 커스텀 가능)
+- 필드 ID가 다름 → `sap screen --search "키워드"`로 패턴 검색하여 실제 ID 확인
 - 뷰 선택 팝업 없이 바로 진입 → 사용자 설정에 따라 팝업 생략될 수 있음 (정상)
+- **팝업인데 screen에 안 잡힘** → com_wrapper가 wnd[1] 자동 감지. `sap modal`로 먼저 확인
+- **테이블 안 체크박스가 안 보임** → `sap screen` 전체 출력에서 fields 항목 확인 (테이블 내부도 스캔됨)
+- **체크박스 set 실패** → element_id에 `/chk` 포함되어야 자동 감지. `sap screen --search "chk"` 로 확인
+- **table-select 실패** → `sap table "테이블ID"`로 먼저 행 수 확인, row 번호가 범위 내인지 확인
+- **SAP HANA 버전에서 화면번호가 다름** → 시드 데이터(4004)와 실제(70 등)가 다를 수 있음. `sap learn`으로 시드 갱신
 - **팝업인데 screen에 안 잡힘** → com_wrapper가 wnd[1] 자동 감지. `sap modal`로 먼저 확인
 - **SAP HANA 버전에서 화면번호가 다름** → 시드 데이터(4004)와 실제(70 등)가 다를 수 있음. `sap session`으로 실제 화면번호 확인 후 `sap learn`으로 시드 갱신
 
