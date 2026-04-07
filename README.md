@@ -42,6 +42,11 @@ SOS(Study Ontology System)의 온톨로지 사상을 적용하여, 단순 스크
 git clone https://github.com/2000silpeed/sap-cli.git
 cd sap-cli
 
+# 가상환경 생성 및 활성화
+python -m venv .venv
+.venv\Scripts\activate        # Windows
+# source .venv/bin/activate   # macOS/Linux
+
 # 설치 (편집 가능 모드)
 pip install -e .
 
@@ -54,6 +59,8 @@ pip install -e ".[dev]"
 # 설치 확인
 sap --help
 ```
+
+> **주의**: 반드시 가상환경(.venv) 내에서 설치하세요. 시스템 Python에 직접 설치하면 의존성 충돌이 발생할 수 있습니다.
 
 ---
 
@@ -1074,6 +1081,10 @@ SAP GUI나 Windows 없이도 실행할 수 있는 순수 로직 테스트입니�
 ### 테스트 실행
 
 ```powershell
+# 가상환경 활성화 후
+.venv\Scripts\activate        # Windows
+# source .venv/bin/activate   # macOS/Linux
+
 # 개발 의존성 설치 (pytest 포함)
 pip install -e ".[dev]"
 

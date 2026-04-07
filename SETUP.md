@@ -142,11 +142,18 @@ git clone https://github.com/2000silpeed/sap-cli.git
 cd sap-cli
 ```
 
-### 3.2 패키지 설치
+### 3.2 가상환경 생성 및 패키지 설치
 
 ```powershell
+# 가상환경 생성 및 활성화
+python -m venv .venv
+.venv\Scripts\activate
+
+# 패키지 설치
 pip install -e .
 ```
+
+> **주의**: 반드시 가상환경 내에서 설치하세요.
 
 이 명령은 다음 패키지를 자동으로 설치합니다:
 - `pydantic` (>=2.0) - 데이터 모델

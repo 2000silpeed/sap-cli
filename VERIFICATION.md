@@ -10,7 +10,8 @@ SAP 실환경에서 수행하는 통합 검증 가이드.
 - Windows 10/11, SAP GUI 7.70+ 설치
 - SAP GUI Scripting 활성화 (서버/클라이언트 모두)
 - SAP 시스템에 로그인 완료 상태
-- `pip install -e .` 설치 완료
+- 가상환경 생성 및 활성화: `python -m venv .venv && .venv\Scripts\activate`
+- `pip install -e .` 설치 완료 (반드시 가상환경 내에서)
 - `sap --help` 정상 출력 확인
 
 ---
