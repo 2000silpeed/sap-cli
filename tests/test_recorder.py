@@ -7,8 +7,8 @@ from sap_cli.ontology.schema import ActionType
 
 
 @pytest.fixture
-def recorder():
-    return MacroRecorder()
+def recorder(tmp_path):
+    return MacroRecorder(state_file=tmp_path / ".recorder_state.json")
 
 
 class TestRecorderLifecycle:

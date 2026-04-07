@@ -6,10 +6,12 @@
 
 from __future__ import annotations
 
+import json
 import re
 import uuid
 from collections import Counter
 from datetime import datetime, timezone
+from pathlib import Path
 
 from sap_cli.ontology.schema import ActionType
 from sap_cli.macro.schema import Macro, MacroStep, MacroVariable
@@ -21,14 +23,23 @@ _SYSTEM_ACTIONS = {ActionType.PRESS_BUTTON, ActionType.SEND_VKEY, ActionType.SEL
 _MIN_VALUE_LENGTH = 2
 
 
-class MacroRecorder:
-    """채팅 기반 매크로 녹화기."""
+_DEFAULT_STATE_FILE = Path.home() / ".sap_cli" / ".recorder_state.json"
 
-    def __init__(self) -> None:
+
+class MacroRecorder:
+    """채팅 기반 매크로 녹화기.
+
+    CLI에서 각 명령이 별도 프로세스로 실행되므로,
+    녹화 상태를 파일로 영속화하여 프로세스 간 상태 유지.
+    """
+
+    def __init__(self, state_file: Path | None = None) -> None:
         self._recording: bool = False
         self._steps: list[MacroStep] = []
         self._tcode: str = ""
         self._name: str = ""
+        self._state_file = state_file or _DEFAULT_STATE_FILE
+        self._load_state()
 
     # ------------------------------------------------------------------
     # 녹화 제어
@@ -42,6 +53,7 @@ class MacroRecorder:
         self._steps = []
         self._tcode = tcode
         self._name = name
+        self._save_state()
 
     def record_step(
         self,
@@ -64,6 +76,7 @@ class MacroRecorder:
             expected_screen=screen_number,
         )
         self._steps.append(step)
+        self._save_state()
         return step
 
     def undo_last(self) -> MacroStep | None:
@@ -71,7 +84,7 @@ class MacroRecorder:
         if not self._steps:
             return None
         removed = self._steps.pop()
-        # step_number 재정렬 불필요 (finish에서 처리)
+        self._save_state()
         return removed
 
     def finish(
@@ -139,6 +152,7 @@ class MacroRecorder:
         self._steps = []
         self._tcode = ""
         self._name = ""
+        self._clear_state()
 
         return macro
 
@@ -148,6 +162,7 @@ class MacroRecorder:
         self._steps = []
         self._tcode = ""
         self._name = ""
+        self._clear_state()
 
     # ------------------------------------------------------------------
     # 속성
@@ -204,6 +219,39 @@ class MacroRecorder:
             )
 
         return candidates
+
+    # ------------------------------------------------------------------
+    # 상태 영속화 (CLI 프로세스 간 상태 유지)
+    # ------------------------------------------------------------------
+
+    def _save_state(self) -> None:
+        """녹화 상태를 파일에 저장."""
+        self._state_file.parent.mkdir(parents=True, exist_ok=True)
+        state = {
+            "recording": self._recording,
+            "name": self._name,
+            "tcode": self._tcode,
+            "steps": [s.model_dump(mode="json") for s in self._steps],
+        }
+        self._state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    def _load_state(self) -> None:
+        """파일에서 녹화 상태 복원."""
+        if not self._state_file.exists():
+            return
+        try:
+            state = json.loads(self._state_file.read_text(encoding="utf-8"))
+            self._recording = state.get("recording", False)
+            self._name = state.get("name", "")
+            self._tcode = state.get("tcode", "")
+            self._steps = [MacroStep.model_validate(s) for s in state.get("steps", [])]
+        except Exception:
+            self._clear_state()
+
+    def _clear_state(self) -> None:
+        """상태 파일 삭제."""
+        if self._state_file.exists():
+            self._state_file.unlink()
 
     @staticmethod
     def _derive_var_name(value: str, target_ids: list[str]) -> str:
