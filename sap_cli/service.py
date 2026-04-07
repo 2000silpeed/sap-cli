@@ -72,6 +72,7 @@ ACTION_MAP: dict[str, ActionType] = {
     "combo": ActionType.SELECT_COMBO_ITEM,
     "tab": ActionType.SELECT_TAB,
     "menu": ActionType.SELECT_MENU,
+    "table-select": ActionType.SELECT_TABLE_ROW,
 }
 
 
@@ -102,3 +103,5 @@ def execute_sap_action(sap: SapGuiWrapper, action: str, target: str, value: str 
         sap.press(target)
     elif action == "menu":
         sap.select_menu(target)
+    elif action == "table-select":
+        sap.select_table_row(target, int(value or "0"))
