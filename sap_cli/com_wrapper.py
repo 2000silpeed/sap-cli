@@ -575,10 +575,10 @@ class SapGuiWrapper:
                         visible_rows=int(getattr(child, "VisibleRowCount", 0)),
                         columns=columns,
                     ))
-                    # 테이블 안의 체크박스/필드도 스캔
+                    # 테이블 안의 체크박스/라디오만 스캔 (일반 셀은 제외하여 노이즈 방지)
                     try:
                         if hasattr(child, "Children") and child.Children.Count > 0:
-                            self._scan_children(child, screen, depth + 1)
+                            self._scan_table_controls(child, screen)
                     except Exception:
                         pass
                     continue
@@ -594,6 +594,34 @@ class SapGuiWrapper:
                 # 리프 요소는 재귀 불필요
         except Exception as e:
             logger.warning("화면 요소 탐색 중 오류: %s", e)
+
+    def _scan_table_controls(self, table: Any, screen: ScreenOntology, depth: int = 0) -> None:
+        """테이블 내부에서 체크박스/라디오버튼만 수집 (일반 텍스트 셀은 무시)."""
+        if depth > 3:
+            return
+        try:
+            children = table.Children
+            for i in range(children.Count):
+                child = children(i)
+                child_type = str(child.Type)
+                comp_type = self._map_component_type(child_type)
+                if comp_type in (GuiComponentType.CHECK_BOX, GuiComponentType.RADIO_BUTTON):
+                    child_id = str(child.Id)
+                    screen.fields.append(SapField(
+                        id=child_id,
+                        name=self._extract_name(child_id),
+                        type=comp_type,
+                        label=str(getattr(child, "Text", "")),
+                        changeable=bool(getattr(child, "Changeable", False)),
+                    ))
+                elif hasattr(child, "Children"):
+                    try:
+                        if child.Children.Count > 0:
+                            self._scan_table_controls(child, screen, depth + 1)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
     # -------------------------------------------------------------------
     # Table Operations
