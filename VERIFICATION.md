@@ -234,17 +234,20 @@ sap record-step set "wnd[0]/usr/ctxtRMMG1-MATNR" "자재번호1"
 # 6. Enter 전송 (녹화됨)
 sap record-step vkey 0
 
-# 7. 뷰 선택 Enter (녹화됨, 팝업이 뜬 경우만)
+# 7. 뷰 선택 팝업에서 테이블 행 선택 (녹화됨, 팝업이 뜬 경우만)
+sap record-step table-select "wnd[1]/usr/tblSAPLMGMWTC_VIEW" 0
+
+# 8. 뷰 선택 Enter (녹화됨)
 sap record-step vkey 0
 
-# 8. 현재 녹화 상태 확인
+# 9. 현재 녹화 상태 확인
 sap record-status
-# → steps_count: 4 (또는 3)
+# → steps_count: 5 (또는 4)
 
-# 9. 녹화 종료 및 저장
+# 10. 녹화 종료 및 저장
 sap record-finish --name mm03_lookup --desc "MM03 자재 조회" --vars '{"matnr": "자재번호"}'
 
-# 10. 뒤로가기 (SAP 상태 복원)
+# 11. 뒤로가기 (SAP 상태 복원)
 sap vkey 3
 sap vkey 3
 ```
@@ -252,10 +255,10 @@ sap vkey 3
 ### Phase B: 매크로 확인
 
 ```powershell
-# 11. 저장된 매크로 목록
+# 12. 저장된 매크로 목록
 sap macro-list
 
-# 12. 매크로 상세 조회 (macro-list에서 확인한 ID 사용)
+# 13. 매크로 상세 조회 (macro-list에서 확인한 ID 사용)
 sap macro-show MACRO_ID
 # → steps, variables, description 확인
 ```
@@ -263,19 +266,19 @@ sap macro-show MACRO_ID
 ### Phase C: 매크로 재생
 
 ```powershell
-# 13. 드라이런 (실제 실행 없이 계획만 확인)
+# 14. 드라이런 (실제 실행 없이 계획만 확인)
 sap macro-play MACRO_ID --vars '{"matnr": "자재번호2"}' --dry-run
 # → 각 단계와 대입될 변수값 확인
 
-# 14. 실제 재생 (다른 자재번호로)
+# 15. 실제 재생 (다른 자재번호로)
 sap macro-play MACRO_ID --vars '{"matnr": "자재번호2"}'
 
-# 15. 결과 확인 — 자재번호2의 기본데이터 화면에 도달
+# 16. 결과 확인 — 자재번호2의 기본데이터 화면에 도달
 sap screen --fields-only
 sap get "wnd[0]/usr/txtMARA-MAKTX"
 # → 자재번호2의 자재 내역이 반환되어야 함
 
-# 16. 정리
+# 17. 정리
 sap vkey 3
 sap vkey 3
 ```
@@ -286,6 +289,7 @@ sap vkey 3
 |------|----------|
 | record-start | `"recording": true` |
 | record-step (각각) | `"recorded": true` + SAP 화면 실제 변경 |
+| record-step table-select | 뷰 선택 팝업에서 테이블 행 선택 성공 |
 | record-status | steps_count가 녹화한 단계 수와 일치 |
 | record-finish | `"saved": true` + macro_id, path 반환 |
 | macro-list | 방금 저장한 매크로가 목록에 존재 |
