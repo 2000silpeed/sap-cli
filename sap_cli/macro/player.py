@@ -241,6 +241,9 @@ class MacroPlayer:
             elif action == ActionType.SELECT_MENU:
                 self.sap.select_menu(step.target_id)
 
+            elif action == ActionType.SELECT_TABLE_ROW:
+                self.sap.select_table_row(step.target_id, int(step.value or "0"))
+
             elif action == ActionType.READ_SCREEN:
                 self.sap.get_screen()
 
