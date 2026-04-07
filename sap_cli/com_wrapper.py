@@ -689,6 +689,17 @@ class SapGuiWrapper:
         except Exception as e:
             raise SapGuiError(f"테이블 셀 설정 실패: {e}") from e
 
+    def select_table_row(self, element_id: str, row: int) -> None:
+        """테이블에서 행 선택."""
+        try:
+            table = self.session.FindById(element_id)
+            if str(table.Type) == "GuiGridView":
+                table.SelectedRows = str(row)
+            else:
+                table.GetAbsoluteRow(row).Selected = True
+        except Exception as e:
+            raise SapGuiError(f"테이블 행 선택 실패 [{element_id}, row={row}]: {e}") from e
+
     # -------------------------------------------------------------------
     # Modal Window Handling
     # -------------------------------------------------------------------

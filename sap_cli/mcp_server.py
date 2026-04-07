@@ -167,6 +167,18 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_table_select",
+        "description": "테이블에서 특정 행을 선택합니다. MM03 뷰 선택 등에서 사용.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "element_id": {"type": "string", "description": "테이블 ID"},
+                "row": {"type": "integer", "description": "선택할 행 번호 (0-based)"},
+            },
+            "required": ["element_id", "row"],
+        },
+    },
+    {
         "name": "sap_ontology_query",
         "description": "학습된 SAP 온톨로지를 조회합니다. 트랜잭션의 화면 구조, 필드, 가능한 액션 등 도메인 지식을 반환합니다.",
         "inputSchema": {

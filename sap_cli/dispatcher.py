@@ -61,6 +61,7 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "macro_list":     CommandDef("sap_macro_list",        Permission.READ),
     "macro_show":     CommandDef("sap_macro_show",        Permission.READ),
     "macro_delete":   CommandDef("sap_macro_delete",      Permission.ADMIN),
+    "table_select":   CommandDef("sap_table_select",      Permission.EXECUTE),
     "process_list":   CommandDef("sap_process_list",      Permission.READ),
     "process_show":   CommandDef("sap_process_show",      Permission.READ),
     "process_create": CommandDef("sap_process_create",    Permission.ADMIN),
@@ -82,6 +83,7 @@ POST_ACTION_COMMANDS = {
     "command",
     "record_step",
     "macro_play",
+    "table_select",
 }
 
 TRANSCRIPT_OMIT_COMMANDS = {
@@ -311,6 +313,13 @@ def _execute_command(
         return _dispatch_macro_show(args)
     if command == "macro_delete":
         return _dispatch_macro_delete(args)
+    if command == "table_select":
+        sap = _get_sap()
+        element_id = str(args["element_id"])
+        row = int(args["row"])
+        sap.select_table_row(element_id, row)
+        payload = {"selected": True, "table": element_id, "row": row}
+        return _with_post_action(payload, sap, command, ctx)
     if command == "ontology_query":
         return _dispatch_ontology_query(args)
     if command == "transcript_query":
