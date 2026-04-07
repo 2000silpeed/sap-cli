@@ -550,6 +550,12 @@ class SapGuiWrapper:
                         name=self._extract_name(child_id),
                         text=str(getattr(child, "Text", "")),
                     ))
+                    # 탭 안의 필드도 재귀 탐색
+                    try:
+                        if hasattr(child, "Children") and child.Children.Count > 0:
+                            self._scan_children(child, screen, depth + 1)
+                    except Exception:
+                        pass
                     continue
                 elif comp_type in (GuiComponentType.TABLE_CONTROL, GuiComponentType.GRID_VIEW):
                     row_count = int(getattr(child, "RowCount", 0))
