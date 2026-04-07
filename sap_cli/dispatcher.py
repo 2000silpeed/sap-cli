@@ -384,11 +384,10 @@ def _dispatch_screen(args: dict[str, Any]) -> dict[str, Any]:
     if search:
         return _search_screen(screen, search)
     if args.get("fields_only"):
-        fields = screen.get_changeable_fields()
         result: dict[str, Any] = {
             "transaction": screen.transaction,
             "screen_number": screen.screen_number,
-            "changeable_fields": [field.model_dump(mode="json") for field in fields],
+            "fields": [field.model_dump(mode="json") for field in screen.fields],
         }
         if screen.tables:
             result["tables"] = [t.model_dump(mode="json") for t in screen.tables]
