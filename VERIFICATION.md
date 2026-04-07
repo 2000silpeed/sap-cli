@@ -219,30 +219,30 @@ MM03 자재 조회 과정을 매크로로 녹화한 뒤, 다른 자재번호로 
 sap connect
 
 # 2. 녹화 시작
-sap record-start --name mm03_lookup
+sap record-start mm03_lookup
 
 # 3. 녹화 상태 확인
 sap record-status
 # → recording: true, steps_count: 0
 
 # 4. 트랜잭션 실행 (녹화됨)
-sap record-step --action run --target MM03
+sap record-step run MM03
 
 # 5. 자재번호 입력 (녹화됨) — 변수로 지정
-sap record-step --action set --target "wnd[0]/usr/ctxtRMMG1-MATNR" --value "자재번호1"
+sap record-step set "wnd[0]/usr/ctxtRMMG1-MATNR" "자재번호1"
 
 # 6. Enter 전송 (녹화됨)
-sap record-step --action vkey --target "0"
+sap record-step vkey 0
 
 # 7. 뷰 선택 Enter (녹화됨, 팝업이 뜬 경우만)
-sap record-step --action vkey --target "0"
+sap record-step vkey 0
 
 # 8. 현재 녹화 상태 확인
 sap record-status
 # → steps_count: 4 (또는 3)
 
 # 9. 녹화 종료 및 저장
-sap record-finish --name mm03_lookup --description "MM03 자재 조회" --variables "matnr=자재번호"
+sap record-finish --name mm03_lookup --desc "MM03 자재 조회" --vars '{"matnr": "자재번호"}'
 
 # 10. 뒤로가기 (SAP 상태 복원)
 sap vkey 3
@@ -264,11 +264,11 @@ sap macro-show MACRO_ID
 
 ```powershell
 # 13. 드라이런 (실제 실행 없이 계획만 확인)
-sap macro-play MACRO_ID --variables '{"matnr": "자재번호2"}' --dry-run
+sap macro-play MACRO_ID --vars '{"matnr": "자재번호2"}' --dry-run
 # → 각 단계와 대입될 변수값 확인
 
 # 14. 실제 재생 (다른 자재번호로)
-sap macro-play MACRO_ID --variables '{"matnr": "자재번호2"}'
+sap macro-play MACRO_ID --vars '{"matnr": "자재번호2"}'
 
 # 15. 결과 확인 — 자재번호2의 기본데이터 화면에 도달
 sap screen --fields-only
@@ -297,7 +297,7 @@ sap vkey 3
 
 - `record-finish` 실패 → `record-status`로 녹화 상태 확인, `record-cancel` 후 재시도
 - `macro-play` 중 에러 → 녹화 시 화면 상태와 재생 시 화면 상태가 다를 수 있음 (같은 초기 화면에서 시작)
-- 변수 대입이 안 됨 → `macro-show`에서 variables 필드 확인, `record-finish`의 --variables 형식 확인
+- 변수 대입이 안 됨 → `macro-show`에서 variables 필드 확인, `record-finish`의 --vars 형식 확인 (JSON: `'{"key": "설명"}'`)
 - 매크로 파일 위치: `~/.sap_cli/macros/` 디렉토리 확인
 
 ---
