@@ -298,9 +298,40 @@ AI 에이전트가 스텝을 수동으로 실행하면서 결과를 보고하면
 - `extract_document_number(msg)` — SAP 상태바 메시지에서 문서번호 파싱
 - `finish()` / `abort()` — 실행 기록 JSON 저장
 
-## 커밋 이력 (2026-04-02)
+### Phase 11: 사내 검증 기반 버그 수정 (2026-04-08)
+
+| # | 이슈 | 상태 |
+|---|------|------|
+| 1 | 모달(wnd[1]) 자동 감지 — screen/vkey가 팝업 무시하던 문제 | 완료 |
+| 2 | set 명령에서 체크박스(/chk)/라디오(/rad) 자동 감지 | 완료 |
+| 3 | 테이블 내부 스캔을 체크박스/라디오만 수집 (노이즈 방지) | 완료 |
+| 4 | table-select 명령 추가 (CLI + dispatcher + MCP) | 완료 |
+| 5 | --fields-only가 읽기전용 필드 + 테이블도 출력 | 완료 |
+| 6 | --search 패턴 검색 추가 (ID/라벨/시맨틱 부분 일치) | 완료 |
+| 7 | 탭(GuiTab) 안의 필드 재귀 스캔 누락 수정 | 완료 |
+| 8 | 가상환경(.venv) 필수 사용 문서화 | 완료 |
+| 9 | 조달/판매 시드 트랜잭션 5건 + 판매 프로세스 추가 | 완료 |
+
+## 커밋 이력 (2026-04-02 ~ 04-08)
 
 ```
+ee5b562 fix: 탭(GuiTab) 안의 필드도 재귀 스캔하도록 수정
+f78b60f fix: --fields-only가 읽기전용 필드도 출력하도록 변경
+f2d7f89 fix: 테이블 내부 스캔을 체크박스/라디오만 수집하도록 제한
+41a7fe2 feat: sap screen --search 패턴 검색 추가
+0409833 docs: VERIFICATION.md 시나리오 1~2에 screen 검색, table-select, 체크박스 반영
+6ee1ac4 feat: CLI에 table-select 명령 추가
+5591520 feat: table_select 명령 추가 — 테이블 행 선택
+438433d fix: 테이블 안의 체크박스/필드도 sap screen에서 스캔
+1b51c98 fix: set 명령에서 체크박스/라디오버튼 자동 감지 처리
+9f06c77 docs: VERIFICATION.md 시나리오 2 갱신 — 모달 자동 감지, HANA 대응 추가
+044e169 fix: 모달(팝업) 윈도우 자동 감지 — screen/vkey가 wnd[1]도 처리
+c317f2f docs: VERIFICATION.md에 시나리오 8~10 추가
+409edb8 fix: --fields-only에서 테이블 정보도 함께 출력
+e2ab184 docs: 설치 가이드에 가상환경(.venv) 필수 사용 명시
+96ad2b9 feat: 조달/판매 트랜잭션 시드 5건 + 판매 프로세스 추가
+f745c4f docs: README/HTML에 ProcessExecutor 실행 흐름, 시드 7개 트랜잭션 반영
+f08f5a5 docs: TASKS.md에 ProcessExecutor 설계와 커밋 이력 추가
 bce060e feat: ProcessExecutor 추가 — 스텝별 실행, DataFlow 연결, 실행 기록 저장
 97b42dd docs: 인터랙티브 가이드 플레이북에 업무 프로세스 시나리오 추가
 0022d0d docs: 인터랙티브 가이드에 BusinessProcess 섹션 추가

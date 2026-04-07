@@ -141,29 +141,37 @@ sap command "/oSE80"      # 새 세션에서 열기
 # 현재 화면의 전체 UI 구조 (JSON)
 sap screen
 
-# 입력 가능한 필드만 보기
+# 필드만 보기 (읽기전용 포함, 테이블 정보 포함)
 sap screen --fields-only
 
 # 가능한 액션(버튼/탭)만 보기
 sap screen --actions-only
+
+# 패턴으로 화면 요소 검색 (ID, 이름, 라벨, 시맨틱 부분 일치)
+sap screen --search "MATNR"
+sap screen --search "자재"
+sap screen --search "Save"
 ```
+
+> 모달(팝업)이 떠 있으면 `sap screen`/`sap vkey`가 자동으로 모달(wnd[1])을 대상으로 합니다.
+> 탭 안의 필드, 테이블 안의 체크박스/라디오버튼도 스캔됩니다.
 
 출력 예시 (`--fields-only`):
 ```json
 {
   "transaction": "MM03",
   "screen_number": 4000,
-  "changeable_fields": [
+  "fields": [
     {
       "id": "wnd[0]/usr/ctxtRMMG1-MATNR",
       "name": "RMMG1-MATNR",
       "type": "GuiCTextField",
       "label": "Material",
       "value": "",
-      "changeable": true,
-      "required": true
+      "changeable": true
     }
-  ]
+  ],
+  "tables": [...]
 }
 ```
 
@@ -175,12 +183,18 @@ sap set "wnd[0]/usr/ctxtRMMG1-MATNR" "100-100"
 
 # 필드 값 읽기
 sap get "wnd[0]/usr/ctxtRMMG1-MATNR"
+
+# 체크박스 설정 (/chk 접두사 자동 감지)
+sap set "wnd[1]/usr/chkUSRM1-AAUSW" "true"
+
+# 라디오버튼 선택 (/rad 접두사 자동 감지)
+sap set "wnd[0]/usr/radRMMG1-AUESSION" "true"
 ```
 
 ### 4.6 키보드/버튼
 
 ```powershell
-# VKey 전송
+# VKey 전송 (모달이 있으면 자동으로 모달에 전송)
 sap vkey 0     # Enter
 sap vkey 3     # Back (F3)
 sap vkey 8     # Execute (F8)
@@ -208,11 +222,14 @@ sap status
 
 타입: `S`=성공, `W`=경고, `E`=에러, `I`=정보, `A`=중단
 
-### 4.8 테이블 읽기
+### 4.8 테이블 읽기/선택
 
 ```powershell
 # 테이블 데이터를 JSON으로 출력
 sap table "wnd[0]/usr/tblSAPMV45ATCTRL_U_ERF_AUFTRAG"
+
+# 테이블에서 행 선택 (0-based)
+sap table-select "wnd[1]/usr/tblSAPLMGMMTC_VIEW" 0
 ```
 
 ### 4.9 모달(팝업) 처리
@@ -222,9 +239,10 @@ sap table "wnd[0]/usr/tblSAPMV45ATCTRL_U_ERF_AUFTRAG"
 sap modal
 
 # 출력: {"has_modal": true, "text": "Do you want to save?"}
-# 모달이 있으면 vkey로 응답
-sap vkey 0    # Enter (확인)
-sap vkey 12   # Cancel
+# 모달이 있으면 vkey/screen/set이 자동으로 모달(wnd[1])을 대상으로 함
+sap screen --fields-only   # → 모달 안의 필드/테이블 표시
+sap vkey 0                 # → 모달에 Enter 전송
+sap vkey 12                # → 모달에 Cancel
 ```
 
 ### 4.10 전체 시나리오 예시: MM03 자재 조회
@@ -236,25 +254,31 @@ sap connect
 # 2. MM03 트랜잭션 실행
 sap run MM03
 
-# 3. 현재 화면에서 입력 가능한 필드 확인
-sap screen --fields-only
+# 3. 자재번호 필드 검색
+sap screen --search "MATNR"
 
 # 4. 자재번호 입력
 sap set "wnd[0]/usr/ctxtRMMG1-MATNR" "100-100"
 
-# 5. Enter (다음 화면으로)
+# 5. Enter (뷰 선택 화면으로)
 sap vkey 0
 
-# 6. 뷰 선택 화면에서 Enter (기본 뷰 선택)
-sap vkey 0
+# 6. 뷰 선택 — 팝업인 경우 (모달 자동 감지)
+sap modal
+sap screen --fields-only       # 팝업 안 테이블/체크박스 확인
+sap table-select "wnd[1]/usr/tblSAPLMGMMTC_VIEW" 0  # 첫 번째 뷰 선택
+sap vkey 0                     # Enter (모달에 자동 전송)
 
-# 7. 결과 화면 확인
-sap screen
+# 7. 기본데이터 화면 확인
+sap screen --search "MAKTX"
 
-# 8. 상태 확인
+# 8. 자재 내역 읽기
+sap get "wnd[0]/usr/txtMARA-MAKTX"
+
+# 9. 상태 확인
 sap status
 
-# 9. 뒤로 가기
+# 10. 뒤로 가기
 sap vkey 3
 ```
 
