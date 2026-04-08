@@ -126,6 +126,22 @@ ec29b59 Codex 리뷰 기반 10개 이슈 수정 + ReBAC 권한관리 구현
 
 ---
 
+## Phase 10: 복잡 화면 안정성 + fill/capture 기능 (2026-04-08)
+
+| 작업 | 내용 | 상태 |
+|------|------|------|
+| _scan_children 버그 수정 | Children index out of range 시 전체 스캔 중단 → 개별 건너뛰기 | 완료 |
+| tcode fallback | learn 시 SAP 내부 tcode(SE38) 대신 원래 tcode(VL03N) 사용 | 완료 |
+| sap fill 명령 | 여러 필드 한번에 입력 + 필드명 자동 매핑 + 자동 Enter | 완료 |
+| sap capture 명령 | SAP GUI 스크린샷 캡처 (사용자 설명서 제작용) | 완료 |
+| sap captures 명령 | 저장된 스크린샷 목록 조회 | 완료 |
+| Pillow 의존성 추가 | pyproject.toml에 Pillow>=10.0 (Windows) 추가 | 완료 |
+| MCP 도구 등록 | sap_fill_fields, sap_capture, sap_capture_list | 완료 |
+| 테스트 15건 | scan_children 9건 + tcode fallback 6건 (test_scan_children.py) | 완료 |
+| 문서 갱신 | README, SETUP, VERIFICATION, TASKS, SKILL 반영 | 완료 |
+
+---
+
 ## 남은 작업
 
 ### ReBAC / 운영 커널 후속 작업
