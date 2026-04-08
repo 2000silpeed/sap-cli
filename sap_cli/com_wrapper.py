@@ -511,14 +511,23 @@ class SapGuiWrapper:
         try:
             children = container.Children
             count = children.Count
-            for i in range(count):
+        except Exception as e:
+            logger.warning("화면 요소 탐색 중 오류: %s", e)
+            return
+
+        for i in range(count):
+            try:
                 child = children(i)
                 child_type = str(child.Type)
+            except Exception as e:
+                logger.debug("자식 요소 접근 건너뜀 [index=%d]: %s", i, e)
+                continue
 
-                # 불필요한 타입은 즉시 건너뛰기 (COM 호출 최소화)
-                if child_type in self._SKIP_TYPES:
-                    continue
+            # 불필요한 타입은 즉시 건너뛰기 (COM 호출 최소화)
+            if child_type in self._SKIP_TYPES:
+                continue
 
+            try:
                 child_id = str(child.Id)
                 comp_type = self._map_component_type(child_type)
 
@@ -619,8 +628,8 @@ class SapGuiWrapper:
                     continue
 
                 # 리프 요소는 재귀 불필요
-        except Exception as e:
-            logger.warning("화면 요소 탐색 중 오류: %s", e)
+            except Exception as e:
+                logger.debug("요소 처리 건너뜀 [index=%d]: %s", i, e)
 
     def _scan_table_controls(self, table: Any, screen: ScreenOntology, depth: int = 0) -> None:
         """테이블 내부에서 체크박스/라디오버튼만 수집 (일반 텍스트 셀은 무시)."""
