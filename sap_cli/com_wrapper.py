@@ -54,10 +54,15 @@ class SapGuiWrapper:
     세션을 통해 모든 GUI 조작을 수행한다.
     """
 
+    # 사용자가 sap run으로 실행한 트랜잭션으로 간주할 접두사 목록.
+    # SAP가 내부적으로 호출하는 프로그램(SE38 등)은 제외.
+    _INTERNAL_TCODES = frozenset({"SE38", "SE80", "SE37", "SAPLSMTR_NAVIGATION"})
+
     def __init__(self) -> None:
         self._application: Any = None
         self._connection: Any = None
         self._session: Any = None
+        self._user_tcode: str | None = None  # sap run으로 실행한 원래 tcode
 
     # -------------------------------------------------------------------
     # Connection Management
@@ -153,6 +158,10 @@ class SapGuiWrapper:
     def run_transaction(self, tcode: str) -> None:
         """트랜잭션 실행. /n 접두사가 자동 추가된다."""
         cmd = tcode if tcode.startswith("/") else f"/n{tcode}"
+        # 사용자가 명시적으로 실행한 tcode를 기억 (learn 시 fallback용)
+        raw = tcode.lstrip("/").lstrip("n").lstrip("/").upper()
+        if raw and raw not in self._INTERNAL_TCODES:
+            self._user_tcode = raw
         self.session.SendCommand(cmd)
 
     def send_command(self, command: str) -> None:
@@ -291,8 +300,14 @@ class SapGuiWrapper:
             window_id = "wnd[1]" if self.has_modal() else "wnd[0]"
 
         info = self.session.Info
+        reported_tcode = info.Transaction
+        # SAP가 내부 프로그램(SE38 등)을 반환하면 사용자가 실행한 원래 tcode 사용
+        tcode = reported_tcode
+        if self._user_tcode and reported_tcode.upper() in self._INTERNAL_TCODES:
+            logger.debug("SAP 보고 tcode=%s → 원래 tcode=%s 사용", reported_tcode, self._user_tcode)
+            tcode = self._user_tcode
         screen = ScreenOntology(
-            transaction=info.Transaction,
+            transaction=tcode,
             screen_number=info.ScreenNumber,
             program=info.Program,
             title=self.session.FindById(window_id).Text,
