@@ -72,6 +72,8 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "process_status": CommandDef("sap_process_status",    Permission.READ),
     "annotate":       CommandDef("sap_annotate_field",    Permission.WRITE),
     "fill":           CommandDef("sap_fill_fields",       Permission.WRITE),
+    "capture":        CommandDef("sap_capture",           Permission.READ),
+    "capture_list":   CommandDef("sap_capture_list",      Permission.READ),
 }
 
 COMMAND_TOOL_MAP: dict[str, str] = {cmd: d.tool_name for cmd, d in COMMAND_REGISTRY.items()}
@@ -352,6 +354,10 @@ def _execute_command(
         return _dispatch_annotate(args)
     if command == "fill":
         return _dispatch_fill(args, ctx)
+    if command == "capture":
+        return _dispatch_capture(args)
+    if command == "capture_list":
+        return _dispatch_capture_list(args)
     raise ValueError(f"미구현 명령: {command}")
 
 
@@ -931,6 +937,46 @@ def _dispatch_fill(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]
     if errors:
         payload["errors"] = errors
     return _with_post_action(payload, sap, "fill", ctx)
+
+
+def _dispatch_capture(args: dict[str, Any]) -> dict[str, Any]:
+    """현재 SAP GUI 화면 스크린샷 캡처."""
+    from .screenshot import capture_sap_window, capture_for_step
+
+    sap = _get_sap()
+    info = sap.get_session_info()
+    label = args.get("label") or ""
+    output = args.get("output")
+
+    if output:
+        path = capture_sap_window(output)
+    else:
+        path = capture_for_step(
+            tcode=info.transaction,
+            step_number=0,
+            screen_number=info.screen_number,
+            label=label or "manual",
+        )
+
+    if path is None:
+        raise RuntimeError("스크린샷 캡처에 실패했습니다.")
+
+    return {
+        "captured": True,
+        "path": str(path),
+        "transaction": info.transaction,
+        "screen_number": info.screen_number,
+        "label": label,
+    }
+
+
+def _dispatch_capture_list(args: dict[str, Any]) -> dict[str, Any]:
+    """저장된 스크린샷 목록 조회."""
+    from .screenshot import list_screenshots
+
+    tcode = args.get("tcode")
+    shots = list_screenshots(tcode)
+    return {"screenshots": shots, "count": len(shots)}
 
 
 def _evaluate_authorization(
