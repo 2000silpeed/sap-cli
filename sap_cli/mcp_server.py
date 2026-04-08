@@ -150,11 +150,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_press",
-        "description": "SAP 화면의 버튼을 클릭합니다.",
+        "description": "SAP 화면의 버튼을 클릭하거나 탭을 선택합니다. GuiTab이면 자동으로 Select()를 호출합니다.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "element_id": {"type": "string", "description": "버튼 ID (예: wnd[0]/tbar[0]/btn[0])"},
+                "element_id": {"type": "string", "description": "버튼 또는 탭 ID (예: wnd[0]/tbar[0]/btn[0], wnd[0]/usr/tabsTAB/tabpTAB01)"},
             },
             "required": ["element_id"],
         },
