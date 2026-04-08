@@ -529,6 +529,23 @@ def learn_screen_cmd() -> None:
     _output_json(_dispatch_local("learn", {}))
 
 
+@app.command("capture")
+def capture_screen(
+    label: Optional[str] = typer.Argument(None, help="스크린샷 라벨 (예: initial, after_input)"),
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="저장 경로 (기본: 자동 생성)"),
+) -> None:
+    """현재 SAP GUI 화면을 스크린샷으로 캡처."""
+    _output_json(_dispatch_local("capture", {"label": label, "output": output}))
+
+
+@app.command("captures")
+def list_captures(
+    tcode: Optional[str] = typer.Argument(None, help="트랜잭션 코드로 필터"),
+) -> None:
+    """저장된 스크린샷 목록 조회."""
+    _output_json(_dispatch_local("capture_list", {"tcode": tcode}))
+
+
 @app.command("annotate")
 def annotate_field(
     tcode: str = typer.Argument(help="트랜잭션 코드 (예: MM03)"),
