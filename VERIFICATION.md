@@ -378,6 +378,69 @@ sap vkey 3
 
 ---
 
+## 시나리오 4.5: fill 명령 + 스크린샷 캡처
+
+### 목표
+
+`sap fill`로 여러 필드를 한번에 입력하고, `sap capture`로 단계별 스크린샷을 캡처.
+
+### 실행 단계
+
+```powershell
+# 1. SAP 연결
+sap connect
+
+# 2. MM03 트랜잭션 실행
+sap run MM03
+
+# 3. 초기 화면 스크린샷
+sap capture 01_MM03_초기화면
+
+# 4. 필드명으로 한번에 입력 (필드명 자동 매핑 + Enter)
+sap fill MATNR=자재번호
+# → MATNR을 화면에서 자동 검색하여 element_id 매핑
+# → 값 세팅 후 자동 Enter
+
+# 5. 뷰 선택 후 기본데이터 화면으로 이동
+sap vkey 0
+
+# 6. 기본데이터 화면 스크린샷
+sap capture 02_기본데이터화면
+
+# 7. 저장된 스크린샷 목록 확인
+sap captures MM03
+
+# 8. Enter 없이 값만 세팅 (--no-enter)
+sap vkey 3
+sap vkey 3
+sap run MM03
+sap fill MATNR=자재번호 --no-enter
+sap capture 03_입력후_엔터전
+
+# 9. 정리
+sap vkey 3
+```
+
+### 기대 결과
+
+| 단계 | 확인 항목 |
+|------|----------|
+| capture (초기) | `"captured": true` + path에 PNG 파일 경로 |
+| fill MATNR | `"filled": 1` + `"enter_sent": true` + results에 매핑된 element_id |
+| fill 필드 못 찾음 | `"errors": ["필드를 찾을 수 없습니다: XXX"]` |
+| fill --no-enter | `"enter_sent": false` |
+| capture (기본데이터) | 다른 파일명으로 두 번째 PNG 저장 |
+| captures MM03 | screenshots 배열에 캡처한 파일 목록 |
+
+### 실패 시 확인사항
+
+- `fill` 시 필드를 찾을 수 없음 → `sap screen --fields-only`로 실제 필드명 확인. `sap learn` 불필요 (현재 화면을 실시간 스캔)
+- `capture` 시 SAP 윈도우를 찾을 수 없음 → SAP GUI가 최소화되어 있지 않은지 확인
+- 스크린샷 파일이 안 생김 → `~/.sap_cli/screenshots/` 디렉토리 확인, Pillow 설치 확인 (`pip install Pillow`)
+- 스크린샷 위치: `~/.sap_cli/screenshots/{tcode}/` 디렉토리
+
+---
+
 ## 시나리오 5: MCP 서버 + Claude Code 연동
 
 ### 목표
