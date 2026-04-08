@@ -967,14 +967,17 @@ def _dispatch_capture(args: dict[str, Any]) -> dict[str, Any]:
     label = args.get("label") or ""
     output = args.get("output")
 
+    session = sap._session  # COM 세션 → 정확한 윈도우 핸들 획득용
+
     if output:
-        path = capture_sap_window(output)
+        path = capture_sap_window(output, session=session)
     else:
         path = capture_for_step(
             tcode=info.transaction,
             step_number=0,
             screen_number=info.screen_number,
             label=label or "manual",
+            session=session,
         )
 
     if path is None:
