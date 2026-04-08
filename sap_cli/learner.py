@@ -99,17 +99,40 @@ class OntologyLearner:
         return record
 
     def _enrich_semantics(self, screen: ScreenOntology) -> None:
-        """기존 온톨로지의 시맨틱 정보를 새 스캔 결과에 병합."""
+        """기존 온톨로지의 시맨틱 정보를 새 스캔 결과에 병합.
+
+        learn이 자동 추출한 값(description, raw_label 등)은 항상 최신으로 갱신하되,
+        사용자가 수동 입력한 값(description_ko, synonyms_ko, synonyms, domain_context 등)은 보존.
+        """
         existing = self.store.load_screen(screen.transaction, screen.screen_number)
         if existing is None:
             return
 
         existing_fields = {f.id: f for f in existing.fields}
         for field in screen.fields:
-            if field.id in existing_fields:
-                old = existing_fields[field.id]
-                if old.semantic.description and not field.semantic.description:
-                    field.semantic = old.semantic
+            if field.id not in existing_fields:
+                continue
+            old = existing_fields[field.id]
+            sem = field.semantic
+            old_sem = old.semantic
+
+            # 수동 입력 필드 보존 (learn이 채우지 않는 값들)
+            if old_sem.description_ko and not sem.description_ko:
+                sem.description_ko = old_sem.description_ko
+            if old_sem.synonyms_ko and not sem.synonyms_ko:
+                sem.synonyms_ko = old_sem.synonyms_ko
+            if old_sem.synonyms and not sem.synonyms:
+                sem.synonyms = old_sem.synonyms
+            if old_sem.validation and not sem.validation:
+                sem.validation = old_sem.validation
+            if old_sem.domain_context and not sem.domain_context:
+                sem.domain_context = old_sem.domain_context
+
+            # 자동 추출 실패 시 기존 값 유지
+            if old_sem.description and not sem.description:
+                sem.description = old_sem.description
+            if old_sem.raw_label and not sem.raw_label:
+                sem.raw_label = old_sem.raw_label
 
     def _record_navigation(self, new_screen: ScreenOntology) -> None:
         """화면 전환을 온톨로지의 screen_flow에 기록."""
