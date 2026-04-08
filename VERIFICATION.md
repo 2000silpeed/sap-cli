@@ -157,9 +157,17 @@ sap screen --fields-only
 sap screen --search "MAKTX"
 # → 자재 내역 필드 ID/값 확인
 
-# 10. 특정 필드값 읽기
+# 10. 특정 필드값 읽기 (단건)
 sap get "wnd[0]/usr/txtMARA-MAKTX"
-# → 자재 내역(설명)이 반환
+# → {"name": "MARA-MAKTX", "field": "wnd[0]/usr/txtMARA-MAKTX", "value": "자재내역"}
+
+# 10a. 여러 필드 한번에 읽기 (다건)
+sap get "wnd[0]/usr/txtMARA-MAKTX" "wnd[0]/usr/txtMARA-MEINS"
+# → [
+#     {"name": "MARA-MAKTX", "field": "wnd[0]/usr/txtMARA-MAKTX", "value": "자재내역"},
+#     {"name": "MARA-MEINS", "field": "wnd[0]/usr/txtMARA-MEINS", "value": "EA"}
+#   ]
+# name은 SAP 요소의 Name 속성에서 자동 추출
 
 # 11. 뒤로가기
 sap vkey 3
@@ -182,7 +190,8 @@ sap vkey 3
 | table-select | `"selected": true` + 원하는 행 선택 |
 | set chk (체크박스) | /chk 자동 감지하여 체크박스 on/off |
 | screen -f (기본데이터) | 자재 관련 필드 5개 이상 |
-| get 자재내역 | 비어있지 않은 문자열 |
+| get 단건 | name, field, value 포함된 JSON 객체 |
+| get 다건 | name, field, value 포함된 JSON 배열 |
 | vkey 3 (Back) | MM03 초기 화면 또는 이전 화면으로 복귀 |
 
 ### 실패 시 확인사항
