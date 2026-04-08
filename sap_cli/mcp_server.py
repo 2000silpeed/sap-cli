@@ -192,6 +192,17 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_tree_read",
+        "description": "SAP 화면의 트리 컨트롤 데이터를 읽습니다. Document Flow, BOM 구조 등에서 사용. sap_screen의 trees 항목에서 ID를 확인하세요.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "element_id": {"type": "string", "description": "트리 ID (sap_screen의 trees에서 확인)"},
+            },
+            "required": ["element_id"],
+        },
+    },
+    {
         "name": "sap_table_select",
         "description": "테이블에서 특정 행을 선택합니다. MM03 뷰 선택 등에서 사용.",
         "inputSchema": {
