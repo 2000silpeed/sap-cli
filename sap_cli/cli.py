@@ -185,10 +185,13 @@ def set_field(
 
 @app.command("get")
 def get_field(
-    element_id: str = typer.Argument(help="필드 ID"),
+    element_ids: list[str] = typer.Argument(help="필드 ID (여러 개 가능)"),
 ) -> None:
-    """필드 값 읽기."""
-    _run_command("get", {"element_id": element_id}, allow_daemon=True)
+    """필드 값 읽기. 여러 필드를 한번에 조회하면 배열로 반환."""
+    if len(element_ids) == 1:
+        _run_command("get", {"element_id": element_ids[0]}, allow_daemon=True)
+    else:
+        _run_command("get", {"element_ids": element_ids}, allow_daemon=True)
 
 
 @app.command()
