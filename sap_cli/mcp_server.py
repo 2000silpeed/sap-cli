@@ -115,13 +115,17 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_get_field",
-        "description": "SAP 화면 필드의 현재 값을 읽습니다.",
+        "description": "SAP 화면 필드의 현재 값을 읽습니다. 여러 필드를 한번에 조회할 수 있습니다.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "element_id": {"type": "string", "description": "필드 ID"},
+                "element_id": {"type": "string", "description": "필드 ID (단일 조회 시)"},
+                "element_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "필드 ID 목록 (여러 건 조회 시)",
+                },
             },
-            "required": ["element_id"],
         },
     },
     {
