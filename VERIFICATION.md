@@ -335,15 +335,15 @@ sap learn
 # → 화면의 필드, 버튼, 레이아웃을 스캔하여 온톨로지로 저장
 
 # 4. 학습 결과 확인
-sap ontology --tcode MM03
+sap ontology MM03
 # → 학습된 화면 정보가 반환
 
 # 5. 필드 검색 테스트
-sap ontology --tcode MM03 --field-search "자재"
+sap ontology MM03 --field "자재"
 # → 자재 관련 필드 정보
 
 # 6. 저장된 온톨로지 전체 목록
-sap ontology --list-all
+sap ontology --list
 # → 학습된 트랜잭션/패턴 목록
 
 # 7. (선택) 자재번호 입력 후 다음 화면에서도 학습
@@ -365,9 +365,9 @@ sap vkey 3
 | learn | `"learned": true` + transaction, screen_number, fields_count, buttons_count |
 | fields_count | 1개 이상 (MM03 초기화면: 자재번호 필드) |
 | buttons_count | 1개 이상 |
-| ontology --tcode | 학습된 화면 구조 JSON (fields, buttons, screen_flow 등) |
-| ontology --field-search | 검색어에 매칭되는 필드 정보 |
-| ontology --list-all | transactions 배열에 MM03 포함 |
+| ontology MM03 | 학습된 화면 구조 JSON (fields, buttons, screen_flow 등) |
+| ontology MM03 --field | 검색어에 매칭되는 필드 정보 |
+| ontology --list | transactions 배열에 MM03 포함 |
 
 ### 실패 시 확인사항
 
