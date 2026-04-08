@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import re
 import sys
-from typing import Optional
+from typing import Any, Optional
 
 import typer
 from rich.console import Console
@@ -42,10 +42,11 @@ app = typer.Typer(
 console = Console()
 
 
-def _parse_vars(raw: str) -> dict[str, str]:
+def _parse_vars(raw: str) -> dict[str, Any]:
     """다양한 형식의 --vars 값을 dict로 파싱.
 
     지원: '{"k":"v"}', "{'k':'v'}", "{k:v}", "k:v,k2:v2"
+    값이 dict인 경우도 허용: '{"k": {"value": "v", "desc": "설명"}}'
     """
     # 1) 정상 JSON
     try:
@@ -398,7 +399,7 @@ def record_finish(
     name: str = typer.Option(None, "--name", "-n", help="매크로 이름 (변경 시)"),
     description: str = typer.Option("", "--desc", "-d"),
     variables: str = typer.Option(None, "--vars", "-v",
-        help='변수 지정 JSON. 예: \'{"material_number": "자재번호"}\''),
+        help='변수 지정 JSON. 예: \'{"matnr": "100-100"}\' 또는 \'{"matnr": {"value": "100-100", "desc": "자재번호"}}\''),
 ) -> None:
     """녹화 종료 및 매크로 저장."""
     try:
