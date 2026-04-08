@@ -228,8 +228,8 @@ sap record-status
 # 4. 트랜잭션 실행 (녹화됨)
 sap record-step run MM03
 
-# 5. 자재번호 입력 (녹화됨) — 변수로 지정
-sap record-step set "wnd[0]/usr/ctxtRMMG1-MATNR" "자재번호1"
+# 5. 자재번호 입력 (녹화됨) — 변수로 지정 (예: 100-100)
+sap record-step set "wnd[0]/usr/ctxtRMMG1-MATNR" "100-100"
 
 # 6. Enter 전송 (녹화됨)
 sap record-step vkey 0
@@ -244,8 +244,8 @@ sap record-step vkey 0
 sap record-status
 # → steps_count: 5 (또는 4)
 
-# 10. 녹화 종료 및 저장
-sap record-finish --name mm03_lookup --desc "MM03 자재 조회" --vars '{"matnr": "자재번호"}'
+# 10. 녹화 종료 및 저장 (--vars의 값은 5번에서 실제 입력한 값과 동일해야 함)
+sap record-finish --name mm03_lookup --desc "MM03 자재 조회" --vars '{"matnr": "100-100"}'
 
 # 11. 뒤로가기 (SAP 상태 복원)
 sap vkey 3
@@ -267,16 +267,16 @@ sap macro-show MACRO_ID
 
 ```powershell
 # 14. 드라이런 (실제 실행 없이 계획만 확인)
-sap macro-play MACRO_ID --vars '{"matnr": "자재번호2"}' --dry-run
+sap macro-play MACRO_ID --vars '{"matnr": "200-200"}' --dry-run
 # → 각 단계와 대입될 변수값 확인
 
 # 15. 실제 재생 (다른 자재번호로)
-sap macro-play MACRO_ID --vars '{"matnr": "자재번호2"}'
+sap macro-play MACRO_ID --vars '{"matnr": "200-200"}'
 
-# 16. 결과 확인 — 자재번호2의 기본데이터 화면에 도달
+# 16. 결과 확인 — 200-200의 기본데이터 화면에 도달
 sap screen --fields-only
 sap get "wnd[0]/usr/txtMARA-MAKTX"
-# → 자재번호2의 자재 내역이 반환되어야 함
+# → 200-200의 자재 내역이 반환되어야 함
 
 # 17. 정리
 sap vkey 3
