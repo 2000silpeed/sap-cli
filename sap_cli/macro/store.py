@@ -35,8 +35,23 @@ class MacroStore:
         _validate_id(macro_id, "macro_id")
         return self._dir / f"{macro_id}.json"
 
+    def name_exists(self, name: str, exclude_id: str | None = None) -> bool:
+        """같은 이름의 매크로가 이미 존재하는지 확인."""
+        for path in self._dir.glob("*.json"):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if data.get("name", "") == name:
+                    if exclude_id and data.get("id") == exclude_id:
+                        continue
+                    return True
+            except Exception:
+                continue
+        return False
+
     def save(self, macro: Macro) -> Path:
         """매크로를 JSON으로 저장."""
+        if self.name_exists(macro.name, exclude_id=macro.id):
+            raise ValueError(f"이름이 '{macro.name}'인 매크로가 이미 존재합니다.")
         path = self._macro_path(macro.id)
         path.write_text(
             macro.model_dump_json(indent=2),
