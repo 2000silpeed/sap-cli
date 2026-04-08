@@ -114,6 +114,26 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_fill_fields",
+        "description": "여러 필드를 한번에 입력합니다. 필드명(MATNR) 또는 element_id 모두 사용 가능. 현재 화면을 스캔하여 필드명→element_id를 자동 매핑합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "object",
+                    "description": "필드명=값 쌍 (예: {\"MATNR\": \"100-100\", \"WERKS\": \"1000\"})",
+                    "additionalProperties": {"type": "string"},
+                },
+                "enter": {
+                    "type": "boolean",
+                    "description": "입력 후 자동 Enter 전송 (기본: true)",
+                    "default": True,
+                },
+            },
+            "required": ["fields"],
+        },
+    },
+    {
         "name": "sap_get_field",
         "description": "SAP 화면 필드의 현재 값을 읽습니다. 여러 필드를 한번에 조회할 수 있습니다.",
         "inputSchema": {
