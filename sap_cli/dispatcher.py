@@ -275,8 +275,11 @@ def _execute_command(
         }
         return _with_post_action(payload, sap, command, ctx)
     if command == "get":
-        element_id = str(args["element_id"])
-        return {"field": element_id, "value": _get_sap().get_field(element_id)}
+        sap = _get_sap()
+        element_ids = args.get("element_ids") or [str(args["element_id"])]
+        if len(element_ids) == 1:
+            return sap.get_field_info(element_ids[0])
+        return [sap.get_field_info(eid) for eid in element_ids]
     if command == "press":
         sap = _get_sap()
         element_id = str(args["element_id"])
