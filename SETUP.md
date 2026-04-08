@@ -200,6 +200,9 @@ Commands:
   macro-show      매크로 상세 조회.
   macro-play      매크로 재생.
   macro-delete    매크로 삭제.
+  fill            여러 필드를 한번에 입력 (필드명 자동 매핑 + Enter).
+  capture         현재 SAP GUI 화면을 스크린샷으로 캡처.
+  captures        저장된 스크린샷 목록 조회.
   ontology        온톨로지 조회.
   learn           현재 화면을 온톨로지로 학습하여 저장.
 ```
