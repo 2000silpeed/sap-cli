@@ -378,6 +378,8 @@ class SapGuiWrapper:
                 label=self._safe_attr(obj, "Text", ""),
                 value=self._safe_attr(obj, "Text", ""),
                 changeable=bool(self._safe_attr(obj, "Changeable", False)),
+                max_length=self._get_max_length(obj),
+                semantic=self._build_semantic(obj, obj_id),
             ))
         elif comp_type == GuiComponentType.COMBO_BOX:
             screen.fields.append(SapField(
@@ -387,6 +389,7 @@ class SapGuiWrapper:
                 label=self._get_label_for(obj),
                 value=self._safe_attr(obj, "Value", ""),
                 changeable=bool(self._safe_attr(obj, "Changeable", False)),
+                semantic=self._build_semantic(obj, obj_id),
             ))
         elif comp_type == GuiComponentType.BUTTON:
             screen.buttons.append(SapButton(
@@ -403,6 +406,7 @@ class SapGuiWrapper:
                 type=comp_type,
                 label=self._safe_attr(obj, "Text", ""),
                 changeable=bool(self._safe_attr(obj, "Changeable", False)),
+                semantic=self._build_semantic(obj, obj_id),
             ))
         elif comp_type == GuiComponentType.TAB:
             screen.tabs.append(SapButton(
@@ -531,6 +535,8 @@ class SapGuiWrapper:
                         label=str(getattr(child, "Text", "")),
                         value=str(getattr(child, "Text", "")),
                         changeable=bool(getattr(child, "Changeable", False)),
+                        max_length=self._get_max_length(child),
+                        semantic=self._build_semantic(child, child_id),
                     ))
                 elif comp_type == GuiComponentType.BUTTON:
                     screen.buttons.append(SapButton(
@@ -548,6 +554,7 @@ class SapGuiWrapper:
                         label=str(getattr(child, "Text", "")),
                         value=str(getattr(child, "Value", "")),
                         changeable=bool(getattr(child, "Changeable", False)),
+                        semantic=self._build_semantic(child, child_id),
                     ))
                 elif comp_type in (GuiComponentType.CHECK_BOX, GuiComponentType.RADIO_BUTTON):
                     screen.fields.append(SapField(
@@ -556,6 +563,7 @@ class SapGuiWrapper:
                         type=comp_type,
                         label=str(getattr(child, "Text", "")),
                         changeable=bool(getattr(child, "Changeable", False)),
+                        semantic=self._build_semantic(child, child_id),
                     ))
                 elif comp_type == GuiComponentType.TAB:
                     screen.tabs.append(SapButton(
@@ -777,6 +785,40 @@ class SapGuiWrapper:
     # -------------------------------------------------------------------
     # Helpers
     # -------------------------------------------------------------------
+
+    def _build_semantic(self, element: Any, element_id: str) -> SemanticContext:
+        """SAP COM 요소에서 시맨틱 정보 자동 추출."""
+        name = self._extract_name(element_id)
+        tooltip = str(getattr(element, "Tooltip", "") or "")
+
+        # LeftLabel: 필드 왼쪽에 붙은 라벨 텍스트
+        raw_label = ""
+        try:
+            left_label = element.LeftLabel
+            if left_label:
+                raw_label = str(left_label.Text)
+        except Exception:
+            pass
+        if not raw_label:
+            raw_label = tooltip
+
+        # SAP ABAP 필드명 추출 (RMMG1-MATNR → MATNR)
+        sap_field_name = name.split("-")[-1] if "-" in name else name
+
+        return SemanticContext(
+            raw_label=raw_label,
+            sap_field_name=sap_field_name,
+            description=tooltip,
+        )
+
+    @staticmethod
+    def _get_max_length(element: Any) -> int:
+        """COM 요소의 MaxLength 안전 추출."""
+        try:
+            val = getattr(element, "MaxLength", 0)
+            return int(val) if val else 0
+        except Exception:
+            return 0
 
     @staticmethod
     def _extract_name(element_id: str) -> str:
