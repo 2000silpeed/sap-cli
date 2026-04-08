@@ -31,6 +31,7 @@ from .ontology.schema import (
     SapStatusMessage,
     SapTable,
     SapTableColumn,
+    SapTreeNode,
     ScreenOntology,
     SemanticContext,
     StatusMessageType,
@@ -602,6 +603,21 @@ class SapGuiWrapper:
                     except Exception:
                         pass
                     continue
+                elif comp_type in (GuiComponentType.TREE, GuiComponentType.SHELL):
+                    # 트리/쉘은 Document Flow 등 — 위치만 기록, 데이터는 sap tree로 읽기
+                    node_count = 0
+                    try:
+                        node_keys = child.GetAllNodeKeys()
+                        node_count = node_keys.Count if node_keys else 0
+                    except Exception:
+                        pass
+                    screen.trees.append(SapTable(
+                        id=child_id,
+                        name=self._extract_name(child_id),
+                        type=comp_type,
+                        row_count=node_count,
+                    ))
+                    continue
                 elif comp_type in (GuiComponentType.TABLE_CONTROL, GuiComponentType.GRID_VIEW):
                     row_count = int(getattr(child, "RowCount", 0))
                     col_count = int(getattr(child, "ColumnCount", 0))
@@ -755,6 +771,96 @@ class SapGuiWrapper:
             columns=columns,
             rows=rows,
         )
+
+    # -------------------------------------------------------------------
+    # Tree Operations (Document Flow 등)
+    # -------------------------------------------------------------------
+
+    def read_tree(self, element_id: str) -> list[SapTreeNode]:
+        """트리 컨트롤 데이터 읽기 (Document Flow, BOM 등).
+
+        SAP GUI의 GuiTree(Column Tree, List Tree, Simple Tree)를 지원.
+        각 노드의 텍스트와 컬럼 아이템을 읽어 계층 구조로 반환.
+        """
+        try:
+            tree = self.session.FindById(element_id)
+            tree_type = str(tree.Type)
+
+            if tree_type not in ("GuiTree", "GuiShell"):
+                raise SapGuiError(
+                    f"트리가 아닙니다 [{element_id}]: type={tree_type}")
+
+            node_keys = tree.GetAllNodeKeys()
+            if not node_keys:
+                return []
+
+            # 컬럼 이름 수집 (Column Tree인 경우)
+            col_names: list[str] = []
+            try:
+                col_count = tree.ColumnCount
+                for c in range(col_count):
+                    col_names.append(tree.GetColumnHeaders().ElementAt(c))
+            except Exception:
+                # Simple Tree / List Tree는 컬럼이 없을 수 있음
+                try:
+                    col_count = tree.ColumnCount
+                    for c in range(col_count):
+                        col_names.append(tree.GetColumnNames().ElementAt(c))
+                except Exception:
+                    pass
+
+            # 노드 데이터 수집
+            nodes_by_key: dict[str, SapTreeNode] = {}
+            root_keys: list[str] = []
+
+            for i in range(node_keys.Count):
+                key = str(node_keys.ElementAt(i))
+                try:
+                    text = str(tree.GetNodeTextByKey(key))
+                except Exception:
+                    text = ""
+
+                # 컬럼별 아이템 값
+                items: dict[str, str] = {}
+                for col_name in col_names:
+                    try:
+                        val = str(tree.GetItemText(key, col_name))
+                        if val:
+                            items[col_name] = val
+                    except Exception:
+                        pass
+
+                level = 0
+                try:
+                    level = int(tree.GetNodeLevel(key))
+                except Exception:
+                    pass
+
+                node = SapTreeNode(
+                    key=key,
+                    text=text,
+                    level=level,
+                    items=items,
+                )
+                nodes_by_key[key] = node
+
+                # 부모-자식 관계 구성
+                parent_key = None
+                try:
+                    parent_key = str(tree.GetParentNodeKey(key))
+                except Exception:
+                    pass
+
+                if parent_key and parent_key in nodes_by_key:
+                    nodes_by_key[parent_key].children.append(node)
+                else:
+                    root_keys.append(key)
+
+            return [nodes_by_key[k] for k in root_keys if k in nodes_by_key]
+        except SapGuiError:
+            raise
+        except Exception as e:
+            raise SapGuiError(f"트리 읽기 실패 [{element_id}]: {e}") from e
 
     def set_table_cell(self, element_id: str, row: int, col: str, value: str) -> None:
         """테이블 셀에 값 설정."""
