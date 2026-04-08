@@ -229,8 +229,26 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_learn",
-        "description": "현재 SAP 화면을 스캔하여 온톨로지로 학습합니다. 학습된 정보는 이후 sap_ontology_query로 조회할 수 있습니다.",
+        "description": "현재 SAP 화면을 스캔하여 온톨로지로 학습합니다. Tooltip, LeftLabel 등 SAP COM 속성에서 시맨틱 정보를 자동 추출합니다.",
         "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "sap_annotate_field",
+        "description": "온톨로지 필드의 시맨틱 정보를 수동으로 입력/수정합니다. 영어와 한국어를 모두 지원합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tcode": {"type": "string", "description": "트랜잭션 코드 (예: MM03)"},
+                "field": {"type": "string", "description": "필드 ID, 이름, 또는 SAP 필드명 (예: RMMG1-MATNR, MATNR)"},
+                "desc": {"type": "string", "description": "영문 설명"},
+                "desc_ko": {"type": "string", "description": "한글 설명"},
+                "synonyms": {"type": "string", "description": "영문 동의어 (쉼표 구분)"},
+                "synonyms_ko": {"type": "string", "description": "한글 동의어 (쉼표 구분)"},
+                "validation": {"type": "string", "description": "유효성 규칙"},
+                "domain_context": {"type": "string", "description": "도메인 맥락"},
+            },
+            "required": ["tcode", "field"],
+        },
     },
     {
         "name": "sap_macro_record_step",
