@@ -23,22 +23,39 @@ if _WIN32:
     from PIL import ImageGrab  # type: ignore[import-untyped]
 
 
-def _find_sap_window() -> int | None:
-    """SAP GUI 메인 윈도우 핸들(HWND) 탐색.
+def _find_sap_window_from_session(session: Any = None) -> int | None:
+    """COM 세션 객체에서 SAP GUI 윈도우 핸들을 직접 가져온다.
 
-    SAP GUI 윈도우 클래스명 패턴:
-    - SAP_FRONTEND_SESSION (메인 세션 윈도우)
-    - Afx:400000:... (일부 SAP GUI 버전)
-    타이틀에 "SAP" 또는 트랜잭션 코드가 포함됨.
+    session.ActiveWindow.Handle 또는 session.findById("wnd[0]").Handle로
+    정확한 HWND를 얻는다. 추측 없이 현재 연결된 세션의 윈도우를 잡는다.
     """
+    if session is None:
+        return None
+    for attr_path in ("ActiveWindow", ):
+        try:
+            window = getattr(session, attr_path, None)
+            if window:
+                hwnd = int(window.Handle)
+                if hwnd:
+                    return hwnd
+        except Exception:
+            pass
+    # fallback: FindById
+    try:
+        wnd = session.FindById("wnd[0]")
+        return int(wnd.Handle)
+    except Exception:
+        return None
+
+
+def _find_sap_window_by_scan() -> int | None:
+    """윈도우 스캔으로 SAP GUI 윈도우를 찾는다 (COM 세션 없을 때 fallback)."""
     if not _WIN32:
         return None
 
     import win32gui  # type: ignore[import-untyped]
 
-    # 1순위: 클래스명으로 정확 매칭
     exact: list[int] = []
-    # 2순위: 타이틀에 SAP 포함
     fallback: list[int] = []
 
     def _enum_cb(hwnd: int, _: Any) -> bool:
@@ -46,12 +63,9 @@ def _find_sap_window() -> int | None:
             return True
         cls = win32gui.GetClassName(hwnd)
         title = win32gui.GetWindowText(hwnd)
-
-        # SAP GUI 세션 윈도우 클래스 (가장 정확)
-        if cls.startswith("SAP_FRONTEND"):
+        if cls == "SAP_FRONTEND_SESSION":
             exact.append(hwnd)
-        # 타이틀 기반 fallback (대소문자 무시)
-        elif "SAP" in title.upper() and cls not in ("CabinetWClass", "Progman"):
+        elif "SAP" in title.upper() and cls not in ("CabinetWClass", "Progman", "#32770"):
             fallback.append(hwnd)
         return True
 
@@ -79,14 +93,19 @@ def _get_window_rect(hwnd: int) -> tuple[int, int, int, int] | None:
         return None
 
 
-def capture_sap_window(output_path: str | Path | None = None) -> Path | None:
+def capture_sap_window(
+    output_path: str | Path | None = None,
+    session: Any = None,
+) -> Path | None:
     """SAP GUI 윈도우를 캡처하여 PNG로 저장.
 
-    1순위: SAP GUI 윈도우 핸들을 찾아서 해당 영역만 캡처
-    2순위: 윈도우를 못 찾으면 (Citrix/RDP 등) 전체 화면 캡처로 fallback
+    1순위: COM 세션에서 정확한 윈도우 핸들을 가져와서 캡처
+    2순위: 윈도우 스캔으로 SAP GUI 찾기
+    3순위: 전체 화면 캡처 (fallback)
 
     Args:
         output_path: 저장 경로. None이면 자동 생성.
+        session: SapGuiWrapper의 COM 세션 객체. 있으면 정확한 윈도우를 잡음.
 
     Returns:
         저장된 파일 경로. 실패 시 None.
@@ -95,13 +114,17 @@ def capture_sap_window(output_path: str | Path | None = None) -> Path | None:
         logger.warning("스크린샷은 Windows에서만 지원됩니다.")
         return None
 
-    bbox = None  # (left, top, right, bottom) or None for full screen
+    bbox = None
 
-    hwnd = _find_sap_window()
+    # 1순위: COM 세션에서 직접 핸들 획득
+    hwnd = _find_sap_window_from_session(session)
+    if hwnd is None:
+        # 2순위: 윈도우 스캔
+        hwnd = _find_sap_window_by_scan()
+
     if hwnd is not None:
         rect = _get_window_rect(hwnd)
         if rect is not None:
-            # SAP 윈도우를 전경으로 가져오기
             try:
                 import win32gui  # type: ignore[import-untyped]
                 win32gui.SetForegroundWindow(hwnd)
@@ -110,7 +133,7 @@ def capture_sap_window(output_path: str | Path | None = None) -> Path | None:
                 pass
             bbox = rect
     else:
-        logger.info("SAP GUI 윈도우를 직접 찾을 수 없어 전체 화면을 캡처합니다 (Citrix/RDP 환경).")
+        logger.info("SAP GUI 윈도우를 찾을 수 없어 전체 화면을 캡처합니다.")
 
     try:
         img = ImageGrab.grab(bbox=bbox)
@@ -133,6 +156,7 @@ def capture_for_step(
     screen_number: int,
     label: str = "",
     base_dir: str | Path | None = None,
+    session: Any = None,
 ) -> Path | None:
     """매크로/프로세스 단계별 스크린샷 캡처.
 
@@ -147,7 +171,7 @@ def capture_for_step(
     filename = f"{tcode}_{step_number:03d}_screen{screen_number}_{safe_label}.png"
     output_path = base_dir / tcode / filename
 
-    return capture_sap_window(output_path)
+    return capture_sap_window(output_path, session=session)
 
 
 def _default_path() -> Path:
