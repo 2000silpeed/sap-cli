@@ -215,6 +215,15 @@ class SapTable(BaseModel):
     rows: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class SapTreeNode(BaseModel):
+    """SAP GUI 트리 노드 (Document Flow 등)."""
+    key: str
+    text: str = ""
+    level: int = 0
+    items: dict[str, str] = Field(default_factory=dict)
+    children: list["SapTreeNode"] = Field(default_factory=list)
+
+
 class SapButton(BaseModel):
     """SAP GUI 버튼."""
     id: str
@@ -257,6 +266,7 @@ class ScreenOntology(BaseModel):
     # Object Types
     fields: list[SapField] = Field(default_factory=list)
     tables: list[SapTable] = Field(default_factory=list)
+    trees: list[SapTable] = Field(default_factory=list)  # 트리 컨트롤 (Document Flow 등) - id/type만 스캔 시 기록
     buttons: list[SapButton] = Field(default_factory=list)
     menus: list[SapMenuItem] = Field(default_factory=list)
     tabs: list[SapButton] = Field(default_factory=list)
