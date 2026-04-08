@@ -183,6 +183,19 @@ class SapGuiWrapper:
         except Exception as e:
             raise SapGuiError(f"필드 읽기 실패 [{element_id}]: {e}") from e
 
+    def get_field_info(self, element_id: str) -> dict[str, str]:
+        """필드 값과 이름 정보를 함께 읽기."""
+        try:
+            element = self.session.FindById(element_id)
+            name = self._safe_attr(element, "Name", "")
+            return {
+                "name": name or self._extract_name(element_id),
+                "field": element_id,
+                "value": str(element.Text),
+            }
+        except Exception as e:
+            raise SapGuiError(f"필드 읽기 실패 [{element_id}]: {e}") from e
+
     def set_focus(self, element_id: str) -> None:
         """요소에 포커스 설정."""
         try:
