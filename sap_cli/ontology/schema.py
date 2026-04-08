@@ -129,11 +129,17 @@ VKEY_MAP: dict[int, str] = {
 # ---------------------------------------------------------------------------
 
 class SemanticContext(BaseModel):
-    """SOS 벡터 풍부화 - 필드의 의미적 컨텍스트."""
+    """SOS 벡터 풍부화 - 필드의 의미적 컨텍스트.
+
+    이중 언어 지원: description/synonyms는 영어, _ko 접미사는 한국어.
+    learn 시 SAP COM 속성에서 자동 추출되며, annotate로 수동 보강 가능.
+    """
     raw_label: str = ""
     sap_field_name: str = ""
     description: str = ""
+    description_ko: str = ""
     synonyms: list[str] = Field(default_factory=list)
+    synonyms_ko: list[str] = Field(default_factory=list)
     validation: str = ""
     domain_context: str = ""
 
