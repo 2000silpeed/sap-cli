@@ -183,6 +183,27 @@ def set_field(
     )
 
 
+@app.command("fill")
+def fill_fields(
+    assignments: list[str] = typer.Argument(help="필드=값 쌍 (예: MATNR=100-100 WERKS=1000)"),
+    enter: bool = typer.Option(True, "--enter/--no-enter", help="입력 후 자동 Enter (기본: 활성)"),
+) -> None:
+    """여러 필드를 한번에 입력. 필드명 또는 element_id 사용 가능.
+
+    예시:
+      sap fill MATNR=100-100 WERKS=1000 LGORT=0001
+      sap fill MATNR=100-100 WERKS=1000 --no-enter
+    """
+    fields: dict[str, str] = {}
+    for a in assignments:
+        if "=" not in a:
+            typer.echo(f"잘못된 형식: {a!r} (필드=값 형식으로 입력하세요)")
+            raise typer.Exit(1)
+        k, v = a.split("=", 1)
+        fields[k.strip()] = v.strip()
+    _run_command("fill", {"fields": fields, "enter": enter}, allow_daemon=True)
+
+
 @app.command("get")
 def get_field(
     element_ids: list[str] = typer.Argument(help="필드 ID (여러 개 가능)"),
