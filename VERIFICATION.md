@@ -627,7 +627,7 @@ sap process show sales_to_billing
 #   step2.MBLNR → step3.MBLNR (입고문서번호)
 
 # 5. 온톨로지 목록에서 프로세스도 보이는지 확인
-sap ontology --list-all
+sap ontology --list
 # → transactions, patterns, processes 모두 반환
 
 # 6. 새 프로세스 생성 테스트 (MCP 환경에서)
@@ -652,7 +652,7 @@ sap process list
 | process show (조달) | steps 4개, data_flows 3개, 스텝별 tcode/description 확인 |
 | process show (판매) | steps 3개, data_flows 2개 |
 | data_flows | source_step < target_step, source_field/target_field 정확 |
-| ontology --list-all | processes 배열에 2개 포함 |
+| ontology --list | processes 배열에 2개 포함 |
 | process create | saved: true, process_id 반환, 무결성 검증 통과 |
 | process delete | deleted: true, 목록에서 제거 |
 
@@ -870,7 +870,7 @@ sap run [TCODE]
 sap screen --fields-only
 
 # 2. 시드 데이터의 필드 목록
-sap ontology --tcode [TCODE]
+sap ontology [TCODE]
 
 # 3. 비교
 # 시드의 필드 ID가 실제 화면과 일치하는지
@@ -879,7 +879,7 @@ sap ontology --tcode [TCODE]
 
 # 4. 불일치 시 실제 화면을 학습하여 시드 갱신
 sap learn
-sap ontology --tcode [TCODE]
+sap ontology [TCODE]
 
 # 5. 뒤로가기
 sap vkey 3
