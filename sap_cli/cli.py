@@ -508,5 +508,34 @@ def learn_screen_cmd() -> None:
     _output_json(_dispatch_local("learn", {}))
 
 
+@app.command("annotate")
+def annotate_field(
+    tcode: str = typer.Argument(help="트랜잭션 코드 (예: MM03)"),
+    field: str = typer.Argument(help="필드 ID, 이름, 또는 SAP 필드명 (예: RMMG1-MATNR, MATNR)"),
+    desc: Optional[str] = typer.Option(None, "--desc", help="영문 설명"),
+    desc_ko: Optional[str] = typer.Option(None, "--desc-ko", help="한글 설명"),
+    synonyms: Optional[str] = typer.Option(None, "--synonyms", help="영문 동의어 (쉼표 구분)"),
+    synonyms_ko: Optional[str] = typer.Option(None, "--synonyms-ko", help="한글 동의어 (쉼표 구분)"),
+    validation: Optional[str] = typer.Option(None, "--validation", help="유효성 규칙"),
+    domain_context: Optional[str] = typer.Option(None, "--domain-context", help="도메인 맥락"),
+) -> None:
+    """필드 시맨틱 정보를 수동으로 입력/수정 (영어/한국어)."""
+    _output_json(
+        _dispatch_local(
+            "annotate",
+            {
+                "tcode": tcode,
+                "field": field,
+                "desc": desc,
+                "desc_ko": desc_ko,
+                "synonyms": synonyms,
+                "synonyms_ko": synonyms_ko,
+                "validation": validation,
+                "domain_context": domain_context,
+            },
+        )
+    )
+
+
 if __name__ == "__main__":
     app()
