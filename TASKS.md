@@ -284,6 +284,24 @@ Phase 11-6 (자동 축적) ← 마무리
 
 ## 남은 작업
 
+### Phase 12: ALV Grid 데이터 읽기 강화
+
+현재 `sap table`은 `GuiGridView`와 `GuiTableControl`만 지원.
+실제 SAP에서 ALV Grid는 `GuiShell`(subtype=GridView) 안에 있는 경우가 많아 읽기 실패함.
+
+| 작업 | 내용 | 상태 |
+|------|------|------|
+| GuiShell ALV 감지 | read_table에서 GuiShell일 때 SubType으로 ALV 여부 판단 | |
+| ALV Grid 데이터 읽기 | GetCellValue, ColumnOrder, ColumnCount 등 ALV 전용 API 사용 | |
+| ALV 컬럼 헤더 | GetColumnTitles로 한글/영문 컬럼명 수집 | |
+| ALV 필터/정렬 상태 | GetFilteredColumnKeys, GetSortedColumnKeys 읽기 | |
+| ALV 행 선택 | SelectedRows 속성으로 다중 행 선택 지원 | |
+| ALV 더블클릭 | SetCurrentCell + DoubleClickCurrentCell로 행 진입 | |
+| _scan_children ALV 인식 | GuiShell subtype이 ALV일 때 tables에 추가 (현재는 trees로만 잡힘) | |
+| 스크롤 처리 | VisibleRowCount 넘는 행은 FirstVisibleRow 조정 후 재읽기 | |
+| MCP: sap_table_read 개선 | GuiShell ALV도 자동 처리되도록 | |
+| 테스트 | ALV 읽기/선택/스크롤 테스트 케이스 | |
+
 ### ReBAC / 운영 커널 후속 작업
 - transcript의 screen transition을 온톨로지 screen_flow 후보로 반영
 - 반복 성공한 action 패턴을 field dependency / action prior 후보로 반영
