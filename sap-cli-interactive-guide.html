@@ -1114,6 +1114,7 @@ active_agent: "standard"</pre>
       { cli: "sap run", mcp: "sap_run", category: "action", permission: "execute", surfaces: ["CLI", "MCP", "Shell"], desc: "트랜잭션 코드를 실행합니다.", example: "sap run MM03", hint: "가장 표준적인 이동 방식입니다." },
       { cli: "sap command", mcp: "sap_command", category: "action", permission: "execute", surfaces: ["CLI", "MCP"], desc: "SAP command field에 /n, /o 형태 명령을 직접 보냅니다.", example: "sap command \"/nMM03\"", hint: "새 세션, 강제 이동 같은 고급 이동용입니다." },
       { cli: "sap set", mcp: "sap_set_field", category: "action", permission: "write", surfaces: ["CLI", "MCP", "Shell"], desc: "필드에 값을 씁니다. 체크박스(/chk)와 라디오버튼(/rad)은 자동 감지하여 처리합니다.", example: "sap set \"wnd[0]/usr/ctxtRMMG1-MATNR\" \"100-100\"", hint: "체크박스: sap set \"...chk...\" \"true\", 라디오: sap set \"...rad...\" \"true\"" },
+      { cli: "sap fill", mcp: "sap_fill_fields", category: "action", permission: "write", surfaces: ["CLI", "MCP"], desc: "여러 필드를 한번에 입력합니다. 필드명(MATNR 등)을 현재 화면에서 자동 매핑하고, 기본적으로 Enter까지 전송합니다.", example: "sap fill MATNR=100-100 WERKS=1000 LGORT=0001", hint: "--no-enter로 Enter 없이 값만 세팅할 수 있습니다. element_id 직접 지정도 가능." },
       { cli: "sap press", mcp: "sap_press", category: "action", permission: "execute", surfaces: ["CLI", "MCP", "Shell"], desc: "버튼을 클릭합니다.", example: "sap press \"wnd[0]/tbar[1]/btn[8]\"", hint: "press 뒤에는 status와 modal을 바로 확인하는 편이 안전합니다." },
       { cli: "sap vkey", mcp: "sap_send_vkey", category: "action", permission: "execute", surfaces: ["CLI", "MCP", "Shell"], desc: "VKey를 전송합니다. Enter, Back, Execute, Save 같은 키 조작에 해당합니다.", example: "sap vkey 0", hint: "11은 저장이므로 high risk로 봐야 합니다." },
 
@@ -1122,6 +1123,8 @@ active_agent: "standard"</pre>
 
       { cli: "sap ontology", mcp: "sap_ontology_query", category: "ontology", permission: "read", surfaces: ["CLI", "MCP"], desc: "학습된 트랜잭션 구조, 필드, 액션 지식을 조회합니다.", example: "sap ontology MM03 --actions", hint: "구조를 모를 때 먼저 보는 지식 레이어입니다." },
       { cli: "sap learn", mcp: "sap_learn", category: "ontology", permission: "admin", surfaces: ["CLI", "MCP"], desc: "현재 화면을 스캔해서 온톨로지 지식으로 저장합니다.", example: "sap learn", hint: "즐겨 쓰는 트랜잭션은 먼저 학습해 두는 편이 좋습니다." },
+      { cli: "sap capture", mcp: "sap_capture", category: "inspect", permission: "read", surfaces: ["CLI", "MCP"], desc: "현재 SAP GUI 화면을 스크린샷으로 캡처합니다. 사용자 설명서 제작용.", example: "sap capture 01_초기화면", hint: "라벨을 지정하면 파일명에 반영됩니다. --output으로 경로 직접 지정도 가능." },
+      { cli: "sap captures", mcp: "sap_capture_list", category: "inspect", permission: "read", surfaces: ["CLI", "MCP"], desc: "저장된 스크린샷 목록을 조회합니다.", example: "sap captures VL03N", hint: "tcode별로 필터링할 수 있습니다." },
 
       { cli: "sap record-start", mcp: "sap_macro_control(start)", category: "macro", permission: "admin", surfaces: ["CLI", "MCP"], desc: "매크로 녹화를 시작합니다.", example: "sap record-start \"자재조회\"", hint: "반복 작업을 고정된 레시피로 바꿀 때 씁니다." },
       { cli: "sap record-step", mcp: "sap_macro_record_step", category: "macro", permission: "write", surfaces: ["CLI", "MCP"], desc: "단계를 기록하면서 동시에 실제 SAP 액션을 수행합니다.", example: "sap record-step set \"wnd[0]/usr/ctxtRMMG1-MATNR\" \"100-100\"", hint: "실행과 기록을 동시에 남기는 점이 핵심입니다." },
@@ -1268,7 +1271,7 @@ active_agent: "standard"</pre>
         tone: "기본 운영용",
         summary: "조회, 실행, 입력을 모두 수행하지만 위험 트랜잭션은 승인 경계에 걸립니다.",
         use: "일반 조회/변경 작업, 초기 데모, 범용 operator",
-        tools: ["sap_run", "sap_command", "sap_set_field", "sap_press", "sap_send_vkey", "sap_screen", "sap_get_status", "sap_transcript_query"]
+        tools: ["sap_run", "sap_command", "sap_set_field", "sap_fill_fields", "sap_press", "sap_send_vkey", "sap_screen", "sap_get_status", "sap_capture", "sap_transcript_query"]
       },
       {
         key: "operator",
@@ -1380,6 +1383,20 @@ active_agent: "standard"</pre>
           ["sap run MIRO → MBLNR 입력", "입고 문서번호를 송장검증에 전달합니다."]
         ],
         code: "# 프로세스 조회\nsap process list\nsap process show procurement_basic\n\n# 스텝별 실행 (데이터 흐름 연결)\nsap run MM01          # → MATNR 생성\nsap run ME21N         # ← MATNR 입력, → EBELN 생성\nsap run MIGO          # ← EBELN 입력, → MBLNR 생성\nsap run MIRO          # ← MBLNR 입력\n\n# 새 프로세스 등록\nsap process create sales_basic --name \"판매 프로세스\" --steps VA01,VL01N,VF01"
+      },
+      {
+        key: "screenshot",
+        title: "스크린샷 기반 설명서 제작",
+        blurb: "SAP 화면을 단계별로 캡처하여 사용자 매뉴얼 소재를 만드는 패턴입니다.",
+        why: "신규 사용자 교육, 업무 인수인계, 감사 증빙에 화면 캡처가 필수입니다. fill과 capture를 조합하면 빠르게 설명서를 만들 수 있습니다.",
+        steps: [
+          ["sap run VL03N", "트랜잭션 진입"],
+          ["sap capture 01_초기화면", "초기 화면 캡처"],
+          ["sap fill VBELN=80000123", "필드 입력 + 자동 Enter"],
+          ["sap capture 02_상세화면", "결과 화면 캡처"],
+          ["sap captures VL03N", "캡처 목록 확인"]
+        ],
+        code: "sap run VL03N\nsap capture 01_초기화면\nsap fill VBELN=80000123\nsap capture 02_번호입력후\nsap vkey 0\nsap capture 03_상세화면\nsap captures VL03N\n# → ~/.sap_cli/screenshots/VL03N/ 에 PNG 파일 생성"
       }
     ];
 
@@ -1394,8 +1411,8 @@ active_agent: "standard"</pre>
       execute: {
         title: "일반 실행 / 입력",
         description: "operator가 트랜잭션 실행과 필드 입력을 수행하는 기본 흐름입니다.",
-        cli: ["sap run MM03", "sap screen --fields-only", "sap set ...", "sap vkey 0", "sap status", "sap modal"],
-        mcp: ["sap_run", "sap_screen(fields_only=true)", "sap_set_field", "sap_send_vkey", "sap_get_status", "sap_modal"],
+        cli: ["sap run MM03", "sap screen --fields-only", "sap fill MATNR=100-100 (또는 sap set ...)", "sap vkey 0", "sap status", "sap modal", "sap capture"],
+        mcp: ["sap_run", "sap_screen(fields_only=true)", "sap_fill_fields 또는 sap_set_field", "sap_send_vkey", "sap_get_status", "sap_modal", "sap_capture"],
         note: "화면이 바뀐 뒤에는 element reference를 다시 잡아야 합니다."
       },
       macro: {
