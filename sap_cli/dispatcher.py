@@ -70,6 +70,7 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "process_start":  CommandDef("sap_process_start",     Permission.EXECUTE),
     "process_step":   CommandDef("sap_process_step",      Permission.EXECUTE),
     "process_status": CommandDef("sap_process_status",    Permission.READ),
+    "annotate":       CommandDef("sap_annotate_field",    Permission.WRITE),
 }
 
 COMMAND_TOOL_MAP: dict[str, str] = {cmd: d.tool_name for cmd, d in COMMAND_REGISTRY.items()}
@@ -346,6 +347,8 @@ def _execute_command(
         return _dispatch_process_step(args)
     if command == "process_status":
         return _dispatch_process_status()
+    if command == "annotate":
+        return _dispatch_annotate(args)
     raise ValueError(f"미구현 명령: {command}")
 
 
@@ -700,6 +703,48 @@ def _dispatch_learn() -> dict[str, Any]:
         "screen_number": screen.screen_number,
         "fields_count": len(screen.fields),
         "buttons_count": len(screen.buttons),
+    }
+
+
+def _dispatch_annotate(args: dict[str, Any]) -> dict[str, Any]:
+    """필드 시맨틱 수동 입력/수정."""
+    store = _get_store()
+    tcode = str(args["tcode"]).upper()
+    field_query = str(args["field"])
+
+    ontology = store.load_transaction(tcode)
+    if ontology is None:
+        raise ValueError(f"온톨로지가 없습니다: {tcode}. 먼저 sap learn으로 학습하세요.")
+
+    # 필드 검색: element_id 또는 field name으로 찾기
+    updated = 0
+    for screen in ontology.screens.values():
+        for field in screen.fields:
+            if field.id == field_query or field.name == field_query or field.semantic.sap_field_name == field_query:
+                sem = field.semantic
+                if "desc" in args and args["desc"]:
+                    sem.description = args["desc"]
+                if "desc_ko" in args and args["desc_ko"]:
+                    sem.description_ko = args["desc_ko"]
+                if "synonyms" in args and args["synonyms"]:
+                    sem.synonyms = [s.strip() for s in args["synonyms"].split(",")]
+                if "synonyms_ko" in args and args["synonyms_ko"]:
+                    sem.synonyms_ko = [s.strip() for s in args["synonyms_ko"].split(",")]
+                if "validation" in args and args["validation"]:
+                    sem.validation = args["validation"]
+                if "domain_context" in args and args["domain_context"]:
+                    sem.domain_context = args["domain_context"]
+                updated += 1
+
+    if updated == 0:
+        raise ValueError(f"필드를 찾을 수 없습니다: {field_query} (tcode={tcode})")
+
+    store.save_transaction(ontology)
+    return {
+        "annotated": True,
+        "tcode": tcode,
+        "field": field_query,
+        "screens_updated": updated,
     }
 
 
