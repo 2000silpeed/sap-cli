@@ -498,7 +498,25 @@ class SapGuiWrapper:
         except Exception:
             pass  # 메뉴바 없는 화면 (모달 등)
 
-        # 3. 툴바 (버튼)
+        # 3. OKCode 필드 (tbar[0]/okcd - 항상 존재)
+        try:
+            okcd = self.session.FindById(f"{window_id}/tbar[0]/okcd")
+            okcd_type = str(okcd.Type)
+            comp = self._map_component_type(okcd_type)
+            if comp == GuiComponentType.OK_CODE_FIELD:
+                screen.fields.append(SapField(
+                    id=str(okcd.Id),
+                    name=self._extract_name(str(okcd.Id)),
+                    type=comp,
+                    label=str(getattr(okcd, "Text", "")),
+                    value=str(getattr(okcd, "Text", "")),
+                    changeable=bool(getattr(okcd, "Changeable", True)),
+                    semantic=self._build_semantic(okcd, str(okcd.Id)),
+                ))
+        except Exception:
+            pass
+
+        # 4. 툴바 (버튼)
         for tbar_idx in range(3):
             try:
                 tbar = self.session.FindById(f"{window_id}/tbar[{tbar_idx}]")
@@ -541,6 +559,11 @@ class SapGuiWrapper:
 
             # 불필요한 타입은 즉시 건너뛰기 (COM 호출 최소화)
             if child_type in self._SKIP_TYPES:
+                continue
+
+            # OKCode는 _manual_scan에서 직접 추가하므로 중복 방지
+            mapped = self._map_component_type(child_type)
+            if mapped == GuiComponentType.OK_CODE_FIELD:
                 continue
 
             try:
@@ -962,9 +985,15 @@ class SapGuiWrapper:
             return last
         return element_id
 
-    @staticmethod
-    def _map_component_type(type_str: str) -> GuiComponentType:
+    # SAP GUI가 반환하는 타입명 오타 보정 맵
+    _TYPE_ALIASES: dict[str, str] = {
+        "GuiOkCodeFiled": "GuiOkCodeField",  # SAP GUI 일부 버전 오타
+    }
+
+    @classmethod
+    def _map_component_type(cls, type_str: str) -> GuiComponentType:
         """타입 문자열을 GuiComponentType enum으로 매핑."""
+        type_str = cls._TYPE_ALIASES.get(type_str, type_str)
         try:
             return GuiComponentType(type_str)
         except ValueError:
