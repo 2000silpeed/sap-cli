@@ -218,11 +218,20 @@ class SapGuiWrapper:
     # -------------------------------------------------------------------
 
     def press(self, element_id: str) -> None:
-        """버튼 클릭."""
+        """버튼 클릭 또는 탭 선택.
+
+        GuiTab은 Press()가 아닌 Select()로 선택해야 한다.
+        요소 타입을 확인하여 자동으로 적절한 메서드를 호출.
+        """
         try:
-            self.session.FindById(element_id).Press()
+            obj = self.session.FindById(element_id)
+            obj_type = str(obj.Type)
+            if obj_type == "GuiTab":
+                obj.Select()
+            else:
+                obj.Press()
         except Exception as e:
-            raise SapGuiError(f"버튼 클릭 실패 [{element_id}]: {e}") from e
+            raise SapGuiError(f"버튼/탭 클릭 실패 [{element_id}]: {e}") from e
 
     def send_vkey(self, vkey: int) -> None:
         """VKey 전송 (Enter=0, Back=3, Execute=8, Save=11, Cancel=12).
