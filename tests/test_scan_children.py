@@ -333,3 +333,76 @@ class TestScanChildrenDepthLimit:
         wrapper._scan_children(container, screen, depth=8)
 
         assert len(screen.fields) == 1
+
+
+class TestUserTcodeFallback:
+    """SAP가 내부 tcode(SE38 등)를 반환할 때 원래 tcode로 보정하는 테스트.
+
+    VL03N → DO 상세 화면에서 Info.Transaction이 SE38로 바뀌는 실제 사례 재현.
+    """
+
+    def test_run_transaction_stores_user_tcode(self, wrapper):
+        """run_transaction 호출 시 _user_tcode에 원래 tcode가 저장된다."""
+        wrapper._user_tcode = None
+        wrapper.run_transaction("VL03N")
+        assert wrapper._user_tcode == "VL03N"
+
+    def test_run_transaction_with_slash_prefix(self, wrapper):
+        """/nVL03N 형식도 tcode를 올바르게 저장."""
+        wrapper._user_tcode = None
+        wrapper.run_transaction("/nVL03N")
+        assert wrapper._user_tcode == "VL03N"
+
+    def test_internal_tcode_not_stored(self, wrapper):
+        """SE38 같은 내부 tcode는 _user_tcode를 덮어쓰지 않는다."""
+        wrapper._user_tcode = "VL03N"
+        wrapper.run_transaction("SE38")
+        assert wrapper._user_tcode == "VL03N"  # 변경되지 않음
+
+    def test_get_screen_uses_user_tcode_when_sap_reports_internal(self, wrapper):
+        """Info.Transaction=SE38일 때 _user_tcode(VL03N)를 사용."""
+        wrapper._user_tcode = "VL03N"
+        wrapper.session.Info.Transaction = "SE38"
+        wrapper.session.Info.ScreenNumber = 200
+        wrapper.session.Info.Program = "SAPMV50A"
+        wrapper.session.FindById.return_value = SimpleNamespace(
+            Text="Display Outbound Delivery",
+            Type="GuiMainWindow",
+            Id="wnd[0]",
+            Children=FakeChildren([]),
+        )
+
+        screen = wrapper.get_screen()
+        assert screen.transaction == "VL03N"
+
+    def test_get_screen_keeps_real_tcode_when_not_internal(self, wrapper):
+        """Info.Transaction=MM03처럼 정상 tcode면 그대로 사용."""
+        wrapper._user_tcode = "VL03N"
+        wrapper.session.Info.Transaction = "MM03"
+        wrapper.session.Info.ScreenNumber = 100
+        wrapper.session.Info.Program = "SAPLMGMM"
+        wrapper.session.FindById.return_value = SimpleNamespace(
+            Text="Display Material",
+            Type="GuiMainWindow",
+            Id="wnd[0]",
+            Children=FakeChildren([]),
+        )
+
+        screen = wrapper.get_screen()
+        assert screen.transaction == "MM03"  # VL03N이 아니라 MM03
+
+    def test_get_screen_without_user_tcode_uses_reported(self, wrapper):
+        """_user_tcode가 없으면 SAP가 보고하는 값을 그대로 사용."""
+        wrapper._user_tcode = None
+        wrapper.session.Info.Transaction = "SE38"
+        wrapper.session.Info.ScreenNumber = 1000
+        wrapper.session.Info.Program = "SAPMSYST"
+        wrapper.session.FindById.return_value = SimpleNamespace(
+            Text="ABAP Editor",
+            Type="GuiMainWindow",
+            Id="wnd[0]",
+            Children=FakeChildren([]),
+        )
+
+        screen = wrapper.get_screen()
+        assert screen.transaction == "SE38"  # fallback 없으므로 그대로
