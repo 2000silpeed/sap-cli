@@ -54,7 +54,8 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
 | `sap_session` | 세션 정보 조회 (사용자, tcode, 화면번호) | - |
 | `sap_screen` | 현재 화면 UI 구조 (JSON) | `fields_only=true`, `actions_only=true` |
 | `sap_run` | 트랜잭션 실행 | `tcode` (필수) |
-| `sap_set_field` | 필드 값 설정 | `element_id`, `value` (필수) |
+| `sap_set_field` | 필드 값 설정 (1개) | `element_id`, `value` (필수) |
+| `sap_fill_fields` | 여러 필드 한번에 입력 (필드명 자동 매핑) | `fields` (필수), `enter` (기본 true) |
 | `sap_get_field` | 필드 값 읽기 | `element_id` (필수) |
 | `sap_press` | 버튼 클릭 | `element_id` (필수) |
 | `sap_send_vkey` | 키보드 키 전송 | `vkey` (필수) |
@@ -70,6 +71,13 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
 |------|------|--------------|
 | `sap_ontology_query` | 트랜잭션 도메인 지식 조회 | `tcode`, `field_search`, `list_all` |
 | `sap_learn` | 현재 화면을 온톨로지로 학습/저장 | - |
+
+### 스크린샷
+
+| 도구 | 용도 | 핵심 파라미터 |
+|------|------|--------------|
+| `sap_capture` | SAP GUI 화면 스크린샷 캡처 | `label` (선택), `output` (선택) |
+| `sap_capture_list` | 저장된 스크린샷 목록 조회 | `tcode` (필터) |
 
 ### 매크로
 
@@ -110,9 +118,10 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
 2. sap_ontology_query(tcode="XX01")     # 도메인 지식 확인 (선택)
 3. sap_run(tcode="XX01")               # 트랜잭션 실행
 4. sap_screen(fields_only=true)        # 입력 가능한 필드 확인
-5. sap_set_field(element_id, value)    # 필드 값 입력 (반복)
-6. sap_send_vkey(vkey=0)               # Enter
-7. sap_get_status()                    # 결과 확인
+5. sap_fill_fields(fields={"MATNR": "100-100", "WERKS": "1000"})
+   # 여러 필드 한번에 입력 + 자동 Enter (필드명 자동 매핑)
+   # 또는 1개씩: sap_set_field(element_id, value) → sap_send_vkey(vkey=0)
+6. sap_get_status()                    # 결과 확인
 ```
 
 ### 패턴 2: 화면 탐색 (필드 ID를 모를 때)
@@ -204,6 +213,21 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
 권장 사용처:
 - verifier agent가 operator의 작업을 사후 검토할 때
 - 에러/경고 이후 같은 단계를 반복 실행하기 전에
+
+### 패턴 7: 스크린샷 기반 설명서 제작
+
+단계별 스크린샷을 캡처하여 사용자 설명서 소재를 생성:
+
+```
+1. sap_run(tcode="VL03N")
+2. sap_capture(label="01_초기화면")               # 초기 화면 캡처
+3. sap_fill_fields(fields={"VBELN": "80000123"})  # 필드 입력 + Enter
+4. sap_capture(label="02_상세화면")               # 결과 화면 캡처
+5. sap_capture_list(tcode="VL03N")                # 캡처 목록 확인
+```
+
+저장 위치: `~/.sap_cli/screenshots/{tcode}/`
+파일명: `{tcode}_{step}_screen{num}_{label}.png`
 - 왜 특정 승인 요청이 발생했는지 설명해야 할 때
 
 이 패턴은 온톨로지를 대체하지 않는다.
