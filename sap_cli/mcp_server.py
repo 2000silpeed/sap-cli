@@ -251,7 +251,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "command": {"type": "string", "enum": ["start", "finish", "cancel", "status", "undo"]},
                 "name": {"type": "string", "description": "매크로 이름 (start/finish 시)"},
                 "description": {"type": "string"},
-                "variables": {"type": "object", "description": "변수 지정 (finish 시). {name: description}"},
+                "variables": {"type": "object", "description": "변수 지정 (finish 시). {변수명: 실제값} 또는 {변수명: {value: 실제값, desc: 설명}}"},
             },
             "required": ["command"],
         },
