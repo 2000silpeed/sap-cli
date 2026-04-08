@@ -457,10 +457,18 @@ class SapGuiWrapper:
 
     @staticmethod
     def _safe_attr(obj: Any, attr: str, default: Any = "") -> Any:
-        """COM 객체 속성을 안전하게 읽기."""
+        """COM 객체 속성을 안전하게 읽기.
+
+        default가 str이면 str로 변환, bool이면 원본 유지.
+        """
         try:
             val = getattr(obj, attr, default)
-            return str(val) if val is not None else default
+            if val is None:
+                return default
+            # default 타입에 맞춰 변환 (bool은 str 변환하면 안 됨)
+            if isinstance(default, bool):
+                return bool(val)
+            return str(val)
         except Exception:
             return default
 
