@@ -72,6 +72,7 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "process_status": CommandDef("sap_process_status",    Permission.READ),
     "annotate":       CommandDef("sap_annotate_field",    Permission.WRITE),
     "fill":           CommandDef("sap_fill_fields",       Permission.WRITE),
+    "tree":           CommandDef("sap_tree_read",          Permission.READ),
     "capture":        CommandDef("sap_capture",           Permission.READ),
     "capture_list":   CommandDef("sap_capture_list",      Permission.READ),
 }
@@ -301,6 +302,14 @@ def _execute_command(
     if command == "table":
         element_id = str(args["element_id"])
         return _get_sap().read_table(element_id).model_dump(mode="json")
+    if command == "tree":
+        element_id = str(args["element_id"])
+        nodes = _get_sap().read_tree(element_id)
+        return {
+            "element_id": element_id,
+            "node_count": sum(1 for _ in _flatten_tree_nodes(nodes)),
+            "nodes": [n.model_dump(mode="json") for n in nodes],
+        }
     if command == "command":
         sap = _get_sap()
         command_text = str(args["cmd"])
@@ -937,6 +946,16 @@ def _dispatch_fill(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]
     if errors:
         payload["errors"] = errors
     return _with_post_action(payload, sap, "fill", ctx)
+
+
+def _flatten_tree_nodes(nodes: list) -> list:
+    """트리 노드를 평탄화."""
+    result = []
+    for n in nodes:
+        result.append(n)
+        if n.children:
+            result.extend(_flatten_tree_nodes(n.children))
+    return result
 
 
 def _dispatch_capture(args: dict[str, Any]) -> dict[str, Any]:
