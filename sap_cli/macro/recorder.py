@@ -120,12 +120,37 @@ class MacroRecorder:
                     if self._tcode:
                         break
 
-        # 변수 치환: {"사용된 값": "설명"} → 값을 ${변수명}으로 치환
+        # 변수 치환
+        # 지원 형식:
+        #   1) {"변수명": "실제값"} — 변수명을 직접 지정하고 실제값으로 step에서 매칭
+        #   2) {"실제값": "설명"}  — 실제값으로 step에서 매칭, 변수명은 target_id에서 자동 유추
+        # 판별 기준: 값이 step의 value에 존재하면 형식 1, 키가 존재하면 형식 2
         if variables:
-            for actual_value, var_desc in variables.items():
-                # target_id에서 변수명 자동 유추
-                targets = [s.target_id for s in self._steps if s.value and actual_value in s.value]
-                var_name = self._derive_var_name(actual_value, targets)
+            for key, val in variables.items():
+                # 형식 판별: val이 step value에 있으면 {"변수명": "실제값"}
+                val_in_steps = any(
+                    s.value and val in s.value for s in self._steps
+                )
+                key_in_steps = any(
+                    s.value and key in s.value for s in self._steps
+                )
+
+                if val_in_steps:
+                    # 형식 1: {"변수명": "실제값"}
+                    var_name = key
+                    actual_value = val
+                    var_desc = val
+                elif key_in_steps:
+                    # 형식 2 (기존): {"실제값": "설명"}
+                    targets = [
+                        s.target_id for s in self._steps
+                        if s.value and key in s.value
+                    ]
+                    var_name = self._derive_var_name(key, targets)
+                    actual_value = key
+                    var_desc = val
+                else:
+                    continue
 
                 macro_vars.append(MacroVariable(
                     name=var_name,
