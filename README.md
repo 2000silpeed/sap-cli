@@ -16,6 +16,7 @@ SOS(Study Ontology System)의 온톨로지 사상을 적용하여, 단순 스크
 4. [기본 사용법 (CLI)](#4-기본-사용법-cli)
 5. [매크로 녹화/재생](#5-매크로-녹화재생)
 6. [온톨로지 시스템](#6-온톨로지-시스템)
+6.4. [스크린샷 캡처](#64-스크린샷-캡처-사용자-설명서-제작)
 6.5. [업무 프로세스 (BusinessProcess)](#65-업무-프로세스-businessprocess)
 7. [Claude Code MCP 연동](#7-claude-code-mcp-연동)
 8. [MCP 도구를 활용한 AI 자동화 시나리오](#8-mcp-도구를-활용한-ai-자동화-시나리오)
@@ -178,8 +179,17 @@ sap screen --search "Save"
 ### 4.5 필드 조작
 
 ```powershell
-# 필드에 값 설정
+# 필드에 값 설정 (1개씩)
 sap set "wnd[0]/usr/ctxtRMMG1-MATNR" "100-100"
+
+# 여러 필드 한번에 입력 + 자동 Enter (필드명 자동 매핑)
+sap fill MATNR=100-100 WERKS=1000 LGORT=0001
+
+# Enter 없이 값만 세팅
+sap fill MATNR=100-100 WERKS=1000 --no-enter
+
+# element_id 직접 사용도 가능
+sap fill "wnd[0]/usr/ctxtRMMG1-MATNR=100-100" "wnd[0]/usr/ctxtRMMG1-WERKS=1000"
 
 # 필드 값 읽기
 sap get "wnd[0]/usr/ctxtRMMG1-MATNR"
@@ -190,6 +200,8 @@ sap set "wnd[1]/usr/chkUSRM1-AAUSW" "true"
 # 라디오버튼 선택 (/rad 접두사 자동 감지)
 sap set "wnd[0]/usr/radRMMG1-AUESSION" "true"
 ```
+
+> `sap fill`은 현재 화면을 스캔하여 필드명(MATNR 등)을 실제 element_id로 자동 매핑합니다. 체크박스(`/chk`)와 라디오버튼(`/rad`)도 자동 감지됩니다.
 
 ### 4.6 키보드/버튼
 
@@ -245,7 +257,22 @@ sap vkey 0                 # → 모달에 Enter 전송
 sap vkey 12                # → 모달에 Cancel
 ```
 
-### 4.10 전체 시나리오 예시: MM03 자재 조회
+### 4.10 스크린샷 캡처
+
+```powershell
+# 현재 SAP GUI 화면 캡처
+sap capture                      # 자동 파일명
+sap capture initial              # 라벨 지정
+sap capture --output ./step1.png # 경로 지정
+
+# 저장된 스크린샷 목록
+sap captures                     # 전체
+sap captures MM03                # tcode별 필터
+```
+
+저장 위치: `~/.sap_cli/screenshots/{tcode}/{tcode}_{step}_screen{num}_{label}.png`
+
+### 4.11 전체 시나리오 예시: MM03 자재 조회
 
 ```powershell
 # 1. SAP 연결
@@ -254,14 +281,9 @@ sap connect
 # 2. MM03 트랜잭션 실행
 sap run MM03
 
-# 3. 자재번호 필드 검색
-sap screen --search "MATNR"
-
-# 4. 자재번호 입력
-sap set "wnd[0]/usr/ctxtRMMG1-MATNR" "100-100"
-
-# 5. Enter (뷰 선택 화면으로)
-sap vkey 0
+# 3. 자재번호 한번에 입력 (필드명 자동 매핑 + Enter)
+sap fill MATNR=100-100
+# 또는 기존 방식: sap set "wnd[0]/usr/ctxtRMMG1-MATNR" "100-100" && sap vkey 0
 
 # 6. 뷰 선택 — 팝업인 경우 (모달 자동 감지)
 sap modal
@@ -439,7 +461,21 @@ sap macro-delete a1b2c3d4e5f6
 | `tab` | 탭 선택 | 탭 ID | - |
 | `menu` | 메뉴 선택 | 메뉴 ID | - |
 
-### 5.6 실전 예시: VA01 수주 생성 매크로
+| `table-select` | 테이블 행 선택 | 테이블 ID | 행 번호 (0-based) |
+
+### 5.6 fill 명령으로 간단하게
+
+매크로 녹화 없이도 `sap fill`로 여러 필드를 한번에 입력할 수 있습니다:
+
+```powershell
+sap run VA01
+sap fill AUART=OR VKORG=1000 VTWEG=10 SPART=00
+# → 4개 필드 세팅 + 자동 Enter → 오더 Overview 화면으로 이동
+sap fill KUNNR=1001 KETDAT=31.12.2026 BSTNK=PO-2026-001
+# → 고객/납품일/PO번호 입력 + Enter
+```
+
+### 5.7 실전 예시: VA01 수주 생성 매크로
 
 ```powershell
 # 녹화 시작
@@ -555,6 +591,41 @@ sap ontology MM03 --actions
 2. 기존 온톨로지가 있으면 시맨틱 정보를 병합
 3. 화면 전환 경로를 자동 기록 (시간공간)
 4. 다음에 같은 트랜잭션 실행 시 AI가 화면 구조를 미리 알 수 있음
+
+---
+
+## 6.4 스크린샷 캡처 (사용자 설명서 제작)
+
+SAP GUI 화면을 단계별로 캡처하여 사용자 설명서 소재를 생성합니다.
+
+```powershell
+# 현재 화면 캡처
+sap capture                      # 자동 파일명
+sap capture initial              # 라벨 지정
+
+# 저장된 스크린샷 목록
+sap captures                     # 전체
+sap captures VL03N               # tcode별 필터
+
+# 특정 경로에 저장
+sap capture --output ./docs/step1.png
+```
+
+**설명서 제작 워크플로우 예시:**
+
+```powershell
+sap run VL03N
+sap capture 01_초기화면
+sap fill VBELN=80000123
+sap capture 02_번호입력
+sap vkey 0
+sap capture 03_상세화면
+sap captures VL03N
+# → 3개 스크린샷 경로 확인
+```
+
+저장 위치: `~/.sap_cli/screenshots/{tcode}/`
+파일명 규칙: `{tcode}_{step}_screen{num}_{label}.png`
 
 ---
 
