@@ -142,12 +142,151 @@ ec29b59 Codex 리뷰 기반 10개 이슈 수정 + ReBAC 권한관리 구현
 
 ---
 
+## Phase 11: 진짜 온톨로지로 전환 — 관계 중심 재설계
+
+현재 "온톨로지"라 부르는 것은 **화면 스냅샷**(필드 목록)일 뿐, 관계가 없다.
+진짜 온톨로지는 필드 간, 트랜잭션 간, 문서 간 **관계(edge)**가 핵심이다.
+
+### 저장 구조 변경 (하위 호환)
+
+```
+knowledge/
+  transactions/           ← 기존 유지
+  processes/              ← 기존 유지
+  field_registry.json     ← NEW: 글로벌 필드 인덱스
+  field_relationships.json ← NEW: 필드 간 종속/결정 관계
+  document_flow.json      ← NEW: 트랜잭션 간 문서 흐름
+```
+
+기존 파일은 그대로 두고 3개 파일만 추가. 없으면 빈 상태로 시작, `sap learn` 할 때마다 자동 축적.
+
+---
+
+### Phase 11-1: 필드 레지스트리 (크로스 트랜잭션 필드 연결)
+
+MATNR이 MM03, VA01, ME21N에 다 나오는데 지금은 각 JSON에 따로 있어서 연결이 안 됨.
+글로벌 필드 인덱스를 만들어서 "이 필드가 어디어디에서 쓰이는지" 한번에 조회.
+
+| 작업 | 내용 | 자동/수동 | 상태 |
+|------|------|----------|------|
+| FieldRegistryEntry 모델 | sap_field_name, description, occurrences(tcode+screen+element_id) | - | |
+| FieldRegistry 모델 | dict[sap_field_name → FieldRegistryEntry] | - | |
+| store: load/save/rebuild | field_registry.json CRUD + 전체 트랜잭션 스캔으로 재구축 | - | |
+| learner 연동 | learn_current_screen() 후 _update_field_registry() 자동 호출 | 자동 | |
+| 수동 어노테이션 | check_table, domain, data_type (SAP GUI에서 못 뽑는 정보) | 수동 | |
+| CLI: sap relationships field MATNR | "MATNR이 쓰이는 트랜잭션/화면 목록" 조회 | - | |
+
+**자동 추출 가능:** sap_field_name은 이미 _build_semantic에서 추출됨. learn만 하면 자동 축적.
+**수동 필요:** check_table(MARA 등), domain, data_type(CHAR/NUMC 등)은 SAP GUI Scripting으로 못 뽑음.
+
+---
+
+### Phase 11-2: 필드 종속성 그래프
+
+WERKS 없이 LGORT를 입력할 수 없다, KUNNR가 ZTERM 기본값을 결정한다 — 이런 관계.
+
+| 작업 | 내용 | 자동/수동 | 상태 |
+|------|------|----------|------|
+| FieldRelationship 모델 | source_field, target_field, type(결정/종속/활성화/입력순서), observed_in | - | |
+| FieldDependencyType enum | VALUE_DETERMINES, INPUT_ORDER, LOOKUP, FIELD_ACTIVATION | - | |
+| store: load/save | field_relationships.json CRUD | - | |
+| 기존 시드 자동 변환 | 트랜잭션별 field_dependencies를 글로벌 FieldRelationship으로 승격 | 자동 | |
+| CLI: sap relationships depends WERKS | "LGORT가 WERKS에 종속 (MM03, ME21N에서 관찰됨)" | - | |
+| CLI: sap annotate-dependency | 수동으로 필드 종속 관계 추가 | 수동 | |
+
+**자동 추출 가능:** 기존 시드 데이터의 field_dependencies에서 자동 변환.
+**수동 필요:** INPUT_ORDER(입력 순서), 새 트랜잭션의 종속 관계.
+
+---
+
+### Phase 11-3: 문서 흐름 온톨로지
+
+VA01(수주) → VL01N(출하) → VF01(대금청구) 같은 문서 간 관계.
+
+| 작업 | 내용 | 자동/수동 | 상태 |
+|------|------|----------|------|
+| DocumentFlowEdge 모델 | source_tcode, target_tcode, flow_type(생성/참조/후속), linking_field(VBELN 등) | - | |
+| DocumentFlowType enum | CREATES, REFERENCES, SUCCEEDS, GENERATES | - | |
+| store: load/save/rebuild | document_flow.json CRUD | - | |
+| BusinessProcess 자동 변환 | DataFlow를 DocumentFlowEdge로 승격 | 자동 | |
+| related_transactions 변환 | TransactionOntology.related_transactions를 edge로 변환 (low confidence) | 자동 | |
+| CLI: sap relationships flow VA01 | "VA01 → VL01N (VBELN) → VF01 (VBELN)" | - | |
+
+**자동 추출 가능:** BusinessProcess의 DataFlow + related_transactions에서 자동 생성.
+**수동 필요:** flow_type 구분(CREATES vs REFERENCES), linking_field가 없는 경우.
+
+---
+
+### Phase 11-4: 그래프 엔진 통합
+
+graph.py에 새 관계 데이터를 통합하여 경로 탐색, 영향도 분석 지원.
+
+| 작업 | 내용 | 상태 |
+|------|------|------|
+| LinkType 확장 | SAME_FIELD, DOCUMENT_FLOW, FIELD_DETERMINES 추가 | |
+| build_from_store 확장 | FieldRegistry → SAME_FIELD 엣지, DocumentFlow → DOCUMENT_FLOW 엣지 | |
+| 쿼리 메서드 추가 | find_field_across_transactions(), get_document_flow(), get_field_dependencies() | |
+| 경로 탐색 | get_process_path(from_tcode, to_tcode) — BFS로 문서 흐름 경로 찾기 | |
+
+---
+
+### Phase 11-5: MCP 도구 노출
+
+AI가 관계를 자연스럽게 조회할 수 있도록 MCP 도구 추가.
+
+| 작업 | 내용 | 상태 |
+|------|------|------|
+| sap_ontology_relationships MCP 도구 | field/document_flow/field_dependencies/process_path 파라미터 | |
+| dispatcher 연동 | ontology_relationships 명령 + _dispatch 함수 | |
+| sap_screen에 힌트 | "ontology_available: true" + 간단한 안내 메시지 (컨텍스트 낭비 없이) | |
+| sap fill 온톨로지 연동 | 한글 동의어(synonyms_ko)로 필드 매핑 | |
+
+---
+
+### Phase 11-6: 자동 축적 (Learn → 온톨로지 자동 강화)
+
+| 작업 | 내용 | 상태 |
+|------|------|------|
+| learn 후 필드 레지스트리 자동 갱신 | _update_field_registry(screen) | |
+| learn 후 문서 흐름 힌트 자동 추가 | related_transactions + 같은 필드 보유 트랜잭션 연결 | |
+| rebuild 명령 | sap ontology rebuild — 기존 데이터에서 전체 재구축 | |
+
+---
+
+### 구현 순서와 의존 관계
+
+```
+Phase 11-1 (필드 레지스트리) ← 모든 Phase의 기반
+    ↓
+Phase 11-2 (필드 종속성)  ←→  Phase 11-3 (문서 흐름)  ← 병렬 가능
+    ↓                              ↓
+Phase 11-4 (그래프 엔진 통합) ← 11-2, 11-3 완료 후
+    ↓
+Phase 11-5 (MCP 노출) ← 11-4 완료 후
+    ↓
+Phase 11-6 (자동 축적) ← 마무리
+```
+
+### 자동 vs 수동 요약
+
+| 관계 유형 | 자동 추출 | 수동 필요 |
+|----------|----------|----------|
+| 필드 발생 위치 (occurrences) | sap_field_name으로 자동 | X |
+| 크로스 트랜잭션 동일 필드 | sap_field_name 매칭 자동 | X |
+| 필드 종속 (기존 시드) | field_dependencies에서 자동 변환 | X |
+| 필드 입력 순서 | X | 수동 어노테이션 |
+| check_table / domain / data_type | X | 수동 어노테이션 |
+| 문서 흐름 (프로세스 기반) | BusinessProcess.DataFlow 자동 변환 | X |
+| 문서 흐름 (linking_field 없는) | related_transactions에서 low confidence | linking_field 수동 |
+| flow_type 구분 | X | CREATES/REFERENCES 수동 |
+
+---
+
 ## 남은 작업
 
 ### ReBAC / 운영 커널 후속 작업
 - transcript의 screen transition을 온톨로지 screen_flow 후보로 반영
 - 반복 성공한 action 패턴을 field dependency / action prior 후보로 반영
-- 온톨로지 그래프 기반 관계 상속 (필드 레벨 세밀 제어)
 - 런타임 승인 워크플로우 (MCP sampling 활용)
 - transcript 기반 replay executor 또는 verifier dashboard
 
