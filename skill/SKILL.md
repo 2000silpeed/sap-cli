@@ -57,7 +57,7 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
 | `sap_set_field` | 필드 값 설정 (1개) | `element_id`, `value` (필수) |
 | `sap_fill_fields` | 여러 필드 한번에 입력 (필드명 자동 매핑) | `fields` (필수), `enter` (기본 true) |
 | `sap_get_field` | 필드 값 읽기 | `element_id` (필수) |
-| `sap_press` | 버튼 클릭 | `element_id` (필수) |
+| `sap_press` | 버튼 클릭 / 탭 선택 (GuiTab 자동 감지) | `element_id` (필수) |
 | `sap_send_vkey` | 키보드 키 전송 | `vkey` (필수) |
 | `sap_get_status` | 상태바 메시지 조회 | - |
 | `sap_table_read` | 테이블/그리드 데이터 읽기 | `element_id` (필수) |
@@ -173,7 +173,7 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
 
 `sap_macro_record_step`의 action 종류:
 - `set`: 필드 값 설정 (target=element_id, value=값)
-- `press`: 버튼 클릭 (target=element_id)
+- `press`: 버튼 클릭 또는 탭 선택 (target=element_id, GuiTab이면 자동으로 Select() 호출)
 - `vkey`: VKey 전송 (target=vkey번호 문자열)
 - `run`: 트랜잭션 실행 (target=tcode)
 - `checkbox`: 체크박스 (target=element_id, value="true"/"false")
