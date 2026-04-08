@@ -71,6 +71,7 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "process_step":   CommandDef("sap_process_step",      Permission.EXECUTE),
     "process_status": CommandDef("sap_process_status",    Permission.READ),
     "annotate":       CommandDef("sap_annotate_field",    Permission.WRITE),
+    "fill":           CommandDef("sap_fill_fields",       Permission.WRITE),
 }
 
 COMMAND_TOOL_MAP: dict[str, str] = {cmd: d.tool_name for cmd, d in COMMAND_REGISTRY.items()}
@@ -349,6 +350,8 @@ def _execute_command(
         return _dispatch_process_status()
     if command == "annotate":
         return _dispatch_annotate(args)
+    if command == "fill":
+        return _dispatch_fill(args, ctx)
     raise ValueError(f"미구현 명령: {command}")
 
 
@@ -869,6 +872,65 @@ def _dispatch_process_status() -> dict[str, Any]:
     if _active_executor is None:
         return {"error": True, "message": "실행 중인 프로세스가 없습니다."}
     return _active_executor.get_status()
+
+
+def _dispatch_fill(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    """여러 필드를 한번에 입력.
+
+    필드명(MATNR) 또는 element_id 모두 지원.
+    필드명인 경우 현재 화면을 스캔하여 element_id를 자동 매핑.
+    """
+    sap = _get_sap()
+    fields: dict[str, str] = args["fields"]
+    do_enter = args.get("enter", True)
+
+    screen = sap.get_screen()
+    results: list[dict[str, Any]] = []
+    errors: list[str] = []
+
+    for key, value in fields.items():
+        # 1) element_id로 직접 지정한 경우 (wnd[0]/... 형태)
+        if key.startswith("wnd["):
+            element_id = key
+        else:
+            # 2) 필드명으로 검색 (MATNR, WERKS 등)
+            field = (
+                screen.get_field_by_name(key)
+                or screen.get_field_by_name(key.upper())
+                or screen.get_field_by_label(key)
+            )
+            if field is None:
+                errors.append(f"필드를 찾을 수 없습니다: {key}")
+                continue
+            element_id = field.id
+
+        try:
+            if "/chk" in element_id:
+                checked = value.lower() not in ("", "0", "false", "off", "no")
+                sap.set_checkbox(element_id, checked)
+            elif "/rad" in element_id:
+                sap.select_radio(element_id)
+            else:
+                sap.set_field(element_id, value)
+            results.append({
+                "field": key,
+                "element_id": element_id,
+                "value_set": value,
+            })
+        except Exception as e:
+            errors.append(f"{key} ({element_id}): {e}")
+
+    if do_enter and results and not errors:
+        sap.send_vkey(0)
+
+    payload: dict[str, Any] = {
+        "filled": len(results),
+        "results": results,
+        "enter_sent": do_enter and bool(results) and not errors,
+    }
+    if errors:
+        payload["errors"] = errors
+    return _with_post_action(payload, sap, "fill", ctx)
 
 
 def _evaluate_authorization(
