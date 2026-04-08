@@ -449,7 +449,7 @@ def macro_play(
     try:
         vars_dict: dict[str, str] = {}
         if variables:
-            vars_dict = json.loads(variables)
+            vars_dict = _parse_vars(variables)
         _output_json(
             _dispatch_local(
                 "macro_play",
