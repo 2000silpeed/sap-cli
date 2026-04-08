@@ -216,6 +216,9 @@ sap vkey 12    # Cancel (F12)
 # 버튼 클릭 (요소 ID 필요)
 sap press "wnd[0]/tbar[0]/btn[0]"       # 첫 번째 툴바의 첫 번째 버튼
 sap press "wnd[0]/tbar[1]/btn[8]"       # 두 번째 툴바의 Execute 버튼
+
+# 탭 선택 (press로 탭 ID를 넘기면 자동으로 Select() 호출)
+sap press "wnd[0]/usr/tabsTABSTRIP/tabpTAB01"   # 탭 전환
 ```
 
 ### 4.7 상태바 확인
@@ -453,7 +456,7 @@ sap macro-delete a1b2c3d4e5f6
 |------|------|--------|-------|
 | `run` | 트랜잭션 실행 | 트랜잭션 코드 (MM03) | - |
 | `set` | 필드 값 설정 | 필드 ID | 설정할 값 |
-| `press` | 버튼 클릭 | 버튼 ID | - |
+| `press` | 버튼 클릭 / 탭 선택 | 버튼 또는 탭 ID | - |
 | `vkey` | 키보드 키 전송 | VKey 번호 (0=Enter) | - |
 | `checkbox` | 체크박스 토글 | 체크박스 ID | `true` 또는 `false` |
 | `radio` | 라디오 버튼 선택 | 라디오 ID | - |
@@ -766,7 +769,7 @@ Windows의 Claude Code `settings.json`에 추가:
 | `sap_command` | SAP 커맨드 필드에 명령 실행 |
 | `sap_set_field` | 필드 값 설정 |
 | `sap_get_field` | 필드 값 읽기 |
-| `sap_press` | 버튼 클릭 |
+| `sap_press` | 버튼 클릭 / 탭 선택 (GuiTab 자동 감지) |
 | `sap_send_vkey` | VKey 전송 |
 
 #### 상태/지식/운영 (6개)
