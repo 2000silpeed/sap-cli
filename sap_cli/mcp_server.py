@@ -182,11 +182,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_table_read",
-        "description": "SAP 화면의 테이블/그리드 데이터를 JSON으로 읽습니다.",
+        "description": "SAP 화면의 테이블/그리드 데이터를 JSON으로 읽습니다. GuiTableControl, GuiGridView, GuiShell(ALV Grid) 모두 지원. ALV는 스크롤 자동 처리(최대 500행).",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "element_id": {"type": "string", "description": "테이블/그리드 ID"},
+                "element_id": {"type": "string", "description": "테이블/그리드 ID (sap_screen의 tables에서 확인)"},
             },
             "required": ["element_id"],
         },
@@ -215,6 +215,19 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_table_doubleclick",
+        "description": "테이블 셀을 더블클릭합니다. ALV Grid에서 행 진입(디테일 화면 이동), 문서 번호 클릭 등에 사용.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "element_id": {"type": "string", "description": "테이블 ID"},
+                "row": {"type": "integer", "description": "더블클릭할 행 번호 (0-based)"},
+                "column": {"type": "string", "description": "컬럼 ID (빈 문자열이면 첫 컬럼)", "default": ""},
+            },
+            "required": ["element_id", "row"],
+        },
+    },
+    {
         "name": "sap_ontology_query",
         "description": "학습된 SAP 온톨로지를 조회합니다. 트랜잭션의 화면 구조, 필드, 가능한 액션 등 도메인 지식을 반환합니다.",
         "inputSchema": {
@@ -235,6 +248,40 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "field": {"type": "string", "description": "SAP 필드명 (예: MATNR, WERKS). 생략 시 전체 요약"},
                 "rebuild": {"type": "boolean", "default": False, "description": "전체 트랜잭션에서 레지스트리 재구축"},
             },
+        },
+    },
+    {
+        "name": "sap_field_dependencies",
+        "description": "필드 종속성 그래프를 조회합니다. WERKS → LGORT 같은 필드 간 종속/결정 관계를 확인합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "field": {"type": "string", "description": "SAP 필드명 (예: WERKS, KUNNR). 생략 시 전체 요약"},
+                "rebuild": {"type": "boolean", "default": False, "description": "전체 트랜잭션에서 종속성 그래프 재구축"},
+            },
+        },
+    },
+    {
+        "name": "sap_document_flow",
+        "description": "트랜잭션 간 문서 흐름을 조회합니다. VA01 → VL01N → VF01 같은 문서 관계를 확인합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tcode": {"type": "string", "description": "트랜잭션 코드 (예: VA01, ME21N). 생략 시 전체 요약"},
+                "rebuild": {"type": "boolean", "default": False, "description": "프로세스/트랜잭션에서 문서 흐름 재구축"},
+            },
+        },
+    },
+    {
+        "name": "sap_process_path",
+        "description": "두 트랜잭션 간 문서 흐름 경로를 탐색합니다. 예: MM01에서 MIRO까지 어떤 경로로 가는지 BFS로 찾습니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "from_tcode": {"type": "string", "description": "출발 트랜잭션 코드 (예: VA01)"},
+                "to_tcode": {"type": "string", "description": "도착 트랜잭션 코드 (예: VF01)"},
+            },
+            "required": ["from_tcode", "to_tcode"],
         },
     },
     {
@@ -290,6 +337,21 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "domain_context": {"type": "string", "description": "도메인 맥락"},
             },
             "required": ["tcode", "field"],
+        },
+    },
+    {
+        "name": "sap_annotate_dependency",
+        "description": "필드 종속 관계를 수동으로 추가/수정합니다. 예: WERKS → LGORT (input_order), KUNNR → ZTERM (value_determines).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "결정하는 필드 SAP 필드명 (예: WERKS, KUNNR)"},
+                "target": {"type": "string", "description": "종속되는 필드 SAP 필드명 (예: LGORT, ZTERM)"},
+                "type": {"type": "string", "enum": ["value_determines", "input_order", "lookup", "field_activation"], "default": "value_determines", "description": "종속성 유형"},
+                "description": {"type": "string", "description": "관계 설명"},
+                "observed_in": {"type": "string", "description": "관찰된 트랜잭션 코드 (쉼표 구분, 예: VA01,ME21N)"},
+            },
+            "required": ["source", "target"],
         },
     },
     {
@@ -512,9 +574,41 @@ def _screen_summary_enabled() -> bool:
     return raw not in {"0", "false", "no"}
 
 
+def _use_daemon() -> bool:
+    """SAP_CLI_USE_DAEMON=1 이면 daemon 경유 모드."""
+    raw = os.getenv("SAP_CLI_USE_DAEMON", "0").strip().lower()
+    return raw in {"1", "true", "yes"}
+
+
 # -------------------------------------------------------------------
 # Tool Handlers
 # -------------------------------------------------------------------
+
+def _dispatch_via_daemon(
+    command: str,
+    args: dict[str, Any],
+    tool_name: str,
+    agent_name: str | None,
+) -> dict[str, Any] | None:
+    """daemon 경유 실행. 성공하면 결과 dict, 실패/미실행이면 None."""
+    from . import daemon
+
+    # daemon 미실행 시 자동 시작 시도
+    if not daemon.is_running():
+        if not daemon.start_daemon():
+            return None  # 시작 실패 → fallback
+
+    ctx = {
+        "source": "mcp",
+        "tool_name": tool_name,
+        "agent_name": agent_name,
+        "include_screen_summary": _screen_summary_enabled(),
+    }
+    result = daemon.send_command(command, args, context=ctx)
+    if result is None:
+        return None  # 통신 실패 → fallback
+    return result
+
 
 def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     checker, effective_agent = _load_checker()
@@ -533,6 +627,24 @@ def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     try:
         command, normalized_args = resolve_mcp_call(name, arguments)
+
+        # daemon 위임 모드
+        if _use_daemon():
+            daemon_result = _dispatch_via_daemon(
+                command, normalized_args, name, effective_agent,
+            )
+            if daemon_result is not None:
+                if daemon_result.get("ok"):
+                    return _json_result(daemon_result["data"])
+                if daemon_result.get("approval_required"):
+                    return _json_result({
+                        "approval_required": True,
+                        "tool": daemon_result.get("tool"),
+                        "reason": daemon_result.get("reason", ""),
+                    })
+                return _error_result(daemon_result.get("error", "daemon error"))
+            # daemon 사용 불가 → fallback to direct dispatch
+
         result = dispatch_command(
             command,
             normalized_args,
