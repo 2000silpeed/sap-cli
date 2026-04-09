@@ -16,7 +16,14 @@ from typing import Any
 
 from .analysis_space import CrossSpace
 from .meta_edge import MetaEdge, MetaEdgeRegistry, create_default_registry
-from .schema import BusinessProcess, ScreenOntology, TransactionOntology
+from .schema import (
+    BusinessProcess,
+    FieldOccurrence,
+    FieldRegistry,
+    FieldRegistryEntry,
+    ScreenOntology,
+    TransactionOntology,
+)
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_\-]+$")
 
@@ -228,6 +235,82 @@ class OntologyStore:
             path.unlink()
             return True
         return False
+
+    # -------------------------------------------------------------------
+    # Field Registry (크로스 트랜잭션 필드 인덱스)
+    # -------------------------------------------------------------------
+
+    def load_field_registry(self) -> FieldRegistry:
+        """필드 레지스트리 로드. 없으면 빈 레지스트리 반환."""
+        path = self.knowledge_dir / "field_registry.json"
+        if not path.exists():
+            return FieldRegistry()
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return FieldRegistry.model_validate(data)
+
+    def save_field_registry(self, registry: FieldRegistry) -> Path:
+        """필드 레지스트리 저장."""
+        path = self.knowledge_dir / "field_registry.json"
+        data = registry.model_dump(mode="json", exclude_none=True)
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return path
+
+    def rebuild_field_registry(self) -> FieldRegistry:
+        """모든 트랜잭션 JSON을 스캔하여 필드 레지스트리 재구축."""
+        from datetime import datetime, timezone
+
+        registry = FieldRegistry()
+        for tcode in self.list_transactions():
+            ontology = self.load_transaction(tcode)
+            if ontology is None:
+                continue
+            for screen_num, screen in ontology.screens.items():
+                self._collect_fields_to_registry(registry, screen)
+
+        registry.last_rebuilt = datetime.now(timezone.utc).isoformat()
+        self.save_field_registry(registry)
+        return registry
+
+    def update_field_registry(self, screen: ScreenOntology) -> None:
+        """화면 스캔 후 필드 레지스트리를 점진적으로 업데이트."""
+        registry = self.load_field_registry()
+        self._collect_fields_to_registry(registry, screen)
+        self.save_field_registry(registry)
+
+    def _collect_fields_to_registry(
+        self, registry: FieldRegistry, screen: ScreenOntology
+    ) -> None:
+        """화면의 필드들을 레지스트리에 수집 (중복 방지)."""
+        for field in screen.fields:
+            sfn = field.semantic.sap_field_name
+            if not sfn:
+                continue
+
+            occ = FieldOccurrence(
+                tcode=screen.transaction,
+                screen_number=screen.screen_number,
+                element_id=field.id,
+                label=field.label,
+                changeable=field.changeable,
+            )
+
+            if sfn not in registry.fields:
+                registry.fields[sfn] = FieldRegistryEntry(
+                    sap_field_name=sfn,
+                    description=field.semantic.description,
+                )
+
+            entry = registry.fields[sfn]
+            # 같은 위치면 교체 (label/changeable 등 갱신), 아니면 추가
+            entry.occurrences = [
+                o for o in entry.occurrences
+                if not (o.tcode == occ.tcode and o.screen_number == occ.screen_number
+                        and o.element_id == occ.element_id)
+            ]
+            entry.occurrences.append(occ)
+
+            if not entry.description and field.semantic.description:
+                entry.description = field.semantic.description
 
     # -------------------------------------------------------------------
     # Query (온톨로지 검색)
