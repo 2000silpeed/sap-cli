@@ -644,19 +644,49 @@ class SapGuiWrapper:
                         pass
                     continue
                 elif comp_type in (GuiComponentType.TREE, GuiComponentType.SHELL):
-                    # 트리/쉘은 Document Flow 등 — 위치만 기록, 데이터는 sap tree로 읽기
-                    node_count = 0
-                    try:
-                        node_keys = child.GetAllNodeKeys()
-                        node_count = node_keys.Count if node_keys else 0
-                    except Exception:
-                        pass
-                    screen.trees.append(SapTable(
-                        id=child_id,
-                        name=self._extract_name(child_id),
-                        type=comp_type,
-                        row_count=node_count,
-                    ))
+                    # GuiShell SubType이 GridView면 ALV Grid → tables로 분류
+                    shell_sub_type = ""
+                    if comp_type == GuiComponentType.SHELL:
+                        shell_sub_type = self._safe_attr(child, "SubType", "")
+                    if shell_sub_type == "GridView":
+                        row_count = int(getattr(child, "RowCount", 0))
+                        col_count = int(getattr(child, "ColumnCount", 0))
+                        columns = []
+                        for c in range(col_count):
+                            try:
+                                col_id = child.ColumnOrder(c)
+                                titles = child.GetColumnTitles(col_id)
+                                title = titles[0] if titles else col_id
+                                columns.append(SapTableColumn(
+                                    name=col_id, title=str(title), position=c,
+                                ))
+                            except Exception:
+                                columns.append(SapTableColumn(name=f"col_{c}", position=c))
+                        screen.tables.append(SapTable(
+                            id=child_id,
+                            name=self._extract_name(child_id),
+                            type=GuiComponentType.SHELL,
+                            sub_type="GridView",
+                            row_count=row_count,
+                            column_count=col_count,
+                            visible_rows=int(getattr(child, "VisibleRowCount", 0)),
+                            columns=columns,
+                        ))
+                    else:
+                        # 트리/기타 쉘 — 위치만 기록, 데이터는 sap tree로 읽기
+                        node_count = 0
+                        try:
+                            node_keys = child.GetAllNodeKeys()
+                            node_count = node_keys.Count if node_keys else 0
+                        except Exception:
+                            pass
+                        screen.trees.append(SapTable(
+                            id=child_id,
+                            name=self._extract_name(child_id),
+                            type=comp_type,
+                            sub_type=shell_sub_type,
+                            row_count=node_count,
+                        ))
                     continue
                 elif comp_type in (GuiComponentType.TABLE_CONTROL, GuiComponentType.GRID_VIEW):
                     row_count = int(getattr(child, "RowCount", 0))
@@ -735,15 +765,23 @@ class SapGuiWrapper:
     # -------------------------------------------------------------------
 
     def read_table(self, element_id: str) -> SapTable:
-        """테이블 데이터 읽기."""
+        """테이블 데이터 읽기. GuiGridView, GuiTableControl, GuiShell(ALV) 지원."""
         try:
             table = self.session.FindById(element_id)
             table_type = str(table.Type)
 
             if table_type == "GuiGridView":
                 return self._read_grid_view(element_id, table)
+            elif table_type == "GuiShell":
+                sub_type = self._safe_attr(table, "SubType", "")
+                if sub_type == "GridView":
+                    return self._read_alv_grid(element_id, table)
+                raise SapGuiError(
+                    f"지원하지 않는 Shell SubType [{element_id}]: {sub_type}")
             else:
                 return self._read_table_control(element_id, table)
+        except SapGuiError:
+            raise
         except Exception as e:
             raise SapGuiError(f"테이블 읽기 실패 [{element_id}]: {e}") from e
 
@@ -777,6 +815,71 @@ class SapGuiWrapper:
             visible_rows=grid.VisibleRowCount,
             columns=columns,
             rows=rows,
+        )
+
+    def _read_alv_grid(self, element_id: str, grid: Any) -> SapTable:
+        """GuiShell(SubType=GridView) ALV Grid 읽기. 스크롤 처리 포함."""
+        row_count = int(grid.RowCount)
+        col_count = int(grid.ColumnCount)
+        visible_rows = int(grid.VisibleRowCount)
+
+        # 컬럼 수집
+        columns = []
+        for c in range(col_count):
+            try:
+                col_id = grid.ColumnOrder(c)
+                titles = grid.GetColumnTitles(col_id)
+                title = titles[0] if titles else col_id
+                columns.append(SapTableColumn(
+                    name=str(col_id), title=str(title), position=c,
+                ))
+            except Exception:
+                columns.append(SapTableColumn(name=f"col_{c}", position=c))
+
+        # 필터/정렬 상태
+        filtered: list[str] = []
+        sorted_cols: list[str] = []
+        try:
+            fk = grid.GetFilteredColumnKeys()
+            if fk:
+                filtered = [str(fk(i)) for i in range(fk.Count)]
+        except Exception:
+            pass
+        try:
+            sk = grid.GetSortedColumnKeys()
+            if sk:
+                sorted_cols = [str(sk(i)) for i in range(sk.Count)]
+        except Exception:
+            pass
+
+        # 행 데이터 수집 (스크롤 처리 — 최대 500행)
+        max_rows = min(row_count, 500)
+        rows: list[dict[str, str]] = []
+        read_count = 0
+        while read_count < max_rows:
+            grid.FirstVisibleRow = read_count
+            chunk_size = min(visible_rows, max_rows - read_count)
+            for r in range(read_count, read_count + chunk_size):
+                row_data: dict[str, str] = {}
+                for col in columns:
+                    try:
+                        row_data[col.name] = str(grid.GetCellValue(r, col.name))
+                    except Exception:
+                        row_data[col.name] = ""
+                rows.append(row_data)
+            read_count += chunk_size
+
+        return SapTable(
+            id=element_id,
+            type=GuiComponentType.SHELL,
+            sub_type="GridView",
+            row_count=row_count,
+            column_count=col_count,
+            visible_rows=visible_rows,
+            columns=columns,
+            rows=rows,
+            filtered_columns=filtered,
+            sorted_columns=sorted_cols,
         )
 
     def _read_table_control(self, element_id: str, table: Any) -> SapTable:
@@ -906,7 +1009,10 @@ class SapGuiWrapper:
         """테이블 셀에 값 설정."""
         try:
             table = self.session.FindById(element_id)
-            if str(table.Type) == "GuiGridView":
+            ttype = str(table.Type)
+            if ttype == "GuiGridView" or (
+                ttype == "GuiShell" and self._safe_attr(table, "SubType", "") == "GridView"
+            ):
                 table.ModifyCell(row, col, value)
             else:
                 cell = table.GetCell(row, col)
@@ -918,12 +1024,33 @@ class SapGuiWrapper:
         """테이블에서 행 선택."""
         try:
             table = self.session.FindById(element_id)
-            if str(table.Type) == "GuiGridView":
+            ttype = str(table.Type)
+            if ttype == "GuiGridView" or (
+                ttype == "GuiShell" and self._safe_attr(table, "SubType", "") == "GridView"
+            ):
                 table.SelectedRows = str(row)
             else:
                 table.GetAbsoluteRow(row).Selected = True
         except Exception as e:
             raise SapGuiError(f"테이블 행 선택 실패 [{element_id}, row={row}]: {e}") from e
+
+    def double_click_table_cell(self, element_id: str, row: int, col: str) -> None:
+        """테이블 셀 더블클릭 (ALV 행 진입 등)."""
+        try:
+            table = self.session.FindById(element_id)
+            ttype = str(table.Type)
+            if ttype == "GuiGridView" or (
+                ttype == "GuiShell" and self._safe_attr(table, "SubType", "") == "GridView"
+            ):
+                table.SetCurrentCell(row, col)
+                table.DoubleClickCurrentCell()
+            else:
+                table.GetAbsoluteRow(row).Selected = True
+                table.DoubleClick(row, col)
+        except Exception as e:
+            raise SapGuiError(
+                f"테이블 더블클릭 실패 [{element_id}, row={row}, col={col}]: {e}"
+            ) from e
 
     # -------------------------------------------------------------------
     # Modal Window Handling
