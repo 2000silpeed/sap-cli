@@ -18,9 +18,15 @@ from .analysis_space import CrossSpace
 from .meta_edge import MetaEdge, MetaEdgeRegistry, create_default_registry
 from .schema import (
     BusinessProcess,
+    DocumentFlow,
+    DocumentFlowEdge,
+    DocumentFlowType,
+    FieldDependencyGraph,
+    FieldDependencyType,
     FieldOccurrence,
     FieldRegistry,
     FieldRegistryEntry,
+    FieldRelationship,
     ScreenOntology,
     TransactionOntology,
 )
@@ -311,6 +317,199 @@ class OntologyStore:
 
             if not entry.description and field.semantic.description:
                 entry.description = field.semantic.description
+
+    # -------------------------------------------------------------------
+    # Field Dependency Graph (필드 종속성 그래프) — Phase 11-2
+    # -------------------------------------------------------------------
+
+    def load_field_dependencies(self) -> FieldDependencyGraph:
+        """필드 종속성 그래프 로드. 없으면 빈 그래프 반환."""
+        path = self.knowledge_dir / "field_relationships.json"
+        if not path.exists():
+            return FieldDependencyGraph()
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return FieldDependencyGraph.model_validate(data)
+
+    def save_field_dependencies(self, graph: FieldDependencyGraph) -> Path:
+        """필드 종속성 그래프 저장."""
+        path = self.knowledge_dir / "field_relationships.json"
+        data = graph.model_dump(mode="json", exclude_none=True)
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return path
+
+    def rebuild_field_dependencies(self) -> FieldDependencyGraph:
+        """모든 트랜잭션의 field_dependencies에서 글로벌 종속성 그래프 재구축."""
+        from datetime import datetime, timezone
+
+        graph = FieldDependencyGraph()
+        # source_field → target_field 쌍으로 중복 방지
+        seen: dict[tuple[str, str, str], FieldRelationship] = {}
+
+        _DEP_TYPE_MAP = {
+            "default_value": FieldDependencyType.VALUE_DETERMINES,
+            "lookup": FieldDependencyType.LOOKUP,
+            "tab_activation": FieldDependencyType.FIELD_ACTIVATION,
+            "field_activation": FieldDependencyType.FIELD_ACTIVATION,
+        }
+
+        for tcode in self.list_transactions():
+            ontology = self.load_transaction(tcode)
+            if ontology is None:
+                continue
+            for dep in ontology.field_dependencies:
+                # OntologyLink: source DEPENDS_ON target
+                # FieldRelationship: source(결정) → target(종속)
+                # 따라서 방향을 뒤집어야 함
+                dependent_field = self._extract_sap_field_name(dep.source_id)
+                determining_field = self._extract_sap_field_name(dep.target_id)
+                if not dependent_field or not determining_field:
+                    continue
+
+                dep_type_str = dep.properties.get("dependency_type", "")
+                dep_type = _DEP_TYPE_MAP.get(
+                    dep_type_str, FieldDependencyType.VALUE_DETERMINES
+                )
+
+                key = (determining_field, dependent_field, dep_type.value)
+                if key in seen:
+                    rel = seen[key]
+                    if tcode not in rel.observed_in:
+                        rel.observed_in.append(tcode)
+                else:
+                    rel = FieldRelationship(
+                        source_field=determining_field,
+                        target_field=dependent_field,
+                        dependency_type=dep_type,
+                        description=dep.description,
+                        observed_in=[tcode],
+                    )
+                    seen[key] = rel
+
+        graph.relationships = list(seen.values())
+        graph.last_rebuilt = datetime.now(timezone.utc).isoformat()
+        self.save_field_dependencies(graph)
+        return graph
+
+    @staticmethod
+    def _extract_sap_field_name(field_id: str) -> str:
+        """OntologyLink의 source_id/target_id에서 SAP 필드명 추출.
+
+        형식 예시:
+          "field:MM03:4200:MARA-MTART" → "MTART"
+          "field:ME21N:LGORT"          → "LGORT"
+          "field:VA01:4011:KUAGV-KUNNR"→ "KUNNR"
+        """
+        parts = field_id.split(":")
+        if len(parts) < 2:
+            return ""
+        raw = parts[-1]  # 마지막 파트: "MARA-MTART" 또는 "LGORT"
+        if "-" in raw:
+            raw = raw.split("-", 1)[1]  # 테이블명 제거
+        return raw.upper()
+
+    # -------------------------------------------------------------------
+    # Document Flow (문서 흐름 온톨로지) — Phase 11-3
+    # -------------------------------------------------------------------
+
+    def load_document_flow(self) -> DocumentFlow:
+        """문서 흐름 온톨로지 로드. 없으면 빈 상태 반환."""
+        path = self.knowledge_dir / "document_flow.json"
+        if not path.exists():
+            return DocumentFlow()
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return DocumentFlow.model_validate(data)
+
+    def save_document_flow(self, flow: DocumentFlow) -> Path:
+        """문서 흐름 온톨로지 저장."""
+        path = self.knowledge_dir / "document_flow.json"
+        data = flow.model_dump(mode="json", exclude_none=True)
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return path
+
+    def rebuild_document_flow(self) -> DocumentFlow:
+        """BusinessProcess DataFlow + related_transactions에서 문서 흐름 재구축."""
+        from datetime import datetime, timezone
+
+        flow = DocumentFlow()
+        # (source_tcode, target_tcode) 쌍으로 중복 방지, 높은 confidence 우선
+        seen: dict[tuple[str, str], DocumentFlowEdge] = {}
+
+        # 1) BusinessProcess의 DataFlow에서 추출 (high confidence)
+        for pid in self.list_processes():
+            process = self.load_process(pid)
+            if process is None:
+                continue
+            step_map = {s.step_number: s.tcode for s in process.steps}
+            for df in process.data_flows:
+                src_tcode = step_map.get(df.source_step, "")
+                tgt_tcode = step_map.get(df.target_step, "")
+                if not src_tcode or not tgt_tcode:
+                    continue
+
+                key = (src_tcode, tgt_tcode)
+                if key in seen:
+                    edge = seen[key]
+                    # linking_field 보강
+                    if not edge.linking_field and df.source_field:
+                        edge.linking_field = df.source_field
+                else:
+                    seen[key] = DocumentFlowEdge(
+                        source_tcode=src_tcode,
+                        target_tcode=tgt_tcode,
+                        flow_type=DocumentFlowType.REFERENCES,
+                        linking_field=df.source_field or df.target_field,
+                        description=df.description,
+                        confidence="high",
+                    )
+
+        # 2) TransactionOntology.related_transactions에서 추출 (low confidence)
+        for tcode in self.list_transactions():
+            ontology = self.load_transaction(tcode)
+            if ontology is None:
+                continue
+            for rel_tcode in ontology.related_transactions:
+                key = (tcode, rel_tcode)
+                if key not in seen:
+                    seen[key] = DocumentFlowEdge(
+                        source_tcode=tcode,
+                        target_tcode=rel_tcode,
+                        flow_type=DocumentFlowType.REFERENCES,
+                        description=f"{tcode} → {rel_tcode} (related_transactions에서 추출)",
+                        confidence="low",
+                    )
+
+        flow.edges = list(seen.values())
+        flow.last_rebuilt = datetime.now(timezone.utc).isoformat()
+        self.save_document_flow(flow)
+        return flow
+
+    # -------------------------------------------------------------------
+    # Auto-accumulation (자동 축적) — Phase 11-6
+    # -------------------------------------------------------------------
+
+    def update_document_flow_hints(self, tcode: str) -> None:
+        """트랜잭션의 related_transactions를 문서 흐름에 low-confidence 엣지로 자동 추가."""
+        ontology = self.load_transaction(tcode)
+        if ontology is None or not ontology.related_transactions:
+            return
+
+        flow = self.load_document_flow()
+        existing = {(e.source_tcode, e.target_tcode) for e in flow.edges}
+        added = False
+
+        for rel_tcode in ontology.related_transactions:
+            if (tcode, rel_tcode) not in existing:
+                flow.edges.append(DocumentFlowEdge(
+                    source_tcode=tcode,
+                    target_tcode=rel_tcode,
+                    flow_type=DocumentFlowType.REFERENCES,
+                    description=f"{tcode} → {rel_tcode} (learn에서 자동 추가)",
+                    confidence="low",
+                ))
+                added = True
+
+        if added:
+            self.save_document_flow(flow)
 
     # -------------------------------------------------------------------
     # Query (온톨로지 검색)
