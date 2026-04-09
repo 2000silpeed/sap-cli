@@ -73,6 +73,7 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "annotate":       CommandDef("sap_annotate_field",    Permission.WRITE),
     "fill":           CommandDef("sap_fill_fields",       Permission.WRITE),
     "tree":           CommandDef("sap_tree_read",          Permission.READ),
+    "ontology_relationships": CommandDef("sap_ontology_relationships", Permission.READ),
     "capture":        CommandDef("sap_capture",           Permission.READ),
     "capture_list":   CommandDef("sap_capture_list",      Permission.READ),
 }
@@ -363,6 +364,8 @@ def _execute_command(
         return _dispatch_annotate(args)
     if command == "fill":
         return _dispatch_fill(args, ctx)
+    if command == "ontology_relationships":
+        return _dispatch_ontology_relationships(args)
     if command == "capture":
         return _dispatch_capture(args)
     if command == "capture_list":
@@ -946,6 +949,62 @@ def _dispatch_fill(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]
     if errors:
         payload["errors"] = errors
     return _with_post_action(payload, sap, "fill", ctx)
+
+
+def _dispatch_ontology_relationships(args: dict[str, Any]) -> dict[str, Any]:
+    """필드 관계 조회 — 크로스 트랜잭션 필드 인덱스."""
+    store = _get_store()
+
+    if args.get("rebuild"):
+        registry = store.rebuild_field_registry()
+        return {
+            "rebuilt": True,
+            "field_count": len(registry.fields),
+            "last_rebuilt": registry.last_rebuilt,
+        }
+
+    field_name = args.get("field")
+    registry = store.load_field_registry()
+
+    if field_name:
+        key = field_name.upper()
+        entry = registry.fields.get(key)
+        if entry is None:
+            # 부분 매칭
+            matches = [
+                e for k, e in registry.fields.items()
+                if key in k.upper()
+            ]
+            if len(matches) == 1:
+                entry = matches[0]
+            elif matches:
+                return {
+                    "partial_matches": [
+                        {
+                            "sap_field_name": m.sap_field_name,
+                            "description": m.description,
+                            "transactions": sorted({o.tcode for o in m.occurrences}),
+                        }
+                        for m in matches
+                    ]
+                }
+            else:
+                return {"error": True, "message": f"필드 '{field_name}'를 레지스트리에서 찾을 수 없습니다."}
+        return entry.model_dump(mode="json")
+
+    # 필드 미지정 → 전체 요약
+    return {
+        "field_count": len(registry.fields),
+        "last_rebuilt": registry.last_rebuilt,
+        "fields": {
+            k: {
+                "description": v.description,
+                "occurrence_count": len(v.occurrences),
+                "transactions": sorted({o.tcode for o in v.occurrences}),
+            }
+            for k, v in sorted(registry.fields.items())
+        },
+    }
 
 
 def _flatten_tree_nodes(nodes: list) -> list:
