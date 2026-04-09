@@ -169,87 +169,91 @@ MATNR이 MM03, VA01, ME21N에 다 나오는데 지금은 각 JSON에 따로 있�
 
 | 작업 | 내용 | 자동/수동 | 상태 |
 |------|------|----------|------|
-| FieldRegistryEntry 모델 | sap_field_name, description, occurrences(tcode+screen+element_id) | - | |
-| FieldRegistry 모델 | dict[sap_field_name → FieldRegistryEntry] | - | |
-| store: load/save/rebuild | field_registry.json CRUD + 전체 트랜잭션 스캔으로 재구축 | - | |
-| learner 연동 | learn_current_screen() 후 _update_field_registry() 자동 호출 | 자동 | |
-| 수동 어노테이션 | check_table, domain, data_type (SAP GUI에서 못 뽑는 정보) | 수동 | |
-| CLI: sap relationships field MATNR | "MATNR이 쓰이는 트랜잭션/화면 목록" 조회 | - | |
+| FieldRegistryEntry 모델 | sap_field_name, description, occurrences(tcode+screen+element_id) | - | ✅ |
+| FieldRegistry 모델 | dict[sap_field_name → FieldRegistryEntry] | - | ✅ |
+| store: load/save/rebuild | field_registry.json CRUD + 전체 트랜잭션 스캔으로 재구축 | - | ✅ |
+| learner 연동 | learn_current_screen() 후 _update_field_registry() 자동 호출 | 자동 | ✅ |
+| 수동 어노테이션 | check_table, domain, data_type (SAP GUI에서 못 뽑는 정보) | 수동 | ✅ |
+| CLI: sap relationships field MATNR | "MATNR이 쓰이는 트랜잭션/화면 목록" 조회 | - | ✅ |
 
 **자동 추출 가능:** sap_field_name은 이미 _build_semantic에서 추출됨. learn만 하면 자동 축적.
 **수동 필요:** check_table(MARA 등), domain, data_type(CHAR/NUMC 등)은 SAP GUI Scripting으로 못 뽑음.
 
 ---
 
-### Phase 11-2: 필드 종속성 그래프
+### Phase 11-2: 필드 종속성 그래프 ✅
 
 WERKS 없이 LGORT를 입력할 수 없다, KUNNR가 ZTERM 기본값을 결정한다 — 이런 관계.
 
 | 작업 | 내용 | 자동/수동 | 상태 |
 |------|------|----------|------|
-| FieldRelationship 모델 | source_field, target_field, type(결정/종속/활성화/입력순서), observed_in | - | |
-| FieldDependencyType enum | VALUE_DETERMINES, INPUT_ORDER, LOOKUP, FIELD_ACTIVATION | - | |
-| store: load/save | field_relationships.json CRUD | - | |
-| 기존 시드 자동 변환 | 트랜잭션별 field_dependencies를 글로벌 FieldRelationship으로 승격 | 자동 | |
-| CLI: sap relationships depends WERKS | "LGORT가 WERKS에 종속 (MM03, ME21N에서 관찰됨)" | - | |
-| CLI: sap annotate-dependency | 수동으로 필드 종속 관계 추가 | 수동 | |
+| FieldRelationship 모델 | source_field, target_field, type(결정/종속/활성화/입력순서), observed_in | - | ✅ |
+| FieldDependencyType enum | VALUE_DETERMINES, INPUT_ORDER, LOOKUP, FIELD_ACTIVATION | - | ✅ |
+| store: load/save/rebuild | field_relationships.json CRUD + 전체 트랜잭션 스캔으로 재구축 | - | ✅ |
+| 기존 시드 자동 변환 | 트랜잭션별 field_dependencies를 글로벌 FieldRelationship으로 승격 | 자동 | ✅ |
+| CLI: sap depends WERKS | "LGORT가 WERKS에 종속 (ME21N에서 관찰됨)" | - | ✅ |
+| MCP: sap_field_dependencies | AI가 필드 종속성을 조회할 수 있도록 MCP 도구 추가 | - | ✅ |
+| CLI: sap annotate-dependency | 수동으로 필드 종속 관계 추가 | 수동 | ✅ |
 
-**자동 추출 가능:** 기존 시드 데이터의 field_dependencies에서 자동 변환.
+**자동 추출 결과:** 8개 종속 관계 (ME21N 1, MIGO 1, MM03 2, VA01 4)
 **수동 필요:** INPUT_ORDER(입력 순서), 새 트랜잭션의 종속 관계.
 
 ---
 
-### Phase 11-3: 문서 흐름 온톨로지
+### Phase 11-3: 문서 흐름 온톨로지 ✅
 
 VA01(수주) → VL01N(출하) → VF01(대금청구) 같은 문서 간 관계.
 
 | 작업 | 내용 | 자동/수동 | 상태 |
 |------|------|----------|------|
-| DocumentFlowEdge 모델 | source_tcode, target_tcode, flow_type(생성/참조/후속), linking_field(VBELN 등) | - | |
-| DocumentFlowType enum | CREATES, REFERENCES, SUCCEEDS, GENERATES | - | |
-| store: load/save/rebuild | document_flow.json CRUD | - | |
-| BusinessProcess 자동 변환 | DataFlow를 DocumentFlowEdge로 승격 | 자동 | |
-| related_transactions 변환 | TransactionOntology.related_transactions를 edge로 변환 (low confidence) | 자동 | |
-| CLI: sap relationships flow VA01 | "VA01 → VL01N (VBELN) → VF01 (VBELN)" | - | |
+| DocumentFlowEdge 모델 | source_tcode, target_tcode, flow_type(생성/참조/후속), linking_field(VBELN 등), confidence | - | ✅ |
+| DocumentFlowType enum | CREATES, REFERENCES, SUCCEEDS, GENERATES | - | ✅ |
+| store: load/save/rebuild | document_flow.json CRUD + 프로세스/트랜잭션 스캔으로 재구축 | - | ✅ |
+| BusinessProcess 자동 변환 | DataFlow를 DocumentFlowEdge로 승격 (high confidence) | 자동 | ✅ |
+| related_transactions 변환 | TransactionOntology.related_transactions를 edge로 변환 (low confidence) | 자동 | ✅ |
+| CLI: sap flow VA01 | "VA01 → VL01N (VBELN) → VF01 (VBELN)" | - | ✅ |
+| MCP: sap_document_flow | AI가 문서 흐름을 조회할 수 있도록 MCP 도구 추가 | - | ✅ |
 
-**자동 추출 가능:** BusinessProcess의 DataFlow + related_transactions에서 자동 생성.
+**자동 추출 결과:** 30개 엣지 (high confidence 5 from DataFlow, low confidence 25 from related_transactions)
 **수동 필요:** flow_type 구분(CREATES vs REFERENCES), linking_field가 없는 경우.
 
 ---
 
-### Phase 11-4: 그래프 엔진 통합
+### Phase 11-4: 그래프 엔진 통합 ✅
 
 graph.py에 새 관계 데이터를 통합하여 경로 탐색, 영향도 분석 지원.
 
 | 작업 | 내용 | 상태 |
 |------|------|------|
-| LinkType 확장 | SAME_FIELD, DOCUMENT_FLOW, FIELD_DETERMINES 추가 | |
-| build_from_store 확장 | FieldRegistry → SAME_FIELD 엣지, DocumentFlow → DOCUMENT_FLOW 엣지 | |
-| 쿼리 메서드 추가 | find_field_across_transactions(), get_document_flow(), get_field_dependencies() | |
-| 경로 탐색 | get_process_path(from_tcode, to_tcode) — BFS로 문서 흐름 경로 찾기 | |
+| LinkType 확장 | SAME_FIELD, DOCUMENT_FLOW, FIELD_DETERMINES 추가 | ✅ |
+| build_from_store 확장 | FieldRegistry → SAME_FIELD 엣지, DocumentFlow → DOCUMENT_FLOW 엣지 | ✅ |
+| 쿼리 메서드 추가 | find_field_across_transactions(), get_document_flow(), get_field_dependencies() | ✅ |
+| 경로 탐색 | get_process_path(from_tcode, to_tcode) — BFS로 문서 흐름 경로 찾기 | ✅ |
 
 ---
 
-### Phase 11-5: MCP 도구 노출
+### Phase 11-5: MCP 도구 노출 ✅
 
 AI가 관계를 자연스럽게 조회할 수 있도록 MCP 도구 추가.
 
 | 작업 | 내용 | 상태 |
 |------|------|------|
-| sap_ontology_relationships MCP 도구 | field/document_flow/field_dependencies/process_path 파라미터 | |
-| dispatcher 연동 | ontology_relationships 명령 + _dispatch 함수 | |
-| sap_screen에 힌트 | "ontology_available: true" + 간단한 안내 메시지 (컨텍스트 낭비 없이) | |
-| sap fill 온톨로지 연동 | 한글 동의어(synonyms_ko)로 필드 매핑 | |
+| sap_field_dependencies MCP 도구 | 필드 종속성 조회 | ✅ |
+| sap_document_flow MCP 도구 | 문서 흐름 조회 | ✅ |
+| sap_process_path MCP 도구 | BFS 경로 탐색 | ✅ |
+| dispatcher 연동 | field_dependencies, document_flow, process_path, ontology_rebuild 명령 + _dispatch 함수 | ✅ |
+| sap_screen에 힌트 | hint 필드에 온톨로지 도구 안내 | ✅ |
+| sap fill 온톨로지 연동 | 한글 동의어(synonyms_ko)로 필드 매핑 | ✅ |
 
 ---
 
-### Phase 11-6: 자동 축적 (Learn → 온톨로지 자동 강화)
+### Phase 11-6: 자동 축적 (Learn → 온톨로지 자동 강화) ✅
 
 | 작업 | 내용 | 상태 |
 |------|------|------|
-| learn 후 필드 레지스트리 자동 갱신 | _update_field_registry(screen) | |
-| learn 후 문서 흐름 힌트 자동 추가 | related_transactions + 같은 필드 보유 트랜잭션 연결 | |
-| rebuild 명령 | sap ontology rebuild — 기존 데이터에서 전체 재구축 | |
+| learn 후 필드 레지스트리 자동 갱신 | _update_field_registry(screen) | ✅ (11-1) |
+| learn 후 문서 흐름 힌트 자동 추가 | learn_transaction → update_document_flow_hints() 자동 호출 | ✅ |
+| rebuild 명령 | sap rebuild — field_registry + field_dependencies + document_flow 일괄 재구축 | ✅ |
 
 ---
 
@@ -282,25 +286,107 @@ Phase 11-6 (자동 축적) ← 마무리
 
 ---
 
-## 남은 작업
-
-### Phase 12: ALV Grid 데이터 읽기 강화
+## Phase 12: ALV Grid 데이터 읽기 강화 (2026-04-09) ✅
 
 현재 `sap table`은 `GuiGridView`와 `GuiTableControl`만 지원.
 실제 SAP에서 ALV Grid는 `GuiShell`(subtype=GridView) 안에 있는 경우가 많아 읽기 실패함.
 
 | 작업 | 내용 | 상태 |
 |------|------|------|
-| GuiShell ALV 감지 | read_table에서 GuiShell일 때 SubType으로 ALV 여부 판단 | |
-| ALV Grid 데이터 읽기 | GetCellValue, ColumnOrder, ColumnCount 등 ALV 전용 API 사용 | |
-| ALV 컬럼 헤더 | GetColumnTitles로 한글/영문 컬럼명 수집 | |
-| ALV 필터/정렬 상태 | GetFilteredColumnKeys, GetSortedColumnKeys 읽기 | |
-| ALV 행 선택 | SelectedRows 속성으로 다중 행 선택 지원 | |
-| ALV 더블클릭 | SetCurrentCell + DoubleClickCurrentCell로 행 진입 | |
-| _scan_children ALV 인식 | GuiShell subtype이 ALV일 때 tables에 추가 (현재는 trees로만 잡힘) | |
-| 스크롤 처리 | VisibleRowCount 넘는 행은 FirstVisibleRow 조정 후 재읽기 | |
-| MCP: sap_table_read 개선 | GuiShell ALV도 자동 처리되도록 | |
-| 테스트 | ALV 읽기/선택/스크롤 테스트 케이스 | |
+| GuiShell ALV 감지 | _scan_children에서 GuiShell SubType=GridView일 때 tables로 분류 | ✅ |
+| ALV Grid 데이터 읽기 | _read_alv_grid: GetCellValue, ColumnOrder, ColumnCount 등 ALV 전용 API | ✅ |
+| ALV 컬럼 헤더 | GetColumnTitles로 한글/영문 컬럼명 수집 | ✅ |
+| ALV 필터/정렬 상태 | GetFilteredColumnKeys, GetSortedColumnKeys → filtered_columns, sorted_columns | ✅ |
+| ALV 행 선택 | select_table_row에서 GuiShell ALV 지원 (SelectedRows) | ✅ |
+| ALV 더블클릭 | double_click_table_cell: SetCurrentCell + DoubleClickCurrentCell | ✅ |
+| _scan_children ALV 인식 | GuiShell SubType=GridView → tables, 나머지 → trees | ✅ |
+| 스크롤 처리 | FirstVisibleRow 조정하며 전체 읽기 (최대 500행) | ✅ |
+| MCP 도구 | sap_table_read 설명 개선 + sap_table_doubleclick 도구 추가 | ✅ |
+| CLI 명령 | sap table-doubleclick 명령 추가 | ✅ |
+| 권한 등록 | TOOL_PERMISSION_MAP에 sap_table_doubleclick 등록 | ✅ |
+| 테스트 15건 | ALV 감지/읽기/스크롤/선택/더블클릭/필터정렬 (test_alv_grid.py) | ✅ |
+
+---
+
+## Phase 13: MCP → Daemon 단일 연결 모드 (2026-04-09)
+
+### 배경
+
+MCP 서버는 `python -m sap_cli.mcp_server`로 **상주 프로세스**이므로
+Python 시작/import 오버헤드는 없다. 그러나:
+
+1. **COM 연결 경합** — MCP 서버와 CLI/Shell이 각각 별도 COM 연결을 가짐.
+   같은 SAP 세션에 두 개의 COM 연결이 붙으면 상태 불일치 및 충돌 가능.
+2. **첫 명령 지연** — MCP 서버 시작 후 첫 `sap_connect`에서 COM 초기화 ~3초.
+   daemon이 이미 연결된 상태라면 즉시 사용 가능.
+3. **연결 복원** — COM 연결 끊어지면 MCP 프로세스에서 직접 복구해야 함.
+   daemon은 이미 연결 관리 + liveness 체크를 내장.
+
+### 아키텍처
+
+```
+변경 전:
+  MCP Server ──dispatch_command()──→ service.py ──→ COM 연결 A
+  CLI        ──daemon(TCP)─────────→ service.py ──→ COM 연결 B   ← 경합
+
+변경 후 (SAP_CLI_USE_DAEMON=1):
+  MCP Server ──daemon.send_command(TCP)──→ daemon ──→ COM 연결 (단일)
+  CLI        ──daemon.send_command(TCP)──→ daemon ──→ COM 연결 (단일)
+  Shell      ──daemon.send_command(TCP)──→ daemon ──→ COM 연결 (단일)
+
+MCP 서버 역할: MCP 프로토콜(stdio/JSON-RPC) ↔ 도구 가시성/권한 체크
+Daemon 역할:   COM 연결 관리 + dispatch_command 실행
+```
+
+### 프로토콜 확장
+
+daemon TCP 요청에 `context` 필드 추가:
+
+```json
+{
+  "cmd": "screen",
+  "args": {"tcode": "MM03"},
+  "context": {
+    "source": "mcp",
+    "tool_name": "sap_screen",
+    "agent_name": "operator",
+    "include_screen_summary": true
+  }
+}
+```
+
+기존 context 없는 요청도 하위 호환 유지 (`source="daemon"` 기본값).
+
+### 구현 항목
+
+| # | 작업 | 내용 | 상태 |
+|---|------|------|------|
+| 1 | daemon 프로토콜 확장 | TCP 요청에 context 필드 전달 → DispatchContext 구성 | ✅ |
+| 2 | daemon.send_command 확장 | context dict를 인자로 받아 전송 | ✅ |
+| 3 | MCP daemon 위임 | handle_tool에서 SAP_CLI_USE_DAEMON=1이면 daemon 경유 | ✅ |
+| 4 | daemon 자동 시작 | MCP가 daemon 모드인데 미실행 시 auto-start + fallback | ✅ |
+| 5 | 테스트 12건 | daemon 위임, context 전달, fallback, 에러 처리 (test_mcp_daemon.py) | ✅ |
+
+### 설정 방법
+
+```json
+// Claude Code settings.json
+{
+  "mcpServers": {
+    "sap-gui": {
+      "command": "python",
+      "args": ["-m", "sap_cli.mcp_server"],
+      "env": {
+        "SAP_CLI_USE_DAEMON": "1"
+      }
+    }
+  }
+}
+```
+
+---
+
+## 남은 작업
 
 ### ReBAC / 운영 커널 후속 작업
 - transcript의 screen transition을 온톨로지 screen_flow 후보로 반영
