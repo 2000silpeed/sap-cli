@@ -60,6 +60,7 @@ class OntologyLearner:
         if existing:
             existing.add_screen(screen)
             self.store.save_transaction(existing)
+            self.store.update_document_flow_hints(tcode)
             return existing
 
         ontology = TransactionOntology(
@@ -68,6 +69,7 @@ class OntologyLearner:
         )
         ontology.add_screen(screen)
         self.store.save_transaction(ontology)
+        self.store.update_document_flow_hints(tcode)
         return ontology
 
     def record_action(self, action_type: ActionType, target_id: str,
