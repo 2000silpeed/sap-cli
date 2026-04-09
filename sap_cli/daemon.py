@@ -39,13 +39,25 @@ PID_FILE = os.path.join(tempfile.gettempdir(), "sap_cli_daemon.pid")
 # Client (경량 - stdlib만 사용, cli.py에서 import해도 무거운 의존성 없음)
 # ---------------------------------------------------------------------------
 
-def send_command(cmd: str, args: dict | None = None, timeout: float = 60) -> dict | None:
-    """데몬에 명령 전송. 데몬 미실행 시 None 반환."""
+def send_command(
+    cmd: str,
+    args: dict | None = None,
+    timeout: float = 60,
+    context: dict | None = None,
+) -> dict | None:
+    """데몬에 명령 전송. 데몬 미실행 시 None 반환.
+
+    context가 주어지면 DispatchContext 필드를 daemon에 전달하여
+    MCP 등 외부 소스의 요청 문맥을 보존한다.
+    """
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(timeout)
         sock.connect(("127.0.0.1", PORT))
-        payload = json.dumps({"cmd": cmd, "args": args or {}}).encode("utf-8") + b"\n"
+        request: dict = {"cmd": cmd, "args": args or {}}
+        if context:
+            request["context"] = context
+        payload = json.dumps(request).encode("utf-8") + b"\n"
         sock.sendall(payload)
         sock.shutdown(socket.SHUT_WR)
         chunks = []
@@ -110,7 +122,11 @@ class _Handler(socketserver.StreamRequestHandler):
             if not raw:
                 return
             request = json.loads(raw.decode("utf-8").strip())
-            result = self.server.dispatch(request.get("cmd", ""), request.get("args", {}))
+            result = self.server.dispatch(
+                request.get("cmd", ""),
+                request.get("args", {}),
+                request.get("context"),
+            )
             self.wfile.write(json.dumps(result, ensure_ascii=False).encode("utf-8"))
         except Exception as e:
             self.wfile.write(json.dumps({"ok": False, "error": str(e)}).encode("utf-8"))
@@ -131,7 +147,7 @@ class _DaemonServer(socketserver.TCPServer):
             self._sap.connect()
         return self._sap
 
-    def dispatch(self, cmd: str, args: dict) -> dict:
+    def dispatch(self, cmd: str, args: dict, ctx_dict: dict | None = None) -> dict:
         if cmd == "ping":
             connected = False
             if self._sap is not None:
@@ -146,11 +162,20 @@ class _DaemonServer(socketserver.TCPServer):
             threading.Timer(0.1, self.shutdown).start()
             return {"ok": True, "data": {"message": "daemon stopped"}}
 
+        # DispatchContext 구성 — 클라이언트가 보낸 context가 있으면 반영
+        ctx = DispatchContext(source="daemon")
+        if ctx_dict:
+            for field in ("source", "tool_name", "agent_name"):
+                if field in ctx_dict:
+                    setattr(ctx, field, ctx_dict[field])
+            if "include_screen_summary" in ctx_dict:
+                ctx.include_screen_summary = bool(ctx_dict["include_screen_summary"])
+
         try:
             data = dispatch_command(
                 cmd,
                 args,
-                DispatchContext(source="daemon"),
+                ctx,
             )
             if cmd == "connect":
                 import sap_cli.service as _svc
