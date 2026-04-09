@@ -546,6 +546,17 @@ def capture_screen(
     _output_json(_dispatch_local("capture", {"label": label, "output": output}))
 
 
+@app.command("relationships")
+def relationships(
+    field: Optional[str] = typer.Argument(None, help="SAP 필드명 (예: MATNR, WERKS)"),
+    rebuild: bool = typer.Option(False, "--rebuild", "-r", help="전체 트랜잭션에서 레지스트리 재구축"),
+) -> None:
+    """필드 관계 조회 - 특정 필드가 사용되는 모든 트랜잭션/화면."""
+    _output_json(
+        _dispatch_local("ontology_relationships", {"field": field, "rebuild": rebuild})
+    )
+
+
 @app.command("captures")
 def list_captures(
     tcode: Optional[str] = typer.Argument(None, help="트랜잭션 코드로 필터"),
