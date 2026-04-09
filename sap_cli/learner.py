@@ -42,6 +42,7 @@ class OntologyLearner:
         screen = self.sap.get_screen()
         self._enrich_semantics(screen)
         self.store.save_screen(screen.transaction, screen)
+        self.store.update_field_registry(screen)
 
         if self._last_screen is not None and self._last_screen != screen.screen_number:
             self._record_navigation(screen)
