@@ -63,6 +63,7 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "macro_show":     CommandDef("sap_macro_show",        Permission.READ),
     "macro_delete":   CommandDef("sap_macro_delete",      Permission.ADMIN),
     "table_select":   CommandDef("sap_table_select",      Permission.EXECUTE),
+    "table_doubleclick": CommandDef("sap_table_doubleclick", Permission.EXECUTE),
     "process_list":   CommandDef("sap_process_list",      Permission.READ),
     "process_show":   CommandDef("sap_process_show",      Permission.READ),
     "process_create": CommandDef("sap_process_create",    Permission.ADMIN),
@@ -71,9 +72,14 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "process_step":   CommandDef("sap_process_step",      Permission.EXECUTE),
     "process_status": CommandDef("sap_process_status",    Permission.READ),
     "annotate":       CommandDef("sap_annotate_field",    Permission.WRITE),
+    "annotate_dependency": CommandDef("sap_annotate_dependency", Permission.WRITE),
     "fill":           CommandDef("sap_fill_fields",       Permission.WRITE),
     "tree":           CommandDef("sap_tree_read",          Permission.READ),
     "ontology_relationships": CommandDef("sap_ontology_relationships", Permission.READ),
+    "field_dependencies": CommandDef("sap_field_dependencies", Permission.READ),
+    "document_flow":      CommandDef("sap_document_flow",      Permission.READ),
+    "process_path":       CommandDef("sap_process_path",       Permission.READ),
+    "ontology_rebuild":   CommandDef("sap_ontology_rebuild",   Permission.ADMIN),
     "capture":        CommandDef("sap_capture",           Permission.READ),
     "capture_list":   CommandDef("sap_capture_list",      Permission.READ),
 }
@@ -91,6 +97,7 @@ POST_ACTION_COMMANDS = {
     "record_step",
     "macro_play",
     "table_select",
+    "table_doubleclick",
 }
 
 TRANSCRIPT_OMIT_COMMANDS = {
@@ -338,6 +345,14 @@ def _execute_command(
         sap.select_table_row(element_id, row)
         payload = {"selected": True, "table": element_id, "row": row}
         return _with_post_action(payload, sap, command, ctx)
+    if command == "table_doubleclick":
+        sap = _get_sap()
+        element_id = str(args["element_id"])
+        row = int(args["row"])
+        col = str(args.get("column", ""))
+        sap.double_click_table_cell(element_id, row, col)
+        payload = {"double_clicked": True, "table": element_id, "row": row, "column": col}
+        return _with_post_action(payload, sap, command, ctx)
     if command == "ontology_query":
         return _dispatch_ontology_query(args)
     if command == "transcript_query":
@@ -362,10 +377,20 @@ def _execute_command(
         return _dispatch_process_status()
     if command == "annotate":
         return _dispatch_annotate(args)
+    if command == "annotate_dependency":
+        return _dispatch_annotate_dependency(args)
     if command == "fill":
         return _dispatch_fill(args, ctx)
     if command == "ontology_relationships":
         return _dispatch_ontology_relationships(args)
+    if command == "field_dependencies":
+        return _dispatch_field_dependencies(args)
+    if command == "document_flow":
+        return _dispatch_document_flow(args)
+    if command == "process_path":
+        return _dispatch_process_path(args)
+    if command == "ontology_rebuild":
+        return _dispatch_ontology_rebuild()
     if command == "capture":
         return _dispatch_capture(args)
     if command == "capture_list":
@@ -427,7 +452,9 @@ def _dispatch_screen(args: dict[str, Any]) -> dict[str, Any]:
             "screen_number": screen.screen_number,
             "available_actions": [action.model_dump(mode="json") for action in actions],
         }
-    return screen.model_dump(mode="json")
+    data = screen.model_dump(mode="json")
+    data["hint"] = "온톨로지 조회 가능: sap_field_dependencies(필드 종속성), sap_document_flow(문서 흐름), sap_ontology_relationships(필드 위치)"
+    return data
 
 
 def _search_screen(screen: Any, pattern: str) -> dict[str, Any]:
@@ -769,6 +796,72 @@ def _dispatch_annotate(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _dispatch_annotate_dependency(args: dict[str, Any]) -> dict[str, Any]:
+    """필드 종속 관계를 수동으로 추가."""
+    from .ontology.schema import FieldDependencyType, FieldRelationship
+
+    store = _get_store()
+    source = str(args["source"]).upper()
+    target = str(args["target"]).upper()
+    dep_type_str = str(args.get("type") or "value_determines").lower()
+
+    # 종속성 유형 검증
+    valid_types = {t.value: t for t in FieldDependencyType}
+    if dep_type_str not in valid_types:
+        raise ValueError(
+            f"잘못된 종속성 유형: {dep_type_str}. "
+            f"가능한 값: {', '.join(valid_types.keys())}"
+        )
+
+    dep_type = valid_types[dep_type_str]
+    description = args.get("description") or ""
+    observed_in_raw = args.get("observed_in") or ""
+    observed_in = [t.strip().upper() for t in observed_in_raw.split(",") if t.strip()] if observed_in_raw else []
+
+    graph = store.load_field_dependencies()
+
+    # 기존 동일 관계가 있으면 업데이트
+    existing = None
+    for rel in graph.relationships:
+        if (
+            rel.source_field.upper() == source
+            and rel.target_field.upper() == target
+            and rel.dependency_type == dep_type
+        ):
+            existing = rel
+            break
+
+    if existing:
+        if description:
+            existing.description = description
+        for tcode in observed_in:
+            if tcode not in existing.observed_in:
+                existing.observed_in.append(tcode)
+        action = "updated"
+    else:
+        new_rel = FieldRelationship(
+            source_field=source,
+            target_field=target,
+            dependency_type=dep_type,
+            description=description,
+            observed_in=observed_in,
+        )
+        graph.relationships.append(new_rel)
+        action = "added"
+
+    store.save_field_dependencies(graph)
+    return {
+        "annotated": True,
+        "action": action,
+        "source_field": source,
+        "target_field": target,
+        "dependency_type": dep_type_str,
+        "description": description,
+        "observed_in": observed_in if observed_in else (existing.observed_in if existing else []),
+        "total_relationships": len(graph.relationships),
+    }
+
+
 def _dispatch_process_list() -> dict[str, Any]:
     store = _get_store()
     process_ids = store.list_processes()
@@ -1004,6 +1097,174 @@ def _dispatch_ontology_relationships(args: dict[str, Any]) -> dict[str, Any]:
             }
             for k, v in sorted(registry.fields.items())
         },
+    }
+
+
+def _dispatch_field_dependencies(args: dict[str, Any]) -> dict[str, Any]:
+    """필드 종속성 조회 — 글로벌 필드 종속성 그래프."""
+    store = _get_store()
+
+    if args.get("rebuild"):
+        graph = store.rebuild_field_dependencies()
+        return {
+            "rebuilt": True,
+            "relationship_count": len(graph.relationships),
+            "last_rebuilt": graph.last_rebuilt,
+        }
+
+    field_name = args.get("field")
+    graph = store.load_field_dependencies()
+
+    if not graph.relationships:
+        return {"error": True, "message": "필드 종속성 데이터가 없습니다. --rebuild로 먼저 구축하세요."}
+
+    if field_name:
+        key = field_name.upper()
+        # source 또는 target에 해당 필드가 있는 관계 검색
+        matches = [
+            r for r in graph.relationships
+            if key in r.source_field.upper() or key in r.target_field.upper()
+        ]
+        if not matches:
+            return {"error": True, "message": f"필드 '{field_name}'의 종속 관계를 찾을 수 없습니다."}
+        return {
+            "field": field_name,
+            "relationships": [r.model_dump(mode="json") for r in matches],
+        }
+
+    # 필드 미지정 → 전체 요약
+    return {
+        "relationship_count": len(graph.relationships),
+        "last_rebuilt": graph.last_rebuilt,
+        "relationships": [
+            {
+                "source": r.source_field,
+                "target": r.target_field,
+                "type": r.dependency_type,
+                "observed_in": r.observed_in,
+            }
+            for r in graph.relationships
+        ],
+    }
+
+
+def _dispatch_document_flow(args: dict[str, Any]) -> dict[str, Any]:
+    """문서 흐름 조회 — 트랜잭션 간 문서 흐름 온톨로지."""
+    store = _get_store()
+
+    if args.get("rebuild"):
+        flow = store.rebuild_document_flow()
+        return {
+            "rebuilt": True,
+            "edge_count": len(flow.edges),
+            "last_rebuilt": flow.last_rebuilt,
+        }
+
+    tcode = args.get("tcode")
+    flow = store.load_document_flow()
+
+    if not flow.edges:
+        return {"error": True, "message": "문서 흐름 데이터가 없습니다. --rebuild로 먼저 구축하세요."}
+
+    if tcode:
+        key = tcode.upper()
+        # source 또는 target에 해당 tcode가 있는 엣지 검색
+        matches = [
+            e for e in flow.edges
+            if key == e.source_tcode.upper() or key == e.target_tcode.upper()
+        ]
+        if not matches:
+            return {"error": True, "message": f"트랜잭션 '{tcode}'의 문서 흐름을 찾을 수 없습니다."}
+        return {
+            "tcode": tcode,
+            "edges": [e.model_dump(mode="json") for e in matches],
+        }
+
+    # tcode 미지정 → 전체 요약
+    return {
+        "edge_count": len(flow.edges),
+        "last_rebuilt": flow.last_rebuilt,
+        "edges": [
+            {
+                "source": e.source_tcode,
+                "target": e.target_tcode,
+                "flow_type": e.flow_type,
+                "linking_field": e.linking_field,
+                "confidence": e.confidence,
+            }
+            for e in flow.edges
+        ],
+    }
+
+
+def _dispatch_ontology_rebuild() -> dict[str, Any]:
+    """온톨로지 전체 재구축 — field_registry + field_dependencies + document_flow 일괄."""
+    store = _get_store()
+
+    registry = store.rebuild_field_registry()
+    deps = store.rebuild_field_dependencies()
+    flow = store.rebuild_document_flow()
+
+    return {
+        "rebuilt": True,
+        "field_registry": {
+            "field_count": len(registry.fields),
+            "last_rebuilt": registry.last_rebuilt,
+        },
+        "field_dependencies": {
+            "relationship_count": len(deps.relationships),
+            "last_rebuilt": deps.last_rebuilt,
+        },
+        "document_flow": {
+            "edge_count": len(flow.edges),
+            "last_rebuilt": flow.last_rebuilt,
+        },
+    }
+
+
+def _dispatch_process_path(args: dict[str, Any]) -> dict[str, Any]:
+    """두 트랜잭션 간 문서 흐름 경로 탐색 (BFS)."""
+    from .ontology.graph import OntologyGraph
+
+    from_tcode = args.get("from_tcode", "")
+    to_tcode = args.get("to_tcode", "")
+    if not from_tcode or not to_tcode:
+        return {"error": True, "message": "from_tcode와 to_tcode가 필요합니다."}
+
+    store = _get_store()
+    graph = OntologyGraph(store)
+    graph.build_from_store()
+
+    path = graph.get_process_path(from_tcode, to_tcode)
+    if path is None:
+        return {
+            "error": True,
+            "message": f"{from_tcode} → {to_tcode} 경로를 찾을 수 없습니다. 문서 흐름 데이터를 --rebuild로 구축했는지 확인하세요.",
+        }
+
+    # 경로의 각 엣지에 대한 상세 정보 추가
+    edges_detail = []
+    flow = store.load_document_flow()
+    flow_map = {(e.source_tcode, e.target_tcode): e for e in flow.edges}
+    for i in range(len(path) - 1):
+        edge = flow_map.get((path[i], path[i + 1]))
+        if edge:
+            edges_detail.append({
+                "from": path[i],
+                "to": path[i + 1],
+                "linking_field": edge.linking_field,
+                "flow_type": edge.flow_type.value,
+                "confidence": edge.confidence,
+            })
+        else:
+            edges_detail.append({"from": path[i], "to": path[i + 1]})
+
+    return {
+        "from": from_tcode.upper(),
+        "to": to_tcode.upper(),
+        "path": path,
+        "path_display": " → ".join(path),
+        "steps": edges_detail,
     }
 
 
