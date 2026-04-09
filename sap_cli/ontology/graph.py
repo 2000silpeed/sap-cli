@@ -13,6 +13,9 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from .schema import (
+    DocumentFlow,
+    FieldDependencyGraph,
+    FieldRegistry,
     LinkType,
     OntologyLink,
     SapField,
@@ -64,6 +67,11 @@ class OntologyGraph:
             ontology = self.store.load_transaction(tcode)
             if ontology:
                 self._add_transaction(ontology)
+
+        # Phase 11 데이터 통합
+        self._add_field_registry_edges(self.store.load_field_registry())
+        self._add_field_dependency_edges(self.store.load_field_dependencies())
+        self._add_document_flow_edges(self.store.load_document_flow())
 
     def _add_transaction(self, ontology: TransactionOntology) -> None:
         tx_id = f"tx:{ontology.tcode}"
@@ -242,6 +250,162 @@ class OntologyGraph:
             depth += 1
 
         return affected
+
+    # -------------------------------------------------------------------
+    # Phase 11: Cross-Transaction Edge Construction
+    # -------------------------------------------------------------------
+
+    def _add_field_registry_edges(self, registry: FieldRegistry) -> None:
+        """FieldRegistry → SAME_FIELD 엣지: 동일 필드가 다른 트랜잭션에 존재."""
+        for sfn, entry in registry.fields.items():
+            if len(entry.occurrences) < 2:
+                continue
+            # 트랜잭션 단위로 그룹핑하여 트랜잭션 간 엣지 생성
+            tcodes = sorted({o.tcode for o in entry.occurrences})
+            for i, t1 in enumerate(tcodes):
+                for t2 in tcodes[i + 1:]:
+                    self._add_edge(GraphEdge(
+                        source=f"tx:{t1}",
+                        target=f"tx:{t2}",
+                        edge_type=LinkType.SAME_FIELD,
+                        properties={"field": sfn, "description": entry.description},
+                    ))
+
+    def _add_field_dependency_edges(self, graph: FieldDependencyGraph) -> None:
+        """FieldDependencyGraph → FIELD_DETERMINES 엣지."""
+        for rel in graph.relationships:
+            self._add_edge(GraphEdge(
+                source=f"field_global:{rel.source_field}",
+                target=f"field_global:{rel.target_field}",
+                edge_type=LinkType.FIELD_DETERMINES,
+                properties={
+                    "dependency_type": rel.dependency_type.value,
+                    "observed_in": rel.observed_in,
+                    "description": rel.description,
+                },
+            ))
+            # 글로벌 필드 노드 추가
+            for fname in (rel.source_field, rel.target_field):
+                fid = f"field_global:{fname}"
+                if fid not in self._nodes:
+                    self._add_node(GraphNode(
+                        id=fid,
+                        node_type="field_global",
+                        label=fname,
+                        properties={"sap_field_name": fname},
+                    ))
+
+    def _add_document_flow_edges(self, flow: DocumentFlow) -> None:
+        """DocumentFlow → DOCUMENT_FLOW 엣지."""
+        for edge in flow.edges:
+            self._add_edge(GraphEdge(
+                source=f"tx:{edge.source_tcode}",
+                target=f"tx:{edge.target_tcode}",
+                edge_type=LinkType.DOCUMENT_FLOW,
+                properties={
+                    "flow_type": edge.flow_type.value,
+                    "linking_field": edge.linking_field,
+                    "confidence": edge.confidence,
+                    "description": edge.description,
+                },
+            ))
+            # 트랜잭션 노드가 없으면 추가
+            for tc in (edge.source_tcode, edge.target_tcode):
+                tid = f"tx:{tc}"
+                if tid not in self._nodes:
+                    self._add_node(GraphNode(
+                        id=tid, node_type="transaction", label=tc,
+                        properties={"tcode": tc},
+                    ))
+
+    # -------------------------------------------------------------------
+    # Phase 11: Cross-Transaction Queries
+    # -------------------------------------------------------------------
+
+    def find_field_across_transactions(self, sap_field_name: str) -> list[GraphNode]:
+        """필드가 사용되는 트랜잭션 목록 (SAME_FIELD 엣지 기반)."""
+        key = sap_field_name.upper()
+        result = []
+        seen = set()
+        for edge in self._edges:
+            if edge.edge_type != LinkType.SAME_FIELD:
+                continue
+            if edge.properties.get("field", "").upper() != key:
+                continue
+            for nid in (edge.source, edge.target):
+                if nid not in seen:
+                    seen.add(nid)
+                    if node := self._nodes.get(nid):
+                        result.append(node)
+        return result
+
+    def get_field_dependencies(self, sap_field_name: str) -> list[dict[str, Any]]:
+        """특정 필드의 종속성 관계 (FIELD_DETERMINES 엣지 기반)."""
+        key = sap_field_name.upper()
+        fid = f"field_global:{key}"
+        result = []
+        for edge in self._edges:
+            if edge.edge_type != LinkType.FIELD_DETERMINES:
+                continue
+            if edge.source == fid or edge.target == fid:
+                direction = "determines" if edge.source == fid else "determined_by"
+                other = edge.target if edge.source == fid else edge.source
+                result.append({
+                    "field": other.removeprefix("field_global:"),
+                    "direction": direction,
+                    **edge.properties,
+                })
+        return result
+
+    def get_document_flow(self, tcode: str) -> list[dict[str, Any]]:
+        """특정 트랜잭션의 문서 흐름 (DOCUMENT_FLOW 엣지 기반)."""
+        tid = f"tx:{tcode.upper()}"
+        result = []
+        for edge in self._edges:
+            if edge.edge_type != LinkType.DOCUMENT_FLOW:
+                continue
+            if edge.source == tid or edge.target == tid:
+                direction = "outgoing" if edge.source == tid else "incoming"
+                other = edge.target if edge.source == tid else edge.source
+                result.append({
+                    "tcode": other.removeprefix("tx:"),
+                    "direction": direction,
+                    **edge.properties,
+                })
+        return result
+
+    def get_process_path(self, from_tcode: str, to_tcode: str, max_depth: int = 10) -> list[str] | None:
+        """두 트랜잭션 간 문서 흐름 경로 (BFS, DOCUMENT_FLOW 엣지만 사용).
+
+        Returns: 트랜잭션 코드 리스트 (경로) 또는 None.
+        """
+        start = f"tx:{from_tcode.upper()}"
+        end = f"tx:{to_tcode.upper()}"
+
+        if start == end:
+            return [from_tcode.upper()]
+
+        # DOCUMENT_FLOW 엣지만으로 인접 리스트 구축
+        flow_adj: dict[str, list[str]] = defaultdict(list)
+        for edge in self._edges:
+            if edge.edge_type == LinkType.DOCUMENT_FLOW:
+                flow_adj[edge.source].append(edge.target)
+
+        visited = {start}
+        queue: list[list[str]] = [[start]]
+
+        while queue:
+            path = queue.pop(0)
+            if len(path) > max_depth:
+                break
+            for neighbor in flow_adj.get(path[-1], []):
+                if neighbor == end:
+                    return [n.removeprefix("tx:") for n in path + [end]]
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append(path + [neighbor])
+
+        return None
 
     # -------------------------------------------------------------------
     # Graph Statistics
