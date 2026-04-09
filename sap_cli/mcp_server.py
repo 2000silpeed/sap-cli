@@ -227,6 +227,17 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_ontology_relationships",
+        "description": "크로스 트랜잭션 필드 관계를 조회합니다. 특정 필드(MATNR 등)가 어떤 트랜잭션/화면에서 쓰이는지 한번에 확인합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "field": {"type": "string", "description": "SAP 필드명 (예: MATNR, WERKS). 생략 시 전체 요약"},
+                "rebuild": {"type": "boolean", "default": False, "description": "전체 트랜잭션에서 레지스트리 재구축"},
+            },
+        },
+    },
+    {
         "name": "sap_transcript_query",
         "description": "기록된 transcript를 조회합니다. 최근 성공/실패/승인요청 흐름을 확인할 때 사용합니다.",
         "inputSchema": {
