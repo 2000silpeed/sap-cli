@@ -262,6 +262,16 @@ def table_select(
     _run_command("table_select", {"element_id": element_id, "row": row}, allow_daemon=True)
 
 
+@app.command("table-doubleclick")
+def table_doubleclick(
+    element_id: str = typer.Argument(help="테이블 ID"),
+    row: int = typer.Argument(help="더블클릭할 행 번호 (0-based)"),
+    column: str = typer.Argument("", help="컬럼 ID (ALV 행 진입 시)"),
+) -> None:
+    """테이블 셀 더블클릭 (ALV 행 진입 등)."""
+    _run_command("table_doubleclick", {"element_id": element_id, "row": row, "column": column}, allow_daemon=True)
+
+
 @app.command()
 def command(
     cmd: str = typer.Argument(help="SAP 커맨드 (예: /nMM03, /oSE80)"),
@@ -557,6 +567,45 @@ def relationships(
     )
 
 
+@app.command("depends")
+def field_dependencies(
+    field: Optional[str] = typer.Argument(None, help="SAP 필드명 (예: WERKS, KUNNR)"),
+    rebuild: bool = typer.Option(False, "--rebuild", "-r", help="전체 트랜잭션에서 종속성 그래프 재구축"),
+) -> None:
+    """필드 종속성 조회 - WERKS → LGORT 같은 필드 간 종속/결정 관계."""
+    _output_json(
+        _dispatch_local("field_dependencies", {"field": field, "rebuild": rebuild})
+    )
+
+
+@app.command("flow")
+def document_flow(
+    tcode: Optional[str] = typer.Argument(None, help="트랜잭션 코드 (예: VA01, ME21N)"),
+    rebuild: bool = typer.Option(False, "--rebuild", "-r", help="프로세스/트랜잭션에서 문서 흐름 재구축"),
+) -> None:
+    """문서 흐름 조회 - VA01 → VL01N → VF01 같은 트랜잭션 간 문서 관계."""
+    _output_json(
+        _dispatch_local("document_flow", {"tcode": tcode, "rebuild": rebuild})
+    )
+
+
+@app.command("rebuild")
+def ontology_rebuild() -> None:
+    """온톨로지 전체 재구축 — 필드 레지스트리 + 필드 종속성 + 문서 흐름 일괄 재생성."""
+    _output_json(_dispatch_local("ontology_rebuild", {}))
+
+
+@app.command("path")
+def process_path(
+    from_tcode: str = typer.Argument(help="출발 트랜잭션 코드 (예: VA01)"),
+    to_tcode: str = typer.Argument(help="도착 트랜잭션 코드 (예: VF01)"),
+) -> None:
+    """문서 흐름 경로 탐색 - 두 트랜잭션 간 최단 경로를 BFS로 탐색."""
+    _output_json(
+        _dispatch_local("process_path", {"from_tcode": from_tcode, "to_tcode": to_tcode})
+    )
+
+
 @app.command("captures")
 def list_captures(
     tcode: Optional[str] = typer.Argument(None, help="트랜잭션 코드로 필터"),
@@ -589,6 +638,29 @@ def annotate_field(
                 "synonyms_ko": synonyms_ko,
                 "validation": validation,
                 "domain_context": domain_context,
+            },
+        )
+    )
+
+
+@app.command("annotate-dependency")
+def annotate_dependency(
+    source: str = typer.Argument(help="결정하는 필드 (예: WERKS, KUNNR)"),
+    target: str = typer.Argument(help="종속되는 필드 (예: LGORT, ZTERM)"),
+    dep_type: str = typer.Option("value_determines", "--type", help="종속성 유형: value_determines, input_order, lookup, field_activation"),
+    description: Optional[str] = typer.Option(None, "--desc", help="관계 설명"),
+    observed_in: Optional[str] = typer.Option(None, "--observed-in", help="관찰된 트랜잭션 (쉼표 구분, 예: VA01,ME21N)"),
+) -> None:
+    """필드 종속 관계를 수동으로 추가/수정."""
+    _output_json(
+        _dispatch_local(
+            "annotate_dependency",
+            {
+                "source": source,
+                "target": target,
+                "type": dep_type,
+                "description": description,
+                "observed_in": observed_in,
             },
         )
     )
