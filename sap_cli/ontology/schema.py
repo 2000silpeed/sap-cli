@@ -524,5 +524,31 @@ class ProcessExecution(BaseModel):
     current_step: int = 0
 
 
+# ---------------------------------------------------------------------------
+# Field Registry (크로스 트랜잭션 필드 인덱스)
+# ---------------------------------------------------------------------------
+
+class FieldOccurrence(BaseModel):
+    """필드가 출현하는 위치 — 트랜잭션/화면/element_id."""
+    tcode: str
+    screen_number: int
+    element_id: str
+    label: str = ""
+    changeable: bool = False
+
+
+class FieldRegistryEntry(BaseModel):
+    """하나의 SAP 필드명에 대한 글로벌 레지스트리 항목."""
+    sap_field_name: str
+    description: str = ""
+    occurrences: list[FieldOccurrence] = Field(default_factory=list)
+
+
+class FieldRegistry(BaseModel):
+    """글로벌 필드 레지스트리 — 모든 트랜잭션의 필드를 sap_field_name으로 통합 인덱스."""
+    fields: dict[str, FieldRegistryEntry] = Field(default_factory=dict)
+    last_rebuilt: str = ""
+
+
 # TransactionOntology에서 참조하는 forward ref 해결
 SapTransaction.model_rebuild()
