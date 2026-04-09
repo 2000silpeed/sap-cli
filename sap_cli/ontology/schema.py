@@ -84,6 +84,11 @@ class LinkType(str, Enum):
     FIELD_VALIDATES = "FIELD_VALIDATES"
     BUTTON_TRIGGERS = "BUTTON_TRIGGERS"
 
+    # 크로스 트랜잭션 관계 (Phase 11 온톨로지)
+    SAME_FIELD = "SAME_FIELD"               # 동일 필드가 다른 트랜잭션에 존재
+    DOCUMENT_FLOW = "DOCUMENT_FLOW"         # 문서 흐름 (VA01 → VL01N)
+    FIELD_DETERMINES = "FIELD_DETERMINES"   # 필드가 다른 필드를 결정
+
 
 class ActionType(str, Enum):
     """팔란티어 Kinetic Elements - 실행 가능한 동작 유형."""
@@ -208,11 +213,14 @@ class SapTable(BaseModel):
     id: str
     name: str = ""
     type: GuiComponentType = GuiComponentType.TABLE_CONTROL
+    sub_type: str = ""  # GuiShell의 SubType (예: "GridView")
     row_count: int = 0
     column_count: int = 0
     visible_rows: int = 0
     columns: list[SapTableColumn] = Field(default_factory=list)
     rows: list[dict[str, Any]] = Field(default_factory=list)
+    filtered_columns: list[str] = Field(default_factory=list)
+    sorted_columns: list[str] = Field(default_factory=list)
 
 
 class SapTreeNode(BaseModel):
@@ -290,12 +298,14 @@ class ScreenOntology(BaseModel):
         return None
 
     def get_field_by_label(self, label: str) -> SapField | None:
-        """라벨 텍스트로 필드 검색 (부분 일치)."""
+        """라벨 텍스트로 필드 검색 (부분 일치, 한국어 동의어 포함)."""
         label_lower = label.lower()
         for f in self.fields:
             if label_lower in f.label.lower() or label_lower in f.semantic.raw_label.lower():
                 return f
             if any(label_lower in syn.lower() for syn in f.semantic.synonyms):
+                return f
+            if any(label_lower in syn.lower() for syn in f.semantic.synonyms_ko):
                 return f
         return None
 
@@ -522,6 +532,61 @@ class ProcessExecution(BaseModel):
     context: dict[str, str] = Field(default_factory=dict)
     step_results: list[StepResult] = Field(default_factory=list)
     current_step: int = 0
+
+
+# ---------------------------------------------------------------------------
+# Field Dependency Graph (필드 종속성 그래프) — Phase 11-2
+# ---------------------------------------------------------------------------
+
+class FieldDependencyType(str, Enum):
+    """필드 종속성 유형."""
+    VALUE_DETERMINES = "value_determines"     # 값이 다른 필드 값을 결정 (KUNNR → ZTERM)
+    INPUT_ORDER = "input_order"               # 입력 순서 종속 (WERKS 먼저 → LGORT)
+    LOOKUP = "lookup"                         # 조회 종속 (MATNR → MAKTX)
+    FIELD_ACTIVATION = "field_activation"     # 필드/탭 활성화 (MTART → 뷰 목록)
+
+
+class FieldRelationship(BaseModel):
+    """두 필드 간의 종속/결정 관계."""
+    source_field: str               # 결정하는 필드 (sap_field_name)
+    target_field: str               # 종속되는 필드 (sap_field_name)
+    dependency_type: FieldDependencyType
+    description: str = ""
+    observed_in: list[str] = Field(default_factory=list)  # 관찰된 트랜잭션 목록
+
+
+class FieldDependencyGraph(BaseModel):
+    """글로벌 필드 종속성 그래프."""
+    relationships: list[FieldRelationship] = Field(default_factory=list)
+    last_rebuilt: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Document Flow (문서 흐름 온톨로지) — Phase 11-3
+# ---------------------------------------------------------------------------
+
+class DocumentFlowType(str, Enum):
+    """문서 흐름 유형."""
+    CREATES = "creates"         # 생성 (VA01 → VL01N: 수주가 출하를 생성)
+    REFERENCES = "references"   # 참조 (MIGO → ME21N: 입고가 PO를 참조)
+    SUCCEEDS = "succeeds"       # 후속 (VL01N → VF01: 출하 후 대금청구)
+    GENERATES = "generates"     # 자동 생성 (MIGO → 회계전표 자동 생성)
+
+
+class DocumentFlowEdge(BaseModel):
+    """트랜잭션 간 문서 흐름 엣지."""
+    source_tcode: str
+    target_tcode: str
+    flow_type: DocumentFlowType = DocumentFlowType.REFERENCES
+    linking_field: str = ""     # 연결 필드 (VBELN, EBELN 등)
+    description: str = ""
+    confidence: str = "high"    # high: DataFlow 기반, low: related_transactions 기반
+
+
+class DocumentFlow(BaseModel):
+    """글로벌 문서 흐름 온톨로지."""
+    edges: list[DocumentFlowEdge] = Field(default_factory=list)
+    last_rebuilt: str = ""
 
 
 # ---------------------------------------------------------------------------
