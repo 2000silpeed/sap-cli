@@ -75,6 +75,11 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "annotate_dependency": CommandDef("sap_annotate_dependency", Permission.WRITE),
     "fill":           CommandDef("sap_fill_fields",       Permission.WRITE),
     "tree":           CommandDef("sap_tree_read",          Permission.READ),
+    "tree_select":    CommandDef("sap_tree_select",        Permission.EXECUTE),
+    "tree_doubleclick": CommandDef("sap_tree_doubleclick", Permission.EXECUTE),
+    "tree_expand":    CommandDef("sap_tree_expand",        Permission.EXECUTE),
+    "tree_collapse":  CommandDef("sap_tree_collapse",      Permission.EXECUTE),
+    "tree_press":     CommandDef("sap_tree_press",         Permission.EXECUTE),
     "ontology_relationships": CommandDef("sap_ontology_relationships", Permission.READ),
     "field_dependencies": CommandDef("sap_field_dependencies", Permission.READ),
     "document_flow":      CommandDef("sap_document_flow",      Permission.READ),
@@ -318,6 +323,29 @@ def _execute_command(
             "node_count": sum(1 for _ in _flatten_tree_nodes(nodes)),
             "nodes": [n.model_dump(mode="json") for n in nodes],
         }
+    if command == "tree_select":
+        sap = _get_sap()
+        sap.tree_select_node(str(args["element_id"]), str(args["node_key"]))
+        payload = {"action": "select", "element_id": args["element_id"], "node_key": args["node_key"]}
+        return _with_post_action(payload, sap, command, ctx)
+    if command == "tree_doubleclick":
+        sap = _get_sap()
+        sap.tree_double_click_node(str(args["element_id"]), str(args["node_key"]))
+        payload = {"action": "doubleclick", "element_id": args["element_id"], "node_key": args["node_key"]}
+        return _with_post_action(payload, sap, command, ctx)
+    if command == "tree_expand":
+        sap = _get_sap()
+        sap.tree_expand_node(str(args["element_id"]), str(args["node_key"]))
+        return {"action": "expand", "element_id": args["element_id"], "node_key": args["node_key"]}
+    if command == "tree_collapse":
+        sap = _get_sap()
+        sap.tree_collapse_node(str(args["element_id"]), str(args["node_key"]))
+        return {"action": "collapse", "element_id": args["element_id"], "node_key": args["node_key"]}
+    if command == "tree_press":
+        sap = _get_sap()
+        sap.tree_press_button(str(args["element_id"]), str(args["node_key"]), str(args.get("column", "")))
+        payload = {"action": "press", "element_id": args["element_id"], "node_key": args["node_key"]}
+        return _with_post_action(payload, sap, command, ctx)
     if command == "command":
         sap = _get_sap()
         command_text = str(args["cmd"])

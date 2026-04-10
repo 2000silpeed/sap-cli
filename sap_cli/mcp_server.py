@@ -203,6 +203,67 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_tree_select",
+        "description": "트리 노드를 선택합니다. sap_tree_read로 노드 목록을 먼저 확인하세요.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "element_id": {"type": "string", "description": "트리 ID (sap_screen의 trees에서 확인)"},
+                "node_key": {"type": "string", "description": "노드 키 (sap_tree_read 결과의 key)"},
+            },
+            "required": ["element_id", "node_key"],
+        },
+    },
+    {
+        "name": "sap_tree_doubleclick",
+        "description": "트리 노드를 더블클릭합니다. SPRO IMG Activity 진입, BOM 펼치기 등에 사용. sap_tree_read로 노드 키를 먼저 확인하세요.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "element_id": {"type": "string", "description": "트리 ID"},
+                "node_key": {"type": "string", "description": "노드 키"},
+            },
+            "required": ["element_id", "node_key"],
+        },
+    },
+    {
+        "name": "sap_tree_expand",
+        "description": "트리 노드를 확장하여 하위 노드를 펼칩니다. SPRO 메뉴 탐색 시 사용.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "element_id": {"type": "string", "description": "트리 ID"},
+                "node_key": {"type": "string", "description": "노드 키"},
+            },
+            "required": ["element_id", "node_key"],
+        },
+    },
+    {
+        "name": "sap_tree_collapse",
+        "description": "트리 노드를 접습니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "element_id": {"type": "string", "description": "트리 ID"},
+                "node_key": {"type": "string", "description": "노드 키"},
+            },
+            "required": ["element_id", "node_key"],
+        },
+    },
+    {
+        "name": "sap_tree_press",
+        "description": "트리 내 버튼/아이콘을 클릭합니다. SPRO 실행 아이콘 등에 사용.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "element_id": {"type": "string", "description": "트리 ID"},
+                "node_key": {"type": "string", "description": "노드 키"},
+                "column": {"type": "string", "description": "버튼이 있는 컬럼 이름", "default": ""},
+            },
+            "required": ["element_id", "node_key"],
+        },
+    },
+    {
         "name": "sap_table_select",
         "description": "테이블에서 특정 행을 선택합니다. MM03 뷰 선택 등에서 사용.",
         "inputSchema": {

@@ -954,16 +954,35 @@ class SapGuiWrapper:
             col_names: list[str] = []
             try:
                 col_count = tree.ColumnCount
-                for c in range(col_count):
-                    col_names.append(tree.GetColumnHeaders().ElementAt(c))
+                if col_count > 0:
+                    # 방법 1: GetColumnNames (가장 일반적)
+                    try:
+                        names = tree.GetColumnNames()
+                        if names:
+                            for c in range(names.Count):
+                                col_names.append(str(names.ElementAt(c)))
+                    except Exception:
+                        pass
+                    # 방법 2: GetColumnHeaders (fallback)
+                    if not col_names:
+                        try:
+                            headers = tree.GetColumnHeaders()
+                            if headers:
+                                for c in range(headers.Count):
+                                    col_names.append(str(headers.ElementAt(c)))
+                        except Exception:
+                            pass
+                    # 방법 3: 첫 번째 노드의 아이템 컬럼으로 추론
+                    if not col_names and node_keys and node_keys.Count > 0:
+                        first_key = str(node_keys.ElementAt(0))
+                        try:
+                            item_count = tree.GetItemCount(first_key)
+                            for c in range(item_count):
+                                col_names.append(str(tree.GetItemName(first_key, c)))
+                        except Exception:
+                            pass
             except Exception:
-                # Simple Tree / List Tree는 컬럼이 없을 수 있음
-                try:
-                    col_count = tree.ColumnCount
-                    for c in range(col_count):
-                        col_names.append(tree.GetColumnNames().ElementAt(c))
-                except Exception:
-                    pass
+                pass
 
             # 노드 데이터 수집
             nodes_by_key: dict[str, SapTreeNode] = {}
@@ -992,6 +1011,10 @@ class SapGuiWrapper:
                 except Exception:
                     pass
 
+                # text가 비어있으면 아이템 첫 번째 값을 텍스트로 사용
+                if not text and items:
+                    text = next(iter(items.values()), "")
+
                 node = SapTreeNode(
                     key=key,
                     text=text,
@@ -1017,6 +1040,70 @@ class SapGuiWrapper:
             raise
         except Exception as e:
             raise SapGuiError(f"트리 읽기 실패 [{element_id}]: {e}") from e
+
+    # -------------------------------------------------------------------
+    # Tree Node Actions
+    # -------------------------------------------------------------------
+
+    def _get_tree(self, element_id: str) -> Any:
+        """트리 컨트롤 객체를 가져오고 타입을 검증."""
+        tree = self.session.FindById(element_id)
+        ttype = str(tree.Type)
+        if ttype not in ("GuiTree", "GuiShell"):
+            raise SapGuiError(f"트리가 아닙니다 [{element_id}]: type={ttype}")
+        return tree
+
+    def tree_select_node(self, element_id: str, node_key: str) -> None:
+        """트리 노드 선택."""
+        try:
+            tree = self._get_tree(element_id)
+            tree.SelectNode(node_key)
+        except SapGuiError:
+            raise
+        except Exception as e:
+            raise SapGuiError(f"트리 노드 선택 실패 [{element_id}, key={node_key}]: {e}") from e
+
+    def tree_double_click_node(self, element_id: str, node_key: str) -> None:
+        """트리 노드 더블클릭 (SPRO IMG Activity 진입 등)."""
+        try:
+            tree = self._get_tree(element_id)
+            tree.DoubleClickNode(node_key)
+        except SapGuiError:
+            raise
+        except Exception as e:
+            raise SapGuiError(f"트리 노드 더블클릭 실패 [{element_id}, key={node_key}]: {e}") from e
+
+    def tree_expand_node(self, element_id: str, node_key: str) -> None:
+        """트리 노드 확장 (하위 노드 펼치기)."""
+        try:
+            tree = self._get_tree(element_id)
+            tree.ExpandNode(node_key)
+        except SapGuiError:
+            raise
+        except Exception as e:
+            raise SapGuiError(f"트리 노드 확장 실패 [{element_id}, key={node_key}]: {e}") from e
+
+    def tree_collapse_node(self, element_id: str, node_key: str) -> None:
+        """트리 노드 접기."""
+        try:
+            tree = self._get_tree(element_id)
+            tree.CollapseNode(node_key)
+        except SapGuiError:
+            raise
+        except Exception as e:
+            raise SapGuiError(f"트리 노드 접기 실패 [{element_id}, key={node_key}]: {e}") from e
+
+    def tree_press_button(self, element_id: str, node_key: str, col_name: str) -> None:
+        """트리 내 버튼/아이콘 클릭 (SPRO 실행 아이콘 등)."""
+        try:
+            tree = self._get_tree(element_id)
+            tree.PressButton(node_key, col_name)
+        except SapGuiError:
+            raise
+        except Exception as e:
+            raise SapGuiError(
+                f"트리 버튼 클릭 실패 [{element_id}, key={node_key}, col={col_name}]: {e}"
+            ) from e
 
     def set_table_cell(self, element_id: str, row: int, col: str, value: str) -> None:
         """테이블 셀에 값 설정."""

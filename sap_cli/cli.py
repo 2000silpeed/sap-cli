@@ -253,6 +253,52 @@ def read_tree(
     _run_command("tree", {"element_id": element_id}, allow_daemon=True)
 
 
+@app.command("tree-select")
+def tree_select(
+    element_id: str = typer.Argument(help="트리 ID"),
+    node_key: str = typer.Argument(help="노드 키 (sap tree 결과의 key)"),
+) -> None:
+    """트리 노드 선택."""
+    _run_command("tree_select", {"element_id": element_id, "node_key": node_key}, allow_daemon=True)
+
+
+@app.command("tree-doubleclick")
+def tree_doubleclick(
+    element_id: str = typer.Argument(help="트리 ID"),
+    node_key: str = typer.Argument(help="노드 키"),
+) -> None:
+    """트리 노드 더블클릭 (SPRO IMG Activity 진입 등)."""
+    _run_command("tree_doubleclick", {"element_id": element_id, "node_key": node_key}, allow_daemon=True)
+
+
+@app.command("tree-expand")
+def tree_expand(
+    element_id: str = typer.Argument(help="트리 ID"),
+    node_key: str = typer.Argument(help="노드 키"),
+) -> None:
+    """트리 노드 확장 (하위 메뉴 펼치기)."""
+    _run_command("tree_expand", {"element_id": element_id, "node_key": node_key}, allow_daemon=True)
+
+
+@app.command("tree-collapse")
+def tree_collapse(
+    element_id: str = typer.Argument(help="트리 ID"),
+    node_key: str = typer.Argument(help="노드 키"),
+) -> None:
+    """트리 노드 접기."""
+    _run_command("tree_collapse", {"element_id": element_id, "node_key": node_key}, allow_daemon=True)
+
+
+@app.command("tree-press")
+def tree_press(
+    element_id: str = typer.Argument(help="트리 ID"),
+    node_key: str = typer.Argument(help="노드 키"),
+    column: str = typer.Argument("", help="버튼이 있는 컬럼 이름"),
+) -> None:
+    """트리 내 버튼/아이콘 클릭 (SPRO 실행 아이콘 등)."""
+    _run_command("tree_press", {"element_id": element_id, "node_key": node_key, "column": column}, allow_daemon=True)
+
+
 @app.command("table-select")
 def table_select(
     element_id: str = typer.Argument(help="테이블 ID"),
