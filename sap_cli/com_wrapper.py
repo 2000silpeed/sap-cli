@@ -950,37 +950,50 @@ class SapGuiWrapper:
             if not node_keys:
                 return []
 
-            # 컬럼 이름 수집 (Column Tree인 경우)
+            # 컬럼 이름 수집 (Column Tree인 경우) — 각 방법을 독립적으로 시도
             col_names: list[str] = []
+
+            # 방법 1: GetColumnNames
             try:
-                col_count = tree.ColumnCount
-                if col_count > 0:
-                    # 방법 1: GetColumnNames (가장 일반적)
-                    try:
-                        names = tree.GetColumnNames()
-                        if names:
-                            for c in range(names.Count):
-                                col_names.append(str(names.ElementAt(c)))
-                    except Exception:
-                        pass
-                    # 방법 2: GetColumnHeaders (fallback)
-                    if not col_names:
+                names = tree.GetColumnNames()
+                if names and names.Count > 0:
+                    for c in range(names.Count):
                         try:
-                            headers = tree.GetColumnHeaders()
-                            if headers:
-                                for c in range(headers.Count):
-                                    col_names.append(str(headers.ElementAt(c)))
+                            col_names.append(str(names.ElementAt(c)))
                         except Exception:
-                            pass
-                    # 방법 3: 첫 번째 노드의 아이템 컬럼으로 추론
-                    if not col_names and node_keys and node_keys.Count > 0:
-                        first_key = str(node_keys.ElementAt(0))
+                            col_names.append(str(names(c)))
+            except Exception:
+                pass
+
+            # 방법 2: GetColumnHeaders
+            if not col_names:
+                try:
+                    headers = tree.GetColumnHeaders()
+                    if headers and headers.Count > 0:
+                        for c in range(headers.Count):
+                            try:
+                                col_names.append(str(headers.ElementAt(c)))
+                            except Exception:
+                                col_names.append(str(headers(c)))
+                except Exception:
+                    pass
+
+            # 방법 3: ColumnCount + GetColumnTitlesByIndex
+            if not col_names:
+                try:
+                    col_count = tree.ColumnCount
+                    for c in range(col_count):
                         try:
-                            item_count = tree.GetItemCount(first_key)
-                            for c in range(item_count):
-                                col_names.append(str(tree.GetItemName(first_key, c)))
+                            col_names.append(str(tree.GetColumnCol(c)))
                         except Exception:
-                            pass
+                            col_names.append(f"col_{c}")
+                except Exception:
+                    pass
+
+            # 트리 SubType 확인 (디버깅용)
+            sub_type = ""
+            try:
+                sub_type = str(self._safe_attr(tree, "SubType", ""))
             except Exception:
                 pass
 
@@ -989,11 +1002,22 @@ class SapGuiWrapper:
             root_keys: list[str] = []
 
             for i in range(node_keys.Count):
-                key = str(node_keys.ElementAt(i))
+                try:
+                    key = str(node_keys.ElementAt(i))
+                except Exception:
+                    key = str(node_keys(i))
+
+                # 텍스트 수집 — 여러 방법 시도
+                text = ""
                 try:
                     text = str(tree.GetNodeTextByKey(key))
                 except Exception:
-                    text = ""
+                    pass
+                if not text:
+                    try:
+                        text = str(tree.GetNodeTextByPath(key))
+                    except Exception:
+                        pass
 
                 # 컬럼별 아이템 값
                 items: dict[str, str] = {}
@@ -1002,6 +1026,21 @@ class SapGuiWrapper:
                         val = str(tree.GetItemText(key, col_name))
                         if val:
                             items[col_name] = val
+                    except Exception:
+                        pass
+
+                # 컬럼 이름을 못 구했어도 아이템 직접 탐색 시도
+                if not items and not col_names:
+                    try:
+                        ic = tree.GetItemCount(key)
+                        for ci in range(ic):
+                            try:
+                                cn = str(tree.GetItemName(key, ci))
+                                cv = str(tree.GetItemText(key, cn))
+                                if cv:
+                                    items[cn] = cv
+                            except Exception:
+                                pass
                     except Exception:
                         pass
 
