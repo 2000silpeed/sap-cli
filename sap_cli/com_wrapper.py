@@ -855,6 +855,19 @@ class SapGuiWrapper:
         # 행 데이터 수집 (스크롤 처리 — 최대 500행)
         max_rows = min(row_count, 500)
         rows: list[dict[str, str]] = []
+        if visible_rows == 0:
+            return SapTable(
+                id=element_id,
+                type=GuiComponentType.SHELL,
+                sub_type="GridView",
+                row_count=row_count,
+                column_count=col_count,
+                visible_rows=0,
+                columns=columns,
+                rows=[],
+                filtered_columns=filtered,
+                sorted_columns=sorted_cols,
+            )
         read_count = 0
         while read_count < max_rows:
             grid.FirstVisibleRow = read_count
@@ -1042,6 +1055,8 @@ class SapGuiWrapper:
             if ttype == "GuiGridView" or (
                 ttype == "GuiShell" and self._safe_attr(table, "SubType", "") == "GridView"
             ):
+                if not col:
+                    col = str(table.ColumnOrder(0))
                 table.SetCurrentCell(row, col)
                 table.DoubleClickCurrentCell()
             else:

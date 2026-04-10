@@ -71,6 +71,11 @@ TOOL_PERMISSION_MAP: dict[str, Permission] = {
     "sap_process_status": Permission.READ,
     "sap_table_select": Permission.EXECUTE,
     "sap_table_doubleclick": Permission.EXECUTE,
+    "sap_ontology_relationships": Permission.READ,
+    "sap_field_dependencies": Permission.READ,
+    "sap_document_flow": Permission.READ,
+    "sap_process_path": Permission.READ,
+    "sap_ontology_rebuild": Permission.ADMIN,
 }
 
 
