@@ -1062,10 +1062,12 @@ class SapGuiWrapper:
                 )
                 nodes_by_key[key] = node
 
-                # 부모-자식 관계 구성
+                # 부모-자식 관계 구성 (GetParentNodeKey 우선)
                 parent_key = None
                 try:
-                    parent_key = str(tree.GetParentNodeKey(key))
+                    pk = tree.GetParentNodeKey(key)
+                    if pk is not None:
+                        parent_key = str(pk)
                 except Exception:
                     pass
 
@@ -1073,6 +1075,24 @@ class SapGuiWrapper:
                     nodes_by_key[parent_key].children.append(node)
                 else:
                     root_keys.append(key)
+
+            # fallback: GetParentNodeKey가 전부 실패했으면 level로 계층 재구성
+            if len(root_keys) == len(nodes_by_key) and len(root_keys) > 1:
+                has_levels = any(n.level > 0 for n in nodes_by_key.values())
+                if has_levels:
+                    root_keys.clear()
+                    ordered = list(nodes_by_key.values())
+                    stack: list[SapTreeNode] = []
+                    for nd in ordered:
+                        nd.children = []
+                    for nd in ordered:
+                        while stack and stack[-1].level >= nd.level:
+                            stack.pop()
+                        if stack:
+                            stack[-1].children.append(nd)
+                        else:
+                            root_keys.append(nd.key)
+                        stack.append(nd)
 
             return [nodes_by_key[k] for k in root_keys if k in nodes_by_key]
         except SapGuiError:
