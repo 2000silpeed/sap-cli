@@ -1255,26 +1255,59 @@ class SapGuiWrapper:
                     known.add(s)
 
         before_screen = None
+        before_title = ""
         try:
             before_screen = self.session.Info.ScreenNumber
+            before_title = self.session.FindById("wnd[0]").Text
         except Exception:
             pass
 
+        # documentation 키워드 (화면 제목에 포함되면 스킵)
+        _DOC_KEYWORDS = ("document", "dokumentation", "hilfe", "help", "info")
+
+        last_success_col = None
         for col in cols_to_try:
             if self._try_tree_action(tree, node_key, col):
+                changed = False
                 # 화면 변경 확인
                 try:
                     after_screen = self.session.Info.ScreenNumber
                     if before_screen is not None and after_screen != before_screen:
-                        return  # 화면이 바뀜 = 성공
+                        changed = True
                 except Exception:
                     pass
-                # 모달 팝업이 떴는지 확인
+                # 모달 팝업 확인
+                if not changed:
+                    try:
+                        if self.has_modal():
+                            changed = True
+                    except Exception:
+                        pass
+                if not changed:
+                    continue
+                # documentation 화면인지 확인
                 try:
-                    if self.has_modal():
-                        return
+                    title = self.session.FindById(
+                        "wnd[1]" if self.has_modal() else "wnd[0]"
+                    ).Text.lower()
+                    if any(kw in title for kw in _DOC_KEYWORDS):
+                        # documentation → 뒤로 가고 다음 컬럼 시도
+                        last_success_col = col
+                        try:
+                            self.session.FindById(
+                                "wnd[1]" if self.has_modal() else "wnd[0]"
+                            ).SendVKey(3)  # F3 Back
+                        except Exception:
+                            pass
+                        continue
                 except Exception:
                     pass
+                return  # documentation 아닌 화면 변경 = 성공
+
+        # 모든 컬럼 시도 완료 — documentation만 열린 경우 그거라도 실행
+        if last_success_col is not None:
+            self._try_tree_action(tree, node_key, last_success_col)
+            return
 
         raise SapGuiError(
             f"트리 액션 실패 [{element_id}, key={node_key}]: "
