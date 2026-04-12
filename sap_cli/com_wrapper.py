@@ -997,8 +997,39 @@ class SapGuiWrapper:
             except Exception:
                 pass
 
-            # 컬럼 이름 저장 (dispatcher에서 참조)
-            self._tree_columns = col_names
+            # 컬럼 헤더(표시명) 수집
+            col_headers: dict[str, str] = {}
+            for cn in col_names:
+                try:
+                    col_headers[cn] = str(tree.GetColumnTitleFromName(cn))
+                except Exception:
+                    pass
+
+            # 컬럼별 아이템 타입 판별 (첫 번째 노드 기준)
+            # GetItemType: 0=Text, 1=Button, 2=Image/Icon
+            col_types: dict[str, str] = {}
+            if col_names:
+                try:
+                    first_key = str(node_keys.ElementAt(0))
+                except Exception:
+                    first_key = str(node_keys(0))
+                type_map = {0: "text", 1: "button", 2: "image"}
+                for cn in col_names:
+                    try:
+                        t = int(tree.GetItemType(first_key, cn))
+                        col_types[cn] = type_map.get(t, f"unknown({t})")
+                    except Exception:
+                        pass
+
+            # 컬럼 정보 저장 (dispatcher에서 참조)
+            self._tree_columns = []
+            for cn in col_names:
+                info: dict[str, str] = {"name": cn}
+                if cn in col_headers and col_headers[cn]:
+                    info["header"] = col_headers[cn]
+                if cn in col_types:
+                    info["type"] = col_types[cn]
+                self._tree_columns.append(info)
 
             # 노드 데이터 수집
             nodes_by_key: dict[str, SapTreeNode] = {}
