@@ -1062,19 +1062,27 @@ class SapGuiWrapper:
                 )
                 nodes_by_key[key] = node
 
-                # 부모-자식 관계 구성 (GetParentNodeKey 우선)
+            # --- 부모-자식 관계 구성 (모든 노드 수집 후 처리) ---
+            parent_map: dict[str, str] = {}  # child_key -> parent_key
+            for key, node in nodes_by_key.items():
                 parent_key = None
                 try:
                     pk = tree.GetParentNodeKey(key)
                     if pk is not None:
-                        parent_key = str(pk)
+                        pk_str = str(pk).strip()
+                        if pk_str and pk_str in nodes_by_key:
+                            parent_key = pk_str
                 except Exception:
                     pass
-
-                if parent_key and parent_key in nodes_by_key:
-                    nodes_by_key[parent_key].children.append(node)
+                if parent_key:
+                    parent_map[key] = parent_key
                 else:
                     root_keys.append(key)
+
+            # GetParentNodeKey로 관계가 구성되면 children에 연결
+            if parent_map:
+                for child_key, par_key in parent_map.items():
+                    nodes_by_key[par_key].children.append(nodes_by_key[child_key])
 
             # fallback: GetParentNodeKey가 전부 실패했으면 level로 계층 재구성
             if len(root_keys) == len(nodes_by_key) and len(root_keys) > 1:
