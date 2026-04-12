@@ -196,7 +196,12 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "description": (
             "SAP 화면의 트리 컨트롤 데이터를 읽습니다. "
             "토큰 절약을 위해 depth=1로 얕게 조회한 뒤, child_count>0인 노드를 node_key로 드릴다운하세요. "
-            "닫힌 노드는 sap_tree_expand로 먼저 펼쳐야 자식이 보입니다."
+            "닫힌 노드는 sap_tree_expand로 먼저 펼쳐야 자식이 보입니다. "
+            "[SPRO 트리 탐색 가이드] "
+            "1) depth=0으로 루트 확인 → 2) sap_tree_expand로 펼치기 → "
+            "3) node_key+depth=0으로 자식 조회 → 반복하여 목표 노드 도달 → "
+            "4) sap_tree_press로 실행. "
+            "SPRO 트리 컬럼: column='2'=IMG Activity 실행, column='1'=Documentation 조회."
         ),
         "inputSchema": {
             "type": "object",
@@ -260,9 +265,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "name": "sap_tree_press",
         "description": (
             "트리 내 버튼/아이콘을 클릭합니다. "
-            "column 생략 시 자동 탐색하여 execute 컬럼을 찾고, "
-            "결과의 discovered_columns에 execute/doc 컬럼이 기록됩니다. "
-            "이후 호출에서는 discovered_columns의 값을 column에 직접 지정하세요."
+            "SPRO에서는 column='2'가 IMG Activity 실행, column='1'이 Documentation입니다. "
+            "SPRO가 아닌 트리에서 column 생략 시 자동 탐색합니다."
         ),
         "inputSchema": {
             "type": "object",
