@@ -1013,13 +1013,44 @@ class SapGuiWrapper:
             except Exception:
                 pass
 
-            # 컬럼 헤더(표시명) 수집
+            # 컬럼 헤더(표시명) 수집 — 여러 방법 시도
             col_headers: dict[str, str] = {}
+            # 방법 A: GetColumnTitleFromName
             for cn in col_names:
                 try:
-                    col_headers[cn] = str(tree.GetColumnTitleFromName(cn))
+                    h = str(tree.GetColumnTitleFromName(cn))
+                    if h:
+                        col_headers[cn] = h
                 except Exception:
                     pass
+            # 방법 B: GetColumnHeaders 컬렉션을 이름 순서에 매핑
+            if len(col_headers) < len(col_names):
+                try:
+                    hdrs = tree.GetColumnHeaders()
+                    if hdrs and hdrs.Count > 0:
+                        for ci in range(min(hdrs.Count, len(col_names))):
+                            cn = col_names[ci]
+                            if cn not in col_headers:
+                                try:
+                                    h = str(hdrs.ElementAt(ci))
+                                except Exception:
+                                    h = str(hdrs(ci))
+                                if h:
+                                    col_headers[cn] = h
+                except Exception:
+                    pass
+            # 방법 C: 인덱스 기반 GetColumnTitleByIndex
+            if len(col_headers) < len(col_names):
+                for ci, cn in enumerate(col_names):
+                    if cn not in col_headers:
+                        for method in ("GetColumnTitleByIndex", "GetColumnTooltipByIndex"):
+                            try:
+                                h = str(getattr(tree, method)(ci))
+                                if h:
+                                    col_headers[cn] = h
+                                    break
+                            except Exception:
+                                pass
 
             # 컬럼별 아이템 타입 판별 (첫 번째 노드 기준)
             # GetItemType: 0=Text, 1=Button, 2=Image/Icon
