@@ -230,6 +230,7 @@ class SapTreeNode(BaseModel):
     level: int = 0
     items: dict[str, str] = Field(default_factory=dict)
     children: list["SapTreeNode"] = Field(default_factory=list)
+    child_count: int | None = Field(default=None, description="depth 제한 시 실제 자식 수")
 
 
 class SapButton(BaseModel):
