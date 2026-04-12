@@ -997,6 +997,22 @@ class SapGuiWrapper:
             except Exception:
                 pass
 
+            # ColumnCount로 빠진 컬럼 보완 (GetColumnNames가 일부 누락 가능)
+            try:
+                col_count = tree.ColumnCount
+                if col_count and col_count > len(col_names):
+                    col_name_set = set(col_names)
+                    for ci in range(col_count):
+                        try:
+                            cn = str(tree.GetColumnCol(ci))
+                            if cn and cn not in col_name_set:
+                                col_names.append(cn)
+                                col_name_set.add(cn)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
             # 컬럼 헤더(표시명) 수집
             col_headers: dict[str, str] = {}
             for cn in col_names:
@@ -1008,18 +1024,17 @@ class SapGuiWrapper:
             # 컬럼별 아이템 타입 판별 (첫 번째 노드 기준)
             # GetItemType: 0=Text, 1=Button, 2=Image/Icon
             col_types: dict[str, str] = {}
-            if col_names:
+            try:
+                first_key = str(node_keys.ElementAt(0))
+            except Exception:
+                first_key = str(node_keys(0))
+            type_map = {0: "text", 1: "button", 2: "image"}
+            for cn in col_names:
                 try:
-                    first_key = str(node_keys.ElementAt(0))
+                    t = int(tree.GetItemType(first_key, cn))
+                    col_types[cn] = type_map.get(t, f"unknown({t})")
                 except Exception:
-                    first_key = str(node_keys(0))
-                type_map = {0: "text", 1: "button", 2: "image"}
-                for cn in col_names:
-                    try:
-                        t = int(tree.GetItemType(first_key, cn))
-                        col_types[cn] = type_map.get(t, f"unknown({t})")
-                    except Exception:
-                        pass
+                    pass
 
             # 컬럼 정보 저장 (dispatcher에서 참조)
             self._tree_columns = []
