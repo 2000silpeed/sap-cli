@@ -1217,6 +1217,16 @@ class SapGuiWrapper:
             raise SapGuiError(
                 f"트리 액션 실패 [{element_id}, key={node_key}, col={col_name}]")
 
+        # SPRO 트리: 컬럼 고정 (1=doc, 2=execute)
+        try:
+            tcode = self.session.Info.Transaction.upper()
+            if tcode == "SPRO":
+                self._tree_action_cache[element_id] = {"execute": "2", "doc": "1"}
+                if self._try_tree_action(tree, node_key, "2"):
+                    return "2"
+        except Exception:
+            pass
+
         # 캐시에 execute 컬럼이 있으면 우선 시도
         cached = self._tree_action_cache.get(element_id, {})
         if cached.get("execute"):
