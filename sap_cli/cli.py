@@ -249,11 +249,14 @@ def table(
 def read_tree(
     element_id: str = typer.Argument(help="트리 ID (sap screen의 trees에서 확인)"),
     node_key: str = typer.Option("", "--node-key", "-n", help="특정 노드의 자식만 조회"),
+    depth: int = typer.Option(-1, "--depth", "-d", help="트리 깊이 제한 (-1=무제한, 0=현재만, 1=자식까지)"),
 ) -> None:
     """트리 컨트롤 데이터 읽기 (Document Flow 등)."""
-    params: dict[str, str] = {"element_id": element_id}
+    params: dict[str, Any] = {"element_id": element_id}
     if node_key:
         params["node_key"] = node_key
+    if depth >= 0:
+        params["depth"] = depth
     _run_command("tree", params, allow_daemon=True)
 
 
