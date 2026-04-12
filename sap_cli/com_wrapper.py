@@ -1080,9 +1080,12 @@ class SapGuiWrapper:
                     parent_map[key] = parent_key
                 else:
                     root_keys.append(key)
-            import logging as _lg
-            _lg.getLogger("sap_cli").warning("TREE_DEBUG parent_map=%d roots=%d total=%d details=%s",
-                                              len(parent_map), len(root_keys), len(nodes_by_key), _debug_parent[:10])
+            self._tree_debug = {
+                "parent_map_count": len(parent_map),
+                "root_count": len(root_keys),
+                "total_nodes": len(nodes_by_key),
+                "samples": _debug_parent[:15],
+            }
 
             # GetParentNodeKey로 관계가 구성되면 children에 연결
             if parent_map:
