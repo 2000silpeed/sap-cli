@@ -990,92 +990,88 @@ class SapGuiWrapper:
                 except Exception:
                     pass
 
-            # 트리 SubType 확인 (디버깅용)
+            # 트리 SubType 확인
             sub_type = ""
             try:
                 sub_type = str(self._safe_attr(tree, "SubType", ""))
             except Exception:
                 pass
 
-            # ColumnCount로 빠진 컬럼 보완 (GetColumnNames가 일부 누락 가능)
+            # === 컬럼 진단: 모든 API raw 결과 수집 ===
+            _diag: dict[str, Any] = {"sub_type": sub_type}
+
+            # ColumnCount
             try:
-                col_count = tree.ColumnCount
-                if col_count and col_count > len(col_names):
-                    col_name_set = set(col_names)
-                    for ci in range(col_count):
-                        try:
-                            cn = str(tree.GetColumnCol(ci))
-                            if cn and cn not in col_name_set:
-                                col_names.append(cn)
-                                col_name_set.add(cn)
-                        except Exception:
-                            pass
-            except Exception:
-                pass
+                _diag["ColumnCount"] = int(tree.ColumnCount)
+            except Exception as e:
+                _diag["ColumnCount_err"] = str(e)
 
-            # 컬럼 헤더(표시명) 수집 — 여러 방법 시도
-            col_headers: dict[str, str] = {}
-            # 방법 A: GetColumnTitleFromName
-            for cn in col_names:
-                try:
-                    h = str(tree.GetColumnTitleFromName(cn))
-                    if h:
-                        col_headers[cn] = h
-                except Exception:
-                    pass
-            # 방법 B: GetColumnHeaders 컬렉션을 이름 순서에 매핑
-            if len(col_headers) < len(col_names):
-                try:
-                    hdrs = tree.GetColumnHeaders()
-                    if hdrs and hdrs.Count > 0:
-                        for ci in range(min(hdrs.Count, len(col_names))):
-                            cn = col_names[ci]
-                            if cn not in col_headers:
-                                try:
-                                    h = str(hdrs.ElementAt(ci))
-                                except Exception:
-                                    h = str(hdrs(ci))
-                                if h:
-                                    col_headers[cn] = h
-                except Exception:
-                    pass
-            # 방법 C: 인덱스 기반 GetColumnTitleByIndex
-            if len(col_headers) < len(col_names):
-                for ci, cn in enumerate(col_names):
-                    if cn not in col_headers:
-                        for method in ("GetColumnTitleByIndex", "GetColumnTooltipByIndex"):
-                            try:
-                                h = str(getattr(tree, method)(ci))
-                                if h:
-                                    col_headers[cn] = h
-                                    break
-                            except Exception:
-                                pass
+            # GetColumnNames raw
+            try:
+                names = tree.GetColumnNames()
+                _diag["GetColumnNames"] = [str(names.ElementAt(i)) for i in range(names.Count)] if names else None
+            except Exception as e:
+                _diag["GetColumnNames_err"] = str(e)
 
-            # 컬럼별 아이템 타입 판별 (첫 번째 노드 기준)
-            # GetItemType: 0=Text, 1=Button, 2=Image/Icon
-            col_types: dict[str, str] = {}
+            # GetColumnHeaders raw
+            try:
+                hdrs = tree.GetColumnHeaders()
+                _diag["GetColumnHeaders"] = [str(hdrs.ElementAt(i)) for i in range(hdrs.Count)] if hdrs else None
+            except Exception as e:
+                _diag["GetColumnHeaders_err"] = str(e)
+
+            # 인덱스 기반 탐색
+            col_count = _diag.get("ColumnCount", 0)
+            idx_cols: list[dict] = []
+            for ci in range(col_count if isinstance(col_count, int) else 0):
+                entry: dict[str, Any] = {"index": ci}
+                for method in ("GetColumnCol", "GetColumnTitleByIndex", "GetColumnTooltipByIndex"):
+                    try:
+                        entry[method] = str(getattr(tree, method)(ci))
+                    except Exception as e:
+                        entry[f"{method}_err"] = str(e)
+                idx_cols.append(entry)
+            _diag["by_index"] = idx_cols
+
+            # 첫 노드 기준 아이템 타입 + 텍스트
             try:
                 first_key = str(node_keys.ElementAt(0))
             except Exception:
                 first_key = str(node_keys(0))
             type_map = {0: "text", 1: "button", 2: "image"}
+            item_diag: list[dict] = []
             for cn in col_names:
+                entry = {"col": cn}
                 try:
                     t = int(tree.GetItemType(first_key, cn))
-                    col_types[cn] = type_map.get(t, f"unknown({t})")
+                    entry["type"] = type_map.get(t, f"unknown({t})")
+                    entry["type_raw"] = t
+                except Exception as e:
+                    entry["type_err"] = str(e)
+                try:
+                    entry["text"] = str(tree.GetItemText(first_key, cn))
                 except Exception:
                     pass
+                item_diag.append(entry)
+            # 7번 컬럼 강제 시도
+            if "7" not in set(col_names):
+                entry = {"col": "7", "note": "forced_probe"}
+                try:
+                    t = int(tree.GetItemType(first_key, "7"))
+                    entry["type"] = type_map.get(t, f"unknown({t})")
+                    entry["type_raw"] = t
+                except Exception as e:
+                    entry["type_err"] = str(e)
+                try:
+                    entry["text"] = str(tree.GetItemText(first_key, "7"))
+                except Exception:
+                    pass
+                item_diag.append(entry)
+            _diag["items_first_node"] = item_diag
 
-            # 컬럼 정보 저장 (dispatcher에서 참조)
-            self._tree_columns = []
-            for cn in col_names:
-                info: dict[str, str] = {"name": cn}
-                if cn in col_headers and col_headers[cn]:
-                    info["header"] = col_headers[cn]
-                if cn in col_types:
-                    info["type"] = col_types[cn]
-                self._tree_columns.append(info)
+            # 컬럼 정보 저장
+            self._tree_columns = col_names  # 일단 이름만
+            self._tree_column_diag = _diag
 
             # 노드 데이터 수집
             nodes_by_key: dict[str, SapTreeNode] = {}
