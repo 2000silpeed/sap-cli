@@ -326,16 +326,12 @@ def _execute_command(
             if target is None:
                 raise ValueError(f"노드를 찾을 수 없습니다: {node_key}")
             nodes = target.children
-        result = {
+        return {
             "element_id": element_id,
             **({"parent_node_key": node_key} if node_key else {}),
             "node_count": sum(1 for _ in _flatten_tree_nodes(nodes)),
             "nodes": [n.model_dump(mode="json") for n in nodes],
         }
-        # 임시 디버그: GetParentNodeKey 반환값 확인
-        if hasattr(sap, "_tree_debug"):
-            result["_debug"] = sap._tree_debug
-        return result
     if command == "tree_select":
         sap = _get_sap()
         sap.tree_select_node(str(args["element_id"]), str(args["node_key"]))
