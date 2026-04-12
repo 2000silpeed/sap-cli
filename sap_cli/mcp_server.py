@@ -193,12 +193,17 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_tree_read",
-        "description": "SAP 화면의 트리 컨트롤 데이터를 읽습니다. Document Flow, BOM 구조 등에서 사용. node_key를 지정하면 해당 노드의 자식만 반환하여 토큰을 절약할 수 있습니다.",
+        "description": (
+            "SAP 화면의 트리 컨트롤 데이터를 읽습니다. "
+            "토큰 절약을 위해 depth=1로 얕게 조회한 뒤, child_count>0인 노드를 node_key로 드릴다운하세요. "
+            "닫힌 노드는 sap_tree_expand로 먼저 펼쳐야 자식이 보입니다."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "element_id": {"type": "string", "description": "트리 ID (sap_screen의 trees에서 확인)"},
-                "node_key": {"type": "string", "description": "특정 노드의 자식만 조회할 때 해당 노드 키 (생략 시 전체 트리)"},
+                "node_key": {"type": "string", "description": "특정 노드의 자식만 조회 (생략 시 전체 트리)"},
+                "depth": {"type": "integer", "description": "깊이 제한 (-1=무제한, 0=현재만, 1=자식까지). 큰 트리에서는 1 권장"},
             },
             "required": ["element_id"],
         },
