@@ -394,6 +394,51 @@ def transcript_plan_cmd(
 
 
 # -------------------------------------------------------------------
+# Recipe Commands
+# -------------------------------------------------------------------
+
+@app.command("recipe-save")
+def recipe_save(
+    recipe_id: str = typer.Argument(help="레시피 ID"),
+    description: str = typer.Argument(help="레시피 설명"),
+    steps_json: str = typer.Argument(help="단계 JSON 배열"),
+    keywords: Optional[str] = typer.Option(None, "--keywords", "-k", help="검색 키워드 (쉼표 구분)"),
+) -> None:
+    """AI 네비게이션 레시피 저장."""
+    import json as _json
+    params: dict[str, Any] = {
+        "recipe_id": recipe_id,
+        "description": description,
+        "steps": _json.loads(steps_json),
+    }
+    if keywords:
+        params["keywords"] = [k.strip() for k in keywords.split(",")]
+    _run_command("recipe_save", params)
+
+
+@app.command("recipe-search")
+def recipe_search(
+    query: str = typer.Argument(help="검색어"),
+) -> None:
+    """레시피 검색."""
+    _run_command("recipe_search", {"query": query})
+
+
+@app.command("recipe-list")
+def recipe_list() -> None:
+    """저장된 모든 레시피 목록."""
+    _run_command("recipe_list", {})
+
+
+@app.command("recipe-delete")
+def recipe_delete(
+    recipe_id: str = typer.Argument(help="삭제할 레시피 ID"),
+) -> None:
+    """레시피 삭제."""
+    _run_command("recipe_delete", {"recipe_id": recipe_id})
+
+
+# -------------------------------------------------------------------
 # Daemon Commands
 # -------------------------------------------------------------------
 

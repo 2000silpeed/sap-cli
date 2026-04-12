@@ -606,6 +606,74 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "description": "현재 실행 중인 프로세스의 상태를 조회합니다. 다음 스텝에 입력할 값(pending_inputs)과 지금까지 수집된 데이터(context)를 보여줍니다.",
         "inputSchema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "sap_recipe_save",
+        "description": "AI 네비게이션 레시피를 저장합니다. SPRO 등 트리 네비게이션에 성공한 후, 성공 경로를 레시피로 저장하면 다음에 같은 요청이 올 때 빠르게 실행할 수 있습니다. 반드시 성공한 경로만 저장하세요. 시행착오는 제외하고 최종 성공 단계만 포함.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "recipe_id": {"type": "string", "description": "레시피 ID (영문, 숫자, _, - 만 허용. 예: spro-pricing-condition)"},
+                "description": {"type": "string", "description": "레시피 설명 (예: SPRO > 판매 > 가격결정 > 조건테이블 설정)"},
+                "keywords": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "검색 키워드 (예: [\"가격결정\", \"pricing\", \"조건테이블\"])",
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "tool": {"type": "string", "description": "MCP 도구 이름 (예: sap_run, sap_tree_expand)"},
+                            "args": {"type": "object", "description": "도구 인자"},
+                            "hint": {"type": "string", "description": "이 단계 설명 (AI가 참고)"},
+                        },
+                        "required": ["tool"],
+                    },
+                    "description": "실행 단계 배열 (성공 경로만)",
+                },
+            },
+            "required": ["recipe_id", "description", "steps"],
+        },
+    },
+    {
+        "name": "sap_recipe_search",
+        "description": "저장된 레시피를 키워드로 검색합니다. SPRO 네비게이션 등 복잡한 작업을 시작하기 전에 먼저 이 도구로 기존 레시피가 있는지 확인하세요. 레시피가 있으면 그 단계를 따라 실행하면 됩니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "검색어 (한글/영문 모두 가능)"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "sap_recipe_list",
+        "description": "저장된 모든 레시피 목록을 조회합니다.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "sap_recipe_delete",
+        "description": "레시피를 삭제합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "recipe_id": {"type": "string", "description": "삭제할 레시피 ID"},
+            },
+            "required": ["recipe_id"],
+        },
+    },
+    {
+        "name": "sap_recipe_success",
+        "description": "레시피 실행 성공을 기록합니다. 레시피를 따라 성공적으로 네비게이션을 완료한 후 호출하세요. 성공 횟수가 높을수록 검색 결과에서 우선순위가 올라갑니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "recipe_id": {"type": "string", "description": "성공한 레시피 ID"},
+            },
+            "required": ["recipe_id"],
+        },
+    },
 ]
 
 TOOLS: list = []

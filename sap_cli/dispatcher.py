@@ -87,6 +87,11 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "ontology_rebuild":   CommandDef("sap_ontology_rebuild",   Permission.ADMIN),
     "capture":        CommandDef("sap_capture",           Permission.READ),
     "capture_list":   CommandDef("sap_capture_list",      Permission.READ),
+    "recipe_save":    CommandDef("sap_recipe_save",       Permission.WRITE),
+    "recipe_search":  CommandDef("sap_recipe_search",     Permission.READ),
+    "recipe_list":    CommandDef("sap_recipe_list",       Permission.READ),
+    "recipe_delete":  CommandDef("sap_recipe_delete",     Permission.ADMIN),
+    "recipe_success": CommandDef("sap_recipe_success",    Permission.WRITE),
 }
 
 COMMAND_TOOL_MAP: dict[str, str] = {cmd: d.tool_name for cmd, d in COMMAND_REGISTRY.items()}
@@ -448,6 +453,16 @@ def _execute_command(
         return _dispatch_capture(args)
     if command == "capture_list":
         return _dispatch_capture_list(args)
+    if command == "recipe_save":
+        return _dispatch_recipe_save(args)
+    if command == "recipe_search":
+        return _dispatch_recipe_search(args)
+    if command == "recipe_list":
+        return _dispatch_recipe_list()
+    if command == "recipe_delete":
+        return _dispatch_recipe_delete(args)
+    if command == "recipe_success":
+        return _dispatch_recipe_success(args)
     raise ValueError(f"미구현 명령: {command}")
 
 
@@ -1409,6 +1424,76 @@ def _dispatch_capture_list(args: dict[str, Any]) -> dict[str, Any]:
     tcode = args.get("tcode")
     shots = list_screenshots(tcode)
     return {"screenshots": shots, "count": len(shots)}
+
+
+def _get_recipe_store():
+    from .recipe import RecipeStore
+    return RecipeStore()
+
+
+def _dispatch_recipe_save(args: dict[str, Any]) -> dict[str, Any]:
+    from .recipe import Recipe, RecipeStep
+
+    store = _get_recipe_store()
+    recipe_id = str(args["recipe_id"])
+    description = str(args["description"])
+    keywords = args.get("keywords", [])
+    if isinstance(keywords, str):
+        keywords = [k.strip() for k in keywords.split(",")]
+    steps_raw = args.get("steps", [])
+    steps = [RecipeStep(**s) if isinstance(s, dict) else s for s in steps_raw]
+
+    existing = store.load(recipe_id)
+    if existing:
+        existing.description = description
+        existing.keywords = keywords
+        existing.steps = steps
+        store.save(existing)
+        return {"saved": recipe_id, "updated": True, "step_count": len(steps)}
+
+    recipe = Recipe(
+        id=recipe_id,
+        description=description,
+        keywords=keywords,
+        steps=steps,
+    )
+    store.save(recipe)
+    return {"saved": recipe_id, "updated": False, "step_count": len(steps)}
+
+
+def _dispatch_recipe_search(args: dict[str, Any]) -> dict[str, Any]:
+    store = _get_recipe_store()
+    query = str(args["query"])
+    results = store.search(query)
+    return {
+        "query": query,
+        "count": len(results),
+        "recipes": [r.model_dump(mode="json") for r in results],
+    }
+
+
+def _dispatch_recipe_list() -> dict[str, Any]:
+    store = _get_recipe_store()
+    recipes = store.list_all()
+    return {"count": len(recipes), "recipes": recipes}
+
+
+def _dispatch_recipe_delete(args: dict[str, Any]) -> dict[str, Any]:
+    store = _get_recipe_store()
+    recipe_id = str(args["recipe_id"])
+    deleted = store.delete(recipe_id)
+    return {"deleted": deleted, "recipe_id": recipe_id}
+
+
+def _dispatch_recipe_success(args: dict[str, Any]) -> dict[str, Any]:
+    store = _get_recipe_store()
+    recipe_id = str(args["recipe_id"])
+    store.increment_success(recipe_id)
+    recipe = store.load(recipe_id)
+    return {
+        "recipe_id": recipe_id,
+        "success_count": recipe.success_count if recipe else 0,
+    }
 
 
 def _evaluate_authorization(
