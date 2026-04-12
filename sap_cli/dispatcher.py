@@ -318,19 +318,24 @@ def _execute_command(
     if command == "tree":
         element_id = str(args["element_id"])
         node_key = str(args.get("node_key", "")).strip()
-        nodes = _get_sap().read_tree(element_id)
+        sap = _get_sap()
+        nodes = sap.read_tree(element_id)
         # node_key가 지정되면 해당 노드의 자식만 반환
         if node_key:
             target = _find_tree_node(nodes, node_key)
             if target is None:
                 raise ValueError(f"노드를 찾을 수 없습니다: {node_key}")
             nodes = target.children
-        return {
+        result = {
             "element_id": element_id,
             **({"parent_node_key": node_key} if node_key else {}),
             "node_count": sum(1 for _ in _flatten_tree_nodes(nodes)),
             "nodes": [n.model_dump(mode="json") for n in nodes],
         }
+        # 임시 디버그: GetParentNodeKey 반환값 확인
+        if hasattr(sap, "_tree_debug"):
+            result["_debug"] = sap._tree_debug
+        return result
     if command == "tree_select":
         sap = _get_sap()
         sap.tree_select_node(str(args["element_id"]), str(args["node_key"]))
