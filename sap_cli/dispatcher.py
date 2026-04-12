@@ -317,9 +317,17 @@ def _execute_command(
         return _get_sap().read_table(element_id).model_dump(mode="json")
     if command == "tree":
         element_id = str(args["element_id"])
+        node_key = str(args.get("node_key", "")).strip()
         nodes = _get_sap().read_tree(element_id)
+        # node_key가 지정되면 해당 노드의 자식만 반환
+        if node_key:
+            target = _find_tree_node(nodes, node_key)
+            if target is None:
+                raise ValueError(f"노드를 찾을 수 없습니다: {node_key}")
+            nodes = target.children
         return {
             "element_id": element_id,
+            **({"parent_node_key": node_key} if node_key else {}),
             "node_count": sum(1 for _ in _flatten_tree_nodes(nodes)),
             "nodes": [n.model_dump(mode="json") for n in nodes],
         }
@@ -1304,6 +1312,18 @@ def _flatten_tree_nodes(nodes: list) -> list:
         if n.children:
             result.extend(_flatten_tree_nodes(n.children))
     return result
+
+
+def _find_tree_node(nodes: list, key: str):
+    """트리에서 key에 해당하는 노드를 재귀 탐색."""
+    for n in nodes:
+        if n.key == key:
+            return n
+        if n.children:
+            found = _find_tree_node(n.children, key)
+            if found:
+                return found
+    return None
 
 
 def _dispatch_capture(args: dict[str, Any]) -> dict[str, Any]:
