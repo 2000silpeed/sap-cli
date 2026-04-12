@@ -1062,41 +1062,59 @@ class SapGuiWrapper:
                 )
                 nodes_by_key[key] = node
 
-            # --- 부모-자식 관계 구성 (모든 노드 수집 후 처리) ---
-            parent_map: dict[str, str] = {}  # child_key -> parent_key
-            _debug_parent: list[dict] = []  # 임시 디버그
-            for key, node in nodes_by_key.items():
-                parent_key = None
-                try:
-                    pk = tree.GetParentNodeKey(key)
-                    _debug_parent.append({"key": key, "pk_raw": repr(pk), "pk_type": type(pk).__name__})
-                    if pk is not None:
-                        pk_str = str(pk).strip()
-                        if pk_str and pk_str in nodes_by_key:
-                            parent_key = pk_str
-                except Exception as exc:
-                    _debug_parent.append({"key": key, "error": str(exc)})
-                if parent_key:
-                    parent_map[key] = parent_key
-                else:
-                    root_keys.append(key)
-            self._tree_debug = {
-                "parent_map_count": len(parent_map),
-                "root_count": len(root_keys),
-                "total_nodes": len(nodes_by_key),
-                "samples": _debug_parent[:15],
-            }
+            # --- 부모-자식 관계 구성 ---
+            # 전략 1: GetSubNodesCol (자식 직접 조회)
+            children_built = False
+            try:
+                has_children = set()
+                for key in nodes_by_key:
+                    try:
+                        sub = tree.GetSubNodesCol(key)
+                        if sub and sub.Count > 0:
+                            for ci in range(sub.Count):
+                                try:
+                                    ck = str(sub.ElementAt(ci))
+                                except Exception:
+                                    ck = str(sub(ci))
+                                if ck in nodes_by_key:
+                                    nodes_by_key[key].children.append(nodes_by_key[ck])
+                                    has_children.add(ck)
+                    except Exception:
+                        pass
+                # root = 누구의 자식도 아닌 노드
+                root_keys = [k for k in nodes_by_key if k not in has_children]
+                children_built = len(has_children) > 0
+            except Exception:
+                pass
 
-            # GetParentNodeKey로 관계가 구성되면 children에 연결
-            if parent_map:
-                for child_key, par_key in parent_map.items():
-                    nodes_by_key[par_key].children.append(nodes_by_key[child_key])
+            # 전략 2: GetParentNodeKey
+            if not children_built:
+                root_keys.clear()
+                parent_map: dict[str, str] = {}
+                for key in nodes_by_key:
+                    parent_key = None
+                    try:
+                        pk = tree.GetParentNodeKey(key)
+                        if pk is not None:
+                            pk_str = str(pk).strip()
+                            if pk_str and pk_str in nodes_by_key:
+                                parent_key = pk_str
+                    except Exception:
+                        pass
+                    if parent_key:
+                        parent_map[key] = parent_key
+                    else:
+                        root_keys.append(key)
+                if parent_map:
+                    for child_key, par_key in parent_map.items():
+                        nodes_by_key[par_key].children.append(nodes_by_key[child_key])
+                    children_built = True
 
-            # fallback: GetParentNodeKey가 전부 실패했으면 level로 계층 재구성
-            if len(root_keys) == len(nodes_by_key) and len(root_keys) > 1:
+            # 전략 3: level 기반 계층 재구성
+            if not children_built and len(nodes_by_key) > 1:
                 has_levels = any(n.level > 0 for n in nodes_by_key.values())
                 if has_levels:
-                    root_keys.clear()
+                    root_keys = []
                     ordered = list(nodes_by_key.values())
                     stack: list[SapTreeNode] = []
                     for nd in ordered:
