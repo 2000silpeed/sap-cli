@@ -1221,15 +1221,33 @@ class SapGuiWrapper:
             raise SapGuiError(f"트리 노드 접기 실패 [{element_id}, key={node_key}]: {e}") from e
 
     def tree_press_button(self, element_id: str, node_key: str, col_name: str) -> None:
-        """트리 내 버튼/아이콘 클릭 (SPRO 실행 아이콘 등)."""
+        """트리 내 버튼/아이콘/링크 클릭 (SPRO 실행 아이콘 등).
+
+        SAP 트리 타입에 따라 동작하는 메서드가 다르므로 순서대로 시도:
+        ClickLink → PressButton → ItemDoubleClick
+        """
+        tree = self._get_tree(element_id)
+        errors: list[str] = []
+        # 전략 1: ClickLink (SPRO IMG 등 Column Tree의 링크/아이콘)
         try:
-            tree = self._get_tree(element_id)
-            tree.PressButton(node_key, col_name)
-        except SapGuiError:
-            raise
+            tree.ClickLink(node_key, col_name)
+            return
         except Exception as e:
-            raise SapGuiError(
-                f"트리 버튼 클릭 실패 [{element_id}, key={node_key}, col={col_name}]: {e}"
+            errors.append(f"ClickLink: {e}")
+        # 전략 2: PressButton (일반 버튼)
+        try:
+            tree.PressButton(node_key, col_name)
+            return
+        except Exception as e:
+            errors.append(f"PressButton: {e}")
+        # 전략 3: ItemDoubleClick (아이템 영역 더블클릭)
+        try:
+            tree.ItemDoubleClick(node_key, col_name)
+            return
+        except Exception as e:
+            errors.append(f"ItemDoubleClick: {e}")
+        raise SapGuiError(
+            f"트리 액션 실패 [{element_id}, key={node_key}, col={col_name}]: {'; '.join(errors)}"
             ) from e
 
     def set_table_cell(self, element_id: str, row: int, col: str, value: str) -> None:
