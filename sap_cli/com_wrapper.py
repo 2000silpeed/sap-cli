@@ -997,6 +997,9 @@ class SapGuiWrapper:
             except Exception:
                 pass
 
+            # 컬럼 이름 저장 (dispatcher에서 참조)
+            self._tree_columns = col_names
+
             # 노드 데이터 수집
             nodes_by_key: dict[str, SapTreeNode] = {}
             root_keys: list[str] = []
