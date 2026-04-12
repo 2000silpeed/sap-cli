@@ -1064,20 +1064,25 @@ class SapGuiWrapper:
 
             # --- 부모-자식 관계 구성 (모든 노드 수집 후 처리) ---
             parent_map: dict[str, str] = {}  # child_key -> parent_key
+            _debug_parent: list[dict] = []  # 임시 디버그
             for key, node in nodes_by_key.items():
                 parent_key = None
                 try:
                     pk = tree.GetParentNodeKey(key)
+                    _debug_parent.append({"key": key, "pk_raw": repr(pk), "pk_type": type(pk).__name__})
                     if pk is not None:
                         pk_str = str(pk).strip()
                         if pk_str and pk_str in nodes_by_key:
                             parent_key = pk_str
-                except Exception:
-                    pass
+                except Exception as exc:
+                    _debug_parent.append({"key": key, "error": str(exc)})
                 if parent_key:
                     parent_map[key] = parent_key
                 else:
                     root_keys.append(key)
+            import logging as _lg
+            _lg.getLogger("sap_cli").warning("TREE_DEBUG parent_map=%d roots=%d total=%d details=%s",
+                                              len(parent_map), len(root_keys), len(nodes_by_key), _debug_parent[:10])
 
             # GetParentNodeKey로 관계가 구성되면 children에 연결
             if parent_map:
