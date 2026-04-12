@@ -248,9 +248,13 @@ def table(
 @app.command("tree")
 def read_tree(
     element_id: str = typer.Argument(help="트리 ID (sap screen의 trees에서 확인)"),
+    node_key: str = typer.Option("", "--node-key", "-n", help="특정 노드의 자식만 조회"),
 ) -> None:
     """트리 컨트롤 데이터 읽기 (Document Flow 등)."""
-    _run_command("tree", {"element_id": element_id}, allow_daemon=True)
+    params: dict[str, str] = {"element_id": element_id}
+    if node_key:
+        params["node_key"] = node_key
+    _run_command("tree", params, allow_daemon=True)
 
 
 @app.command("tree-select")
