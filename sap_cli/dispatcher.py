@@ -331,9 +331,11 @@ def _execute_command(
         if depth >= 0:
             nodes = [_truncate_tree_depth(n, depth) for n in nodes]
         columns = getattr(sap, "_tree_columns", [])
+        col_diag = getattr(sap, "_tree_column_diag", None)
         return {
             "element_id": element_id,
             **({"columns": columns} if columns else {}),
+            **({"_column_diag": col_diag} if col_diag else {}),
             **({"parent_node_key": node_key} if node_key else {}),
             **({"depth": depth} if depth >= 0 else {}),
             "node_count": sum(1 for _ in _flatten_tree_nodes(nodes)),
