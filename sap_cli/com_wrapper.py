@@ -997,81 +997,8 @@ class SapGuiWrapper:
             except Exception:
                 pass
 
-            # === 컬럼 진단: 모든 API raw 결과 수집 ===
-            _diag: dict[str, Any] = {"sub_type": sub_type}
-
-            # ColumnCount
-            try:
-                _diag["ColumnCount"] = int(tree.ColumnCount)
-            except Exception as e:
-                _diag["ColumnCount_err"] = str(e)
-
-            # GetColumnNames raw
-            try:
-                names = tree.GetColumnNames()
-                _diag["GetColumnNames"] = [str(names.ElementAt(i)) for i in range(names.Count)] if names else None
-            except Exception as e:
-                _diag["GetColumnNames_err"] = str(e)
-
-            # GetColumnHeaders raw
-            try:
-                hdrs = tree.GetColumnHeaders()
-                _diag["GetColumnHeaders"] = [str(hdrs.ElementAt(i)) for i in range(hdrs.Count)] if hdrs else None
-            except Exception as e:
-                _diag["GetColumnHeaders_err"] = str(e)
-
-            # 인덱스 기반 탐색
-            col_count = _diag.get("ColumnCount", 0)
-            idx_cols: list[dict] = []
-            for ci in range(col_count if isinstance(col_count, int) else 0):
-                entry: dict[str, Any] = {"index": ci}
-                for method in ("GetColumnCol", "GetColumnTitleByIndex", "GetColumnTooltipByIndex"):
-                    try:
-                        entry[method] = str(getattr(tree, method)(ci))
-                    except Exception as e:
-                        entry[f"{method}_err"] = str(e)
-                idx_cols.append(entry)
-            _diag["by_index"] = idx_cols
-
-            # 첫 노드 기준 아이템 타입 + 텍스트
-            try:
-                first_key = str(node_keys.ElementAt(0))
-            except Exception:
-                first_key = str(node_keys(0))
-            type_map = {0: "text", 1: "button", 2: "image"}
-            item_diag: list[dict] = []
-            for cn in col_names:
-                entry = {"col": cn}
-                try:
-                    t = int(tree.GetItemType(first_key, cn))
-                    entry["type"] = type_map.get(t, f"unknown({t})")
-                    entry["type_raw"] = t
-                except Exception as e:
-                    entry["type_err"] = str(e)
-                try:
-                    entry["text"] = str(tree.GetItemText(first_key, cn))
-                except Exception:
-                    pass
-                item_diag.append(entry)
-            # 7번 컬럼 강제 시도
-            if "7" not in set(col_names):
-                entry = {"col": "7", "note": "forced_probe"}
-                try:
-                    t = int(tree.GetItemType(first_key, "7"))
-                    entry["type"] = type_map.get(t, f"unknown({t})")
-                    entry["type_raw"] = t
-                except Exception as e:
-                    entry["type_err"] = str(e)
-                try:
-                    entry["text"] = str(tree.GetItemText(first_key, "7"))
-                except Exception:
-                    pass
-                item_diag.append(entry)
-            _diag["items_first_node"] = item_diag
-
-            # 컬럼 정보 저장
-            self._tree_columns = col_names  # 일단 이름만
-            self._tree_column_diag = _diag
+            # 컬럼 이름 저장 (dispatcher에서 참조)
+            self._tree_columns = col_names
 
             # 노드 데이터 수집
             nodes_by_key: dict[str, SapTreeNode] = {}
@@ -1262,35 +1189,88 @@ class SapGuiWrapper:
         except Exception as e:
             raise SapGuiError(f"트리 노드 접기 실패 [{element_id}, key={node_key}]: {e}") from e
 
+    def _try_tree_action(self, tree: Any, node_key: str, col: str) -> bool:
+        """단일 컬럼에 대해 ClickLink/PressButton/ItemDoubleClick 시도. 성공 시 True."""
+        for method in ("ClickLink", "PressButton", "ItemDoubleClick"):
+            try:
+                getattr(tree, method)(node_key, col)
+                return True
+            except Exception:
+                pass
+        return False
+
     def tree_press_button(self, element_id: str, node_key: str, col_name: str) -> None:
         """트리 내 버튼/아이콘/링크 클릭 (SPRO 실행 아이콘 등).
 
-        SAP 트리 타입에 따라 동작하는 메서드가 다르므로 순서대로 시도:
-        ClickLink → PressButton → ItemDoubleClick
+        col_name이 비어있으면 모든 컬럼을 자동 탐색하여
+        화면이 바뀌는 액션을 찾아 실행.
         """
         tree = self._get_tree(element_id)
-        errors: list[str] = []
-        # 전략 1: ClickLink (SPRO IMG 등 Column Tree의 링크/아이콘)
+
+        # 컬럼 지정된 경우: 해당 컬럼만 시도
+        if col_name:
+            if self._try_tree_action(tree, node_key, col_name):
+                return
+            raise SapGuiError(
+                f"트리 액션 실패 [{element_id}, key={node_key}, col={col_name}]")
+
+        # 컬럼 미지정: 모든 가능한 컬럼을 탐색
+        # 1) GetColumnNames에서 가져온 컬럼
+        cols_to_try: list[str] = []
         try:
-            tree.ClickLink(node_key, col_name)
-            return
-        except Exception as e:
-            errors.append(f"ClickLink: {e}")
-        # 전략 2: PressButton (일반 버튼)
+            names = tree.GetColumnNames()
+            if names:
+                for i in range(names.Count):
+                    try:
+                        cols_to_try.append(str(names.ElementAt(i)))
+                    except Exception:
+                        cols_to_try.append(str(names(i)))
+        except Exception:
+            pass
+        # 2) ColumnCount 기반으로 빠진 컬럼 보완 (0~ColumnCount 범위의 숫자)
         try:
-            tree.PressButton(node_key, col_name)
-            return
-        except Exception as e:
-            errors.append(f"PressButton: {e}")
-        # 전략 3: ItemDoubleClick (아이템 영역 더블클릭)
+            cc = int(tree.ColumnCount)
+            known = set(cols_to_try)
+            for i in range(cc):
+                try:
+                    cn = str(tree.GetColumnCol(i))
+                    if cn not in known:
+                        cols_to_try.append(cn)
+                        known.add(cn)
+                except Exception:
+                    # 인덱스로 직접 이름 생성해서 시도
+                    cn = str(i + 1)
+                    if cn not in known:
+                        cols_to_try.append(cn)
+                        known.add(cn)
+        except Exception:
+            pass
+
+        before_screen = None
         try:
-            tree.ItemDoubleClick(node_key, col_name)
-            return
-        except Exception as e:
-            errors.append(f"ItemDoubleClick: {e}")
+            before_screen = self.session.Info.ScreenNumber
+        except Exception:
+            pass
+
+        for col in cols_to_try:
+            if self._try_tree_action(tree, node_key, col):
+                # 화면 변경 확인
+                try:
+                    after_screen = self.session.Info.ScreenNumber
+                    if before_screen is not None and after_screen != before_screen:
+                        return  # 화면이 바뀜 = 성공
+                except Exception:
+                    pass
+                # 모달 팝업이 떴는지 확인
+                try:
+                    if self.has_modal():
+                        return
+                except Exception:
+                    pass
+
         raise SapGuiError(
-            f"트리 액션 실패 [{element_id}, key={node_key}, col={col_name}]: {'; '.join(errors)}"
-            ) from e
+            f"트리 액션 실패 [{element_id}, key={node_key}]: "
+            f"시도한 컬럼={cols_to_try}, 화면 변경 없음")
 
     def set_table_cell(self, element_id: str, row: int, col: str, value: str) -> None:
         """테이블 셀에 값 설정."""
