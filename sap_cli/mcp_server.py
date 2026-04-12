@@ -258,13 +258,18 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_tree_press",
-        "description": "트리 내 버튼/아이콘을 클릭합니다. SPRO 실행 아이콘 등에 사용. column 생략 시 모든 컬럼을 자동 탐색하여 액션 버튼을 찾습니다.",
+        "description": (
+            "트리 내 버튼/아이콘을 클릭합니다. "
+            "column 생략 시 자동 탐색하여 execute 컬럼을 찾고, "
+            "결과의 discovered_columns에 execute/doc 컬럼이 기록됩니다. "
+            "이후 호출에서는 discovered_columns의 값을 column에 직접 지정하세요."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "element_id": {"type": "string", "description": "트리 ID"},
                 "node_key": {"type": "string", "description": "노드 키"},
-                "column": {"type": "string", "description": "버튼 컬럼 이름 (생략 시 자동 탐색)", "default": ""},
+                "column": {"type": "string", "description": "실행할 컬럼 이름 (discovered_columns 참조, 생략 시 자동 탐색)", "default": ""},
             },
             "required": ["element_id", "node_key"],
         },
