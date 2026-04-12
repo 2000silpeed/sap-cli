@@ -1227,7 +1227,7 @@ class SapGuiWrapper:
                         cols_to_try.append(str(names(i)))
         except Exception:
             pass
-        # 2) ColumnCount 기반으로 빠진 컬럼 보완 (0~ColumnCount 범위의 숫자)
+        # 2) ColumnCount 기반 보완
         try:
             cc = int(tree.ColumnCount)
             known = set(cols_to_try)
@@ -1238,13 +1238,21 @@ class SapGuiWrapper:
                         cols_to_try.append(cn)
                         known.add(cn)
                 except Exception:
-                    # 인덱스로 직접 이름 생성해서 시도
                     cn = str(i + 1)
                     if cn not in known:
                         cols_to_try.append(cn)
                         known.add(cn)
         except Exception:
             pass
+        # 3) 숫자 컬럼의 빈 번호 채우기 (예: 1~8 중 7이 빠진 경우)
+        known = set(cols_to_try)
+        nums = [int(c) for c in known if c.isdigit()]
+        if nums:
+            for n in range(min(nums), max(nums) + 1):
+                s = str(n)
+                if s not in known:
+                    cols_to_try.append(s)
+                    known.add(s)
 
         before_screen = None
         try:
