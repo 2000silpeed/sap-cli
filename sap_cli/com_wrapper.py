@@ -1263,7 +1263,7 @@ class SapGuiWrapper:
             pass
 
         # documentation 키워드 (화면 제목에 포함되면 스킵)
-        _DOC_KEYWORDS = ("document", "dokumentation", "hilfe", "help", "info")
+        _DOC_KEYWORDS = ("document", "dokumentation", "hilfe", "help", "info", "hypertext")
 
         last_success_col = None
         for col in cols_to_try:
