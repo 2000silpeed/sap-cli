@@ -359,8 +359,17 @@ def _execute_command(
         return {"action": "collapse", "element_id": args["element_id"], "node_key": args["node_key"]}
     if command == "tree_press":
         sap = _get_sap()
-        sap.tree_press_button(str(args["element_id"]), str(args["node_key"]), str(args.get("column", "")))
-        payload = {"action": "press", "element_id": args["element_id"], "node_key": args["node_key"]}
+        used_col = sap.tree_press_button(
+            str(args["element_id"]), str(args["node_key"]), str(args.get("column", "")))
+        cached = sap._tree_action_cache.get(str(args["element_id"]), {})
+        payload: dict[str, Any] = {
+            "action": "press",
+            "element_id": args["element_id"],
+            "node_key": args["node_key"],
+            "used_column": used_col,
+        }
+        if cached:
+            payload["discovered_columns"] = cached
         return _with_post_action(payload, sap, command, ctx)
     if command == "command":
         sap = _get_sap()
