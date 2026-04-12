@@ -318,6 +318,7 @@ def _execute_command(
     if command == "tree":
         element_id = str(args["element_id"])
         node_key = str(args.get("node_key", "")).strip()
+        depth = int(args.get("depth", -1))
         sap = _get_sap()
         nodes = sap.read_tree(element_id)
         # node_key가 지정되면 해당 노드의 자식만 반환
@@ -326,11 +327,15 @@ def _execute_command(
             if target is None:
                 raise ValueError(f"노드를 찾을 수 없습니다: {node_key}")
             nodes = target.children
+        # depth 제한 적용
+        if depth >= 0:
+            nodes = [_truncate_tree_depth(n, depth) for n in nodes]
         return {
             "element_id": element_id,
             **({"parent_node_key": node_key} if node_key else {}),
+            **({"depth": depth} if depth >= 0 else {}),
             "node_count": sum(1 for _ in _flatten_tree_nodes(nodes)),
-            "nodes": [n.model_dump(mode="json") for n in nodes],
+            "nodes": [n.model_dump(mode="json", exclude_none=True) for n in nodes],
         }
     if command == "tree_select":
         sap = _get_sap()
@@ -1325,6 +1330,31 @@ def _find_tree_node(nodes: list, key: str):
             if found:
                 return found
     return None
+
+
+def _truncate_tree_depth(node, remaining_depth: int):
+    """트리 깊이를 제한. 잘린 노드에는 child_count를 표시."""
+    from sap_cli.ontology.schema import SapTreeNode
+    if remaining_depth <= 0:
+        # 이 노드까지만 표시, children은 잘라내고 child_count만 기록
+        return SapTreeNode(
+            key=node.key,
+            text=node.text,
+            level=node.level,
+            items=node.items,
+            children=[],
+            child_count=len(node.children) if node.children else None,
+        )
+    # 아직 깊이 여유 있음 — 자식도 재귀 처리
+    truncated_children = [_truncate_tree_depth(c, remaining_depth - 1) for c in node.children]
+    return SapTreeNode(
+        key=node.key,
+        text=node.text,
+        level=node.level,
+        items=node.items,
+        children=truncated_children,
+        child_count=None,
+    )
 
 
 def _dispatch_capture(args: dict[str, Any]) -> dict[str, Any]:
