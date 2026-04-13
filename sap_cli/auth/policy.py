@@ -83,6 +83,7 @@ TOOL_PERMISSION_MAP: dict[str, Permission] = {
     "sap_ontology_rebuild": Permission.ADMIN,
     "sap_recipe_save": Permission.WRITE,
     "sap_recipe_search": Permission.READ,
+    "sap_recipe_show": Permission.READ,
     "sap_recipe_list": Permission.READ,
     "sap_recipe_delete": Permission.ADMIN,
     "sap_recipe_success": Permission.WRITE,

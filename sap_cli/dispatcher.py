@@ -89,6 +89,7 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "capture_list":   CommandDef("sap_capture_list",      Permission.READ),
     "recipe_save":    CommandDef("sap_recipe_save",       Permission.WRITE),
     "recipe_search":  CommandDef("sap_recipe_search",     Permission.READ),
+    "recipe_show":    CommandDef("sap_recipe_show",       Permission.READ),
     "recipe_list":    CommandDef("sap_recipe_list",       Permission.READ),
     "recipe_delete":  CommandDef("sap_recipe_delete",     Permission.ADMIN),
     "recipe_success": CommandDef("sap_recipe_success",    Permission.WRITE),
@@ -461,6 +462,8 @@ def _execute_command(
         return _dispatch_recipe_save(args)
     if command == "recipe_search":
         return _dispatch_recipe_search(args)
+    if command == "recipe_show":
+        return _dispatch_recipe_show(args)
     if command == "recipe_list":
         return _dispatch_recipe_list()
     if command == "recipe_delete":
@@ -1523,11 +1526,41 @@ def _dispatch_recipe_search(args: dict[str, Any]) -> dict[str, Any]:
     store = _get_recipe_store()
     query = str(args["query"])
     results = store.search(query)
+
+    if len(results) == 1:
+        return {
+            "query": query,
+            "count": 1,
+            "exact_match": True,
+            "recipe": results[0].model_dump(mode="json"),
+        }
+
+    summaries = []
+    for r in results:
+        summaries.append({
+            "id": r.id,
+            "description": r.description,
+            "context": r.context,
+            "keywords": r.keywords,
+            "step_count": len(r.steps),
+            "success_count": r.success_count,
+        })
     return {
         "query": query,
         "count": len(results),
-        "recipes": [r.model_dump(mode="json") for r in results],
+        "exact_match": False,
+        "recipes": summaries,
+        "hint": "여러 레시피가 검색되었습니다. context를 비교하여 가장 적합한 레시피의 id를 선택한 후, sap_recipe_search에 해당 id를 정확히 입력하여 상세 steps를 조회하세요.",
     }
+
+
+def _dispatch_recipe_show(args: dict[str, Any]) -> dict[str, Any]:
+    store = _get_recipe_store()
+    recipe_id = str(args["recipe_id"])
+    recipe = store.load(recipe_id)
+    if recipe:
+        return recipe.model_dump(mode="json")
+    return {"error": True, "message": f"레시피 '{recipe_id}'를 찾을 수 없습니다."}
 
 
 def _dispatch_recipe_list() -> dict[str, Any]:

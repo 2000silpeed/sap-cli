@@ -662,13 +662,29 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_recipe_search",
-        "description": "저장된 레시피를 키워드로 검색합니다. SPRO 네비게이션 등 복잡한 작업을 시작하기 전에 먼저 이 도구로 기존 레시피가 있는지 확인하세요. 레시피가 있으면 그 단계를 따라 실행하고, 모든 단계를 성공적으로 완료한 후 반드시 sap_recipe_success를 호출하여 성공을 기록하세요.",
+        "description": (
+            "저장된 레시피를 키워드로 검색합니다. SPRO 네비게이션 등 복잡한 작업을 시작하기 전에 먼저 호출하세요. "
+            "결과가 1개면 steps가 바로 포함됩니다. 여러 개면 요약(context)만 반환되므로 "
+            "context를 비교하여 올바른 레시피를 선택한 후 sap_recipe_show로 상세 steps를 조회하세요. "
+            "모든 단계를 성공적으로 완료한 후 반드시 sap_recipe_success를 호출하여 성공을 기록하세요."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "검색어 (한글/영문 모두 가능)"},
             },
             "required": ["query"],
+        },
+    },
+    {
+        "name": "sap_recipe_show",
+        "description": "레시피 ID로 상세 정보(steps 포함)를 조회합니다. sap_recipe_search에서 여러 결과가 나왔을 때, context를 비교하여 선택한 후 이 도구로 실행할 steps를 가져오세요.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "recipe_id": {"type": "string", "description": "조회할 레시피 ID"},
+            },
+            "required": ["recipe_id"],
         },
     },
     {
