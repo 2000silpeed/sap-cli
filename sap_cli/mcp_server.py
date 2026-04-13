@@ -313,12 +313,17 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_ontology_query",
-        "description": "학습된 SAP 온톨로지를 조회합니다. 트랜잭션의 화면 구조, 필드, 가능한 액션, 연결된 AI 레시피 등 도메인 지식을 반환합니다. recipe_details에 해당 트랜잭션의 레시피 요약이 포함됩니다.",
+        "description": (
+            "학습된 SAP 온톨로지를 조회합니다. 화면 구조, 필드, 가능한 액션 경로 등 도메인 지식을 반환합니다. "
+            "SPRO 등 트리 네비게이션이 필요할 때 action_search로 저장된 경로를 먼저 검색하세요. "
+            "경로가 있으면 execution_plan이 반환되므로 그대로 실행하면 됩니다."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "tcode": {"type": "string", "description": "트랜잭션 코드"},
                 "field_search": {"type": "string", "description": "필드명/라벨 검색 (선택)"},
+                "action_search": {"type": "string", "description": "액션 경로 검색 (예: 'shipping point', '가격결정'). SPRO 등에서 저장된 네비게이션 경로를 찾습니다."},
                 "list_all": {"type": "boolean", "default": False, "description": "저장된 모든 온톨로지 목록"},
             },
         },

@@ -413,6 +413,25 @@ class OntologyLink(BaseModel):
     description: str = ""
 
 
+class ActionStep(BaseModel):
+    """액션 경로의 단일 실행 단계."""
+    tool: str
+    args: dict[str, Any] = Field(default_factory=dict)
+    hint: str = ""
+
+
+class ActionPath(BaseModel):
+    """트리 네비게이션 경로 — SPRO 등에서 특정 설정까지의 경로.
+
+    path 예시: "Enterprise Structure > Definition > Logistics > Shipping Point"
+    """
+    context: str = ""
+    keywords: list[str] = Field(default_factory=list)
+    steps: list[ActionStep] = Field(default_factory=list)
+    success_count: int = 0
+    updated_at: float = 0
+
+
 # ---------------------------------------------------------------------------
 # Transaction Ontology (트랜잭션 단위 온톨로지)
 # ---------------------------------------------------------------------------
@@ -446,8 +465,11 @@ class TransactionOntology(BaseModel):
     # 관련 트랜잭션 (네비게이션 관계)
     related_transactions: list[str] = Field(default_factory=list)
 
-    # AI 네비게이션 레시피 참조 (recipe_id 목록)
+    # AI 네비게이션 레시피 참조 (recipe_id 목록) — 외부 recipe.py 연동용
     recipes: list[str] = Field(default_factory=list)
+
+    # 경로 기반 액션 (SPRO 등 트리 네비게이션 경로를 온톨로지에 직접 저장)
+    action_paths: dict[str, "ActionPath"] = Field(default_factory=dict)
 
     def get_screen(self, screen_number: int) -> ScreenOntology | None:
         return self.screens.get(screen_number)
@@ -461,6 +483,24 @@ class TransactionOntology(BaseModel):
         for screen in self.screens.values():
             fields.extend(screen.fields)
         return fields
+
+    def find_action_path(self, query: str) -> list[tuple[str, "ActionPath"]]:
+        """키워드로 action_paths 검색. (path, ActionPath) 쌍 반환."""
+        query_lower = query.lower()
+        results = []
+        for path, ap in self.action_paths.items():
+            score = 0
+            if query_lower in path.lower():
+                score += 3
+            if query_lower in ap.context.lower():
+                score += 2
+            for kw in ap.keywords:
+                if query_lower in kw.lower():
+                    score += 3
+            if score > 0:
+                results.append((score, path, ap))
+        results.sort(key=lambda x: (-x[0], -x[2].success_count))
+        return [(p, a) for _, p, a in results]
 
 
 # ---------------------------------------------------------------------------

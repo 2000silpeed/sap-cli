@@ -771,10 +771,56 @@ def _dispatch_ontology_query(args: dict[str, Any]) -> dict[str, Any]:
             "actions": store.query_actions(str(tcode)),
         }
 
+    # action_search: 온톨로지 내 action_paths 검색
+    if action_search := args.get("action_search"):
+        ontology = store.load_transaction(str(tcode))
+        if not ontology:
+            return {"error": True, "message": f"'{tcode}' 온톨로지가 없습니다."}
+        matches = ontology.find_action_path(str(action_search))
+        if not matches:
+            return {
+                "transaction": tcode,
+                "action_search": action_search,
+                "count": 0,
+                "paths": [],
+                "hint": "일치하는 경로가 없습니다. sap_recipe_search로 외부 레시피를 검색하거나, 직접 트리를 탐색하세요.",
+            }
+        if len(matches) == 1:
+            path, ap = matches[0]
+            execution_plan = [
+                {"order": i + 1, "tool": s.tool, "args": s.args, **({"hint": s.hint} if s.hint else {})}
+                for i, s in enumerate(ap.steps)
+            ]
+            return {
+                "transaction": tcode,
+                "action_search": action_search,
+                "count": 1,
+                "exact_match": True,
+                "path": path,
+                "context": ap.context,
+                "execution_plan": execution_plan,
+                "instruction": (
+                    f"경로 '{path}'가 검색되었습니다. "
+                    "execution_plan의 단계를 순서대로 정확히 실행하세요. "
+                    "별도 탐색(sap_tree_read, sap_screen)하지 마세요. "
+                    "완료 후 sap_recipe_success를 호출하세요."
+                ),
+            }
+        return {
+            "transaction": tcode,
+            "action_search": action_search,
+            "count": len(matches),
+            "exact_match": False,
+            "paths": [
+                {"path": p, "context": a.context, "keywords": a.keywords, "success_count": a.success_count}
+                for p, a in matches
+            ],
+            "hint": "여러 경로가 검색되었습니다. context를 비교하여 적합한 경로를 선택한 후, action_search에 정확한 경로명을 입력하세요.",
+        }
+
     ontology = store.load_transaction(str(tcode))
     if ontology:
         result = ontology.model_dump(mode="json")
-        # 연결된 레시피 상세 정보도 포함
         if ontology.recipes:
             recipe_store = _get_recipe_store()
             recipe_details = []
@@ -788,6 +834,11 @@ def _dispatch_ontology_query(args: dict[str, Any]) -> dict[str, Any]:
                         "success_count": r.success_count,
                     })
             result["recipe_details"] = recipe_details
+        if ontology.action_paths:
+            result["available_actions"] = [
+                {"path": p, "context": a.context, "step_count": len(a.steps), "success_count": a.success_count}
+                for p, a in ontology.action_paths.items()
+            ]
         return result
     return {"error": True, "message": f"'{tcode}' 온톨로지가 없습니다."}
 
@@ -1453,8 +1504,17 @@ def _get_recipe_store():
     return RecipeStore()
 
 
-def _link_recipe_to_ontology(recipe_id: str, steps: list) -> list[str]:
-    """레시피의 steps에서 tcode를 추출하여 온톨로지에 연결."""
+def _link_recipe_to_ontology(
+    recipe_id: str,
+    steps: list,
+    description: str = "",
+    context: str = "",
+    keywords: list[str] | None = None,
+) -> list[str]:
+    """레시피의 steps에서 tcode를 추출하여 온톨로지에 연결 + action_paths에 저장."""
+    import time as _time
+    from .ontology.schema import ActionPath, ActionStep
+
     tcodes: set[str] = set()
     for step in steps:
         tool = step.tool if hasattr(step, "tool") else step.get("tool", "")
@@ -1474,7 +1534,23 @@ def _link_recipe_to_ontology(recipe_id: str, steps: list) -> list[str]:
             if ontology:
                 if recipe_id not in ontology.recipes:
                     ontology.recipes.append(recipe_id)
-                    ont_store.save_transaction(ontology)
+
+                action_steps = []
+                for s in steps:
+                    if isinstance(s, dict):
+                        action_steps.append(ActionStep(**s))
+                    else:
+                        action_steps.append(ActionStep(tool=s.tool, args=s.args, hint=s.hint))
+
+                path_key = description or recipe_id
+                ontology.action_paths[path_key] = ActionPath(
+                    context=context,
+                    keywords=keywords or [],
+                    steps=action_steps,
+                    success_count=0,
+                    updated_at=_time.time(),
+                )
+                ont_store.save_transaction(ontology)
                 linked.append(tcode)
     return linked
 
@@ -1499,7 +1575,9 @@ def _dispatch_recipe_save(args: dict[str, Any]) -> dict[str, Any]:
         existing.keywords = keywords
         existing.steps = steps
         store.save(existing)
-        linked_tcodes = _link_recipe_to_ontology(recipe_id, steps)
+        linked_tcodes = _link_recipe_to_ontology(
+            recipe_id, steps, description=description, context=context, keywords=keywords,
+        )
         return {"saved": recipe_id, "updated": True, "step_count": len(steps), "linked_tcodes": linked_tcodes}
 
     recipe = Recipe(
@@ -1511,8 +1589,9 @@ def _dispatch_recipe_save(args: dict[str, Any]) -> dict[str, Any]:
     )
     store.save(recipe)
 
-    # 온톨로지 자동 연결: steps에서 tcode 추출하여 TransactionOntology.recipes에 추가
-    linked_tcodes = _link_recipe_to_ontology(recipe_id, steps)
+    linked_tcodes = _link_recipe_to_ontology(
+        recipe_id, steps, description=description, context=context, keywords=keywords,
+    )
 
     return {
         "saved": recipe_id,
