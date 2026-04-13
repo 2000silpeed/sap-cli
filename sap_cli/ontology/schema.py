@@ -446,6 +446,9 @@ class TransactionOntology(BaseModel):
     # 관련 트랜잭션 (네비게이션 관계)
     related_transactions: list[str] = Field(default_factory=list)
 
+    # AI 네비게이션 레시피 참조 (recipe_id 목록)
+    recipes: list[str] = Field(default_factory=list)
+
     def get_screen(self, screen_number: int) -> ScreenOntology | None:
         return self.screens.get(screen_number)
 

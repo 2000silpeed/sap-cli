@@ -121,3 +121,22 @@ class RecipeStore:
         if recipe:
             recipe.success_count += 1
             self.save(recipe)
+
+    def find_by_tcode(self, tcode: str) -> list[Recipe]:
+        """특정 트랜잭션과 연관된 레시피 검색."""
+        results = []
+        tcode_upper = tcode.upper()
+        for path in self._dir.glob("*.json"):
+            try:
+                r = Recipe.model_validate_json(path.read_text(encoding="utf-8"))
+                linked = any(
+                    s.tool in ("sap_run", "sap_command") and
+                    tcode_upper in str(s.args.get("tcode", s.args.get("cmd", ""))).upper()
+                    for s in r.steps
+                )
+                if linked or tcode_upper in r.id.upper():
+                    results.append(r)
+            except Exception:
+                continue
+        results.sort(key=lambda r: -r.success_count)
+        return results

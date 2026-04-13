@@ -81,7 +81,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_run",
-        "description": "SAP 트랜잭션을 실행합니다. 예: MM03(자재조회), VA01(수주생성), ME21N(구매오더).",
+        "description": "SAP 트랜잭션을 실행합니다. 예: MM03(자재조회), VA01(수주생성), ME21N(구매오더). 복잡한 네비게이션(SPRO 등)을 시작하기 전에 sap_recipe_search로 기존 레시피를 먼저 확인하세요.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -201,7 +201,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "1) depth=0으로 루트 확인 → 2) sap_tree_expand로 펼치기 → "
             "3) node_key+depth=0으로 자식 조회 → 반복하여 목표 노드 도달 → "
             "4) sap_tree_press로 실행. "
-            "SPRO 트리 컬럼: column='2'=IMG Activity 실행, column='1'=Documentation 조회."
+            "SPRO 트리 컬럼: column='2'=IMG Activity 실행, column='1'=Documentation 조회. "
+            "[레시피 활용] SPRO 등 트리 네비게이션 전에 sap_recipe_search로 기존 레시피를 먼저 확인하세요. "
+            "레시피가 있으면 그 단계를 따라 실행. 없으면 직접 탐색 후 성공 경로를 sap_recipe_save로 저장."
         ),
         "inputSchema": {
             "type": "object",
@@ -305,7 +307,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_ontology_query",
-        "description": "학습된 SAP 온톨로지를 조회합니다. 트랜잭션의 화면 구조, 필드, 가능한 액션 등 도메인 지식을 반환합니다.",
+        "description": "학습된 SAP 온톨로지를 조회합니다. 트랜잭션의 화면 구조, 필드, 가능한 액션, 연결된 AI 레시피 등 도메인 지식을 반환합니다. recipe_details에 해당 트랜잭션의 레시피 요약이 포함됩니다.",
         "inputSchema": {
             "type": "object",
             "properties": {

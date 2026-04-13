@@ -766,7 +766,22 @@ def _dispatch_ontology_query(args: dict[str, Any]) -> dict[str, Any]:
 
     ontology = store.load_transaction(str(tcode))
     if ontology:
-        return ontology.model_dump(mode="json")
+        result = ontology.model_dump(mode="json")
+        # 연결된 레시피 상세 정보도 포함
+        if ontology.recipes:
+            recipe_store = _get_recipe_store()
+            recipe_details = []
+            for rid in ontology.recipes:
+                r = recipe_store.load(rid)
+                if r:
+                    recipe_details.append({
+                        "id": r.id,
+                        "description": r.description,
+                        "step_count": len(r.steps),
+                        "success_count": r.success_count,
+                    })
+            result["recipe_details"] = recipe_details
+        return result
     return {"error": True, "message": f"'{tcode}' 온톨로지가 없습니다."}
 
 
@@ -1431,6 +1446,32 @@ def _get_recipe_store():
     return RecipeStore()
 
 
+def _link_recipe_to_ontology(recipe_id: str, steps: list) -> list[str]:
+    """레시피의 steps에서 tcode를 추출하여 온톨로지에 연결."""
+    tcodes: set[str] = set()
+    for step in steps:
+        tool = step.tool if hasattr(step, "tool") else step.get("tool", "")
+        args = step.args if hasattr(step, "args") else step.get("args", {})
+        if tool == "sap_run" and "tcode" in args:
+            tcodes.add(str(args["tcode"]).upper())
+        elif tool == "sap_command" and "cmd" in args:
+            cmd = str(args["cmd"])
+            if cmd.startswith("/n") or cmd.startswith("/o"):
+                tcodes.add(cmd[2:].upper())
+
+    linked = []
+    if tcodes:
+        ont_store = _get_store()
+        for tcode in tcodes:
+            ontology = ont_store.load_transaction(tcode)
+            if ontology:
+                if recipe_id not in ontology.recipes:
+                    ontology.recipes.append(recipe_id)
+                    ont_store.save_transaction(ontology)
+                linked.append(tcode)
+    return linked
+
+
 def _dispatch_recipe_save(args: dict[str, Any]) -> dict[str, Any]:
     from .recipe import Recipe, RecipeStep
 
@@ -1449,7 +1490,8 @@ def _dispatch_recipe_save(args: dict[str, Any]) -> dict[str, Any]:
         existing.keywords = keywords
         existing.steps = steps
         store.save(existing)
-        return {"saved": recipe_id, "updated": True, "step_count": len(steps)}
+        linked_tcodes = _link_recipe_to_ontology(recipe_id, steps)
+        return {"saved": recipe_id, "updated": True, "step_count": len(steps), "linked_tcodes": linked_tcodes}
 
     recipe = Recipe(
         id=recipe_id,
@@ -1458,7 +1500,16 @@ def _dispatch_recipe_save(args: dict[str, Any]) -> dict[str, Any]:
         steps=steps,
     )
     store.save(recipe)
-    return {"saved": recipe_id, "updated": False, "step_count": len(steps)}
+
+    # 온톨로지 자동 연결: steps에서 tcode 추출하여 TransactionOntology.recipes에 추가
+    linked_tcodes = _link_recipe_to_ontology(recipe_id, steps)
+
+    return {
+        "saved": recipe_id,
+        "updated": False,
+        "step_count": len(steps),
+        "linked_tcodes": linked_tcodes,
+    }
 
 
 def _dispatch_recipe_search(args: dict[str, Any]) -> dict[str, Any]:
