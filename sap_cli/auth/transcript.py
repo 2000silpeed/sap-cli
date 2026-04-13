@@ -19,10 +19,12 @@ class TranscriptLogger:
     """AI 실행 추적용 JSONL transcript."""
 
     def __init__(self, config: TranscriptConfig | None = None) -> None:
-        self._enabled = config.enabled if config is not None else False
-        self._log_dir = Path(config.log_dir).expanduser() if config is not None else Path(".")
-        self._include_reads = config.include_reads if config is not None else False
-        self._include_screen_summary = config.include_screen_summary if config is not None else False
+        if config is None:
+            config = TranscriptConfig()
+        self._enabled = config.enabled
+        self._log_dir = Path(config.log_dir).expanduser()
+        self._include_reads = config.include_reads
+        self._include_screen_summary = config.include_screen_summary
         if self._enabled:
             self._log_dir.mkdir(parents=True, exist_ok=True)
 
