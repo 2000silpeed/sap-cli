@@ -662,7 +662,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_recipe_search",
-        "description": "저장된 레시피를 키워드로 검색합니다. SPRO 네비게이션 등 복잡한 작업을 시작하기 전에 먼저 이 도구로 기존 레시피가 있는지 확인하세요. 레시피가 있으면 그 단계를 따라 실행하면 됩니다.",
+        "description": "저장된 레시피를 키워드로 검색합니다. SPRO 네비게이션 등 복잡한 작업을 시작하기 전에 먼저 이 도구로 기존 레시피가 있는지 확인하세요. 레시피가 있으면 그 단계를 따라 실행하고, 모든 단계를 성공적으로 완료한 후 반드시 sap_recipe_success를 호출하여 성공을 기록하세요.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -689,7 +689,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_recipe_success",
-        "description": "레시피 실행 성공을 기록합니다. 레시피를 따라 성공적으로 네비게이션을 완료한 후 호출하세요. 성공 횟수가 높을수록 검색 결과에서 우선순위가 올라갑니다.",
+        "description": "[필수] 레시피의 모든 단계를 성공적으로 완료한 후 반드시 호출하세요. sap_recipe_search로 레시피를 찾아 실행했다면, 완료 후 이 도구를 호출해야 성공 카운트가 올라가고 다음 검색에서 우선순위가 높아집니다. 호출하지 않으면 성공이 기록되지 않습니다.",
         "inputSchema": {
             "type": "object",
             "properties": {
