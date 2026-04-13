@@ -27,6 +27,7 @@ class RecipeStep(BaseModel):
 class Recipe(BaseModel):
     id: str
     description: str
+    context: str = ""
     keywords: list[str] = Field(default_factory=list)
     steps: list[RecipeStep] = Field(default_factory=list)
     created_at: float = Field(default_factory=time.time)
@@ -79,6 +80,7 @@ class RecipeStore:
                 results.append({
                     "id": r.id,
                     "description": r.description,
+                    "context": r.context,
                     "keywords": r.keywords,
                     "step_count": len(r.steps),
                     "success_count": r.success_count,
@@ -100,6 +102,7 @@ class RecipeStore:
 
             score = 0
             desc_lower = r.description.lower()
+            ctx_lower = r.context.lower()
             kw_lower = [k.lower() for k in r.keywords]
 
             for word in query_words:
@@ -107,6 +110,8 @@ class RecipeStore:
                     score += 3
                 if word in desc_lower:
                     score += 1
+                if word in ctx_lower:
+                    score += 2
                 if word in r.id.lower():
                     score += 2
 

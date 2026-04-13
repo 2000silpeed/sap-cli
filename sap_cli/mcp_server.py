@@ -610,12 +610,28 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_recipe_save",
-        "description": "AI 네비게이션 레시피를 저장합니다. SPRO 등 트리 네비게이션에 성공한 후, 성공 경로를 레시피로 저장하면 다음에 같은 요청이 올 때 빠르게 실행할 수 있습니다. 반드시 성공한 경로만 저장하세요. 시행착오는 제외하고 최종 성공 단계만 포함.",
+        "description": (
+            "AI 네비게이션 레시피를 저장합니다. SPRO 등 트리 네비게이션에 성공한 후, 성공 경로를 레시피로 저장하면 다음에 같은 요청이 올 때 빠르게 실행할 수 있습니다. "
+            "반드시 성공한 경로만 저장하세요. 시행착오는 제외하고 최종 성공 단계만 포함. "
+            "[중요] context 필드에 이 레시피가 정확히 무엇을 하는지 상세히 기록하세요. "
+            "같은 영역(예: Shipping Point)에도 여러 레시피가 있을 수 있으므로 구체적 목적, "
+            "전제조건, 결과 화면 등을 포함해야 나중에 올바른 레시피를 찾을 수 있습니다."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "recipe_id": {"type": "string", "description": "레시피 ID (영문, 숫자, _, - 만 허용. 예: spro-pricing-condition)"},
-                "description": {"type": "string", "description": "레시피 설명 (예: SPRO > 판매 > 가격결정 > 조건테이블 설정)"},
+                "recipe_id": {"type": "string", "description": "레시피 ID (영문, 숫자, _, - 만 허용. 예: spro-shipping-point-create)"},
+                "description": {"type": "string", "description": "레시피 짧은 설명 (예: SPRO > 물류 > Shipping Point 신규 생성)"},
+                "context": {
+                    "type": "string",
+                    "description": (
+                        "레시피의 상세 맥락. 이 레시피가 정확히 무엇을 하는지, 어떤 상황에서 사용하는지, "
+                        "전제조건은 무엇인지, 완료 후 어떤 화면/결과가 나오는지 자세히 기록. "
+                        "예: 'Shipping Point를 새로 생성하는 경로. 물류실행 > 배송 > 기본설정 > Shipping Point 정의에서 "
+                        "신규 엔트리를 추가한다. 완료 후 Shipping Point 코드가 생성된다. "
+                        "플랜트 할당은 별도 레시피(spro-shipping-point-plant-assign) 참조.'"
+                    ),
+                },
                 "keywords": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -635,7 +651,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "description": "실행 단계 배열 (성공 경로만)",
                 },
             },
-            "required": ["recipe_id", "description", "steps"],
+            "required": ["recipe_id", "description", "context", "steps"],
         },
     },
     {

@@ -1478,6 +1478,7 @@ def _dispatch_recipe_save(args: dict[str, Any]) -> dict[str, Any]:
     store = _get_recipe_store()
     recipe_id = str(args["recipe_id"])
     description = str(args["description"])
+    context = str(args.get("context", ""))
     keywords = args.get("keywords", [])
     if isinstance(keywords, str):
         keywords = [k.strip() for k in keywords.split(",")]
@@ -1487,6 +1488,7 @@ def _dispatch_recipe_save(args: dict[str, Any]) -> dict[str, Any]:
     existing = store.load(recipe_id)
     if existing:
         existing.description = description
+        existing.context = context
         existing.keywords = keywords
         existing.steps = steps
         store.save(existing)
@@ -1496,6 +1498,7 @@ def _dispatch_recipe_save(args: dict[str, Any]) -> dict[str, Any]:
     recipe = Recipe(
         id=recipe_id,
         description=description,
+        context=context,
         keywords=keywords,
         steps=steps,
     )
