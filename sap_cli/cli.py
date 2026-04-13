@@ -709,6 +709,69 @@ def process_path(
     )
 
 
+@app.command("process-list")
+def process_list_cmd() -> None:
+    """등록된 업무 프로세스 목록 조회."""
+    _run_command("process_list", {})
+
+
+@app.command("process-show")
+def process_show_cmd(
+    process_id: str = typer.Argument(help="프로세스 ID"),
+) -> None:
+    """업무 프로세스 상세 조회."""
+    _run_command("process_show", {"process_id": process_id})
+
+
+@app.command("process-create")
+def process_create_cmd(
+    process_id: str = typer.Argument(help="프로세스 ID"),
+    name: str = typer.Option(..., "--name", "-n", help="프로세스 이름"),
+    definition_json: str = typer.Option(..., "--definition", "-d", help="프로세스 정의 JSON"),
+) -> None:
+    """새 업무 프로세스 등록."""
+    import json as _json
+    definition = _json.loads(definition_json)
+    definition["id"] = process_id
+    definition["name"] = name
+    _run_command("process_create", {"definition": definition})
+
+
+@app.command("process-delete")
+def process_delete_cmd(
+    process_id: str = typer.Argument(help="삭제할 프로세스 ID"),
+) -> None:
+    """업무 프로세스 삭제."""
+    _run_command("process_delete", {"process_id": process_id})
+
+
+@app.command("process-start")
+def process_start_cmd(
+    process_id: str = typer.Argument(help="실행할 프로세스 ID"),
+) -> None:
+    """업무 프로세스 실행 시작."""
+    _run_command("process_start", {"process_id": process_id})
+
+
+@app.command("process-step")
+def process_step_cmd(
+    step_number: int = typer.Argument(help="스텝 번호 (0-based)"),
+    outputs_json: Optional[str] = typer.Option(None, "--outputs", "-o", help="스텝 출력값 JSON"),
+) -> None:
+    """프로세스 스텝 실행 결과 보고."""
+    import json as _json
+    params: dict[str, Any] = {"step_number": step_number}
+    if outputs_json:
+        params["outputs"] = _json.loads(outputs_json)
+    _run_command("process_step", params)
+
+
+@app.command("process-status")
+def process_status_cmd() -> None:
+    """현재 실행 중인 프로세스 상태 조회."""
+    _run_command("process_status", {})
+
+
 @app.command("captures")
 def list_captures(
     tcode: Optional[str] = typer.Argument(None, help="트랜잭션 코드로 필터"),
