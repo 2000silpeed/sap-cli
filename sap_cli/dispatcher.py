@@ -319,7 +319,11 @@ def _execute_command(
         return _get_sap().get_status().model_dump(mode="json")
     if command == "table":
         element_id = str(args["element_id"])
-        return _get_sap().read_table(element_id).model_dump(mode="json")
+        max_rows = int(args.get("max_rows", 50))
+        col_filter = args.get("columns")
+        if isinstance(col_filter, str):
+            col_filter = [c.strip() for c in col_filter.split(",")]
+        return _get_sap().read_table(element_id, max_rows=max_rows, columns=col_filter).model_dump(mode="json")
     if command == "tree":
         element_id = str(args["element_id"])
         node_key = str(args.get("node_key", "")).strip()

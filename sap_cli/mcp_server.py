@@ -182,11 +182,17 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_table_read",
-        "description": "SAP 화면의 테이블/그리드 데이터를 JSON으로 읽습니다. GuiTableControl, GuiGridView, GuiShell(ALV Grid) 모두 지원. ALV는 스크롤 자동 처리(최대 500행).",
+        "description": "SAP 화면의 테이블/그리드 데이터를 JSON으로 읽습니다. GuiTableControl, GuiGridView, GuiShell(ALV Grid) 모두 지원. ALV는 스크롤 자동 처리. 기본 50행만 읽으며 max_rows로 조정 가능(최대 500). columns로 특정 컬럼만 읽으면 속도가 크게 향상됩니다.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "element_id": {"type": "string", "description": "테이블/그리드 ID (sap_screen의 tables에서 확인)"},
+                "max_rows": {"type": "integer", "description": "최대 읽을 행 수 (기본 50, 최대 500)", "default": 50},
+                "columns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "읽을 컬럼 이름 목록 (생략하면 전체 컬럼). 필요한 컬럼만 지정하면 속도 향상.",
+                },
             },
             "required": ["element_id"],
         },

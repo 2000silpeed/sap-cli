@@ -768,18 +768,28 @@ class SapGuiWrapper:
     # Table Operations
     # -------------------------------------------------------------------
 
-    def read_table(self, element_id: str) -> SapTable:
-        """테이블 데이터 읽기. GuiGridView, GuiTableControl, GuiShell(ALV) 지원."""
+    def read_table(
+        self,
+        element_id: str,
+        max_rows: int = 50,
+        columns: list[str] | None = None,
+    ) -> SapTable:
+        """테이블 데이터 읽기. GuiGridView, GuiTableControl, GuiShell(ALV) 지원.
+
+        max_rows: 최대 읽을 행 수 (기본 50, 최대 500)
+        columns: 읽을 컬럼 이름 목록 (None이면 전체)
+        """
+        max_rows = min(max(max_rows, 1), 500)
         try:
             table = self.session.FindById(element_id)
             table_type = str(table.Type)
 
             if table_type == "GuiGridView":
-                return self._read_grid_view(element_id, table)
+                return self._read_grid_view(element_id, table, max_rows, columns)
             elif table_type == "GuiShell":
                 sub_type = self._safe_attr(table, "SubType", "")
                 if sub_type == "GridView":
-                    return self._read_alv_grid(element_id, table)
+                    return self._read_alv_grid(element_id, table, max_rows, columns)
                 raise SapGuiError(
                     f"지원하지 않는 Shell SubType [{element_id}]: {sub_type}")
             else:
@@ -789,7 +799,10 @@ class SapGuiWrapper:
         except Exception as e:
             raise SapGuiError(f"테이블 읽기 실패 [{element_id}]: {e}") from e
 
-    def _read_grid_view(self, element_id: str, grid: Any) -> SapTable:
+    def _read_grid_view(
+        self, element_id: str, grid: Any,
+        max_rows: int = 50, filter_columns: list[str] | None = None,
+    ) -> SapTable:
         row_count = grid.RowCount
         col_count = grid.ColumnCount
         columns = []
@@ -801,10 +814,15 @@ class SapGuiWrapper:
                 position=c,
             ))
 
+        read_cols = columns
+        if filter_columns:
+            fc_set = set(filter_columns)
+            read_cols = [c for c in columns if c.name in fc_set]
+
         rows = []
-        for r in range(min(row_count, 100)):
+        for r in range(min(row_count, max_rows)):
             row_data = {}
-            for col in columns:
+            for col in read_cols:
                 try:
                     row_data[col.name] = grid.GetCellValue(r, col.name)
                 except Exception:
@@ -821,7 +839,10 @@ class SapGuiWrapper:
             rows=rows,
         )
 
-    def _read_alv_grid(self, element_id: str, grid: Any) -> SapTable:
+    def _read_alv_grid(
+        self, element_id: str, grid: Any,
+        max_rows: int = 50, filter_columns: list[str] | None = None,
+    ) -> SapTable:
         """GuiShell(SubType=GridView) ALV Grid 읽기. 스크롤 처리 포함."""
         row_count = int(grid.RowCount)
         col_count = int(grid.ColumnCount)
@@ -856,8 +877,14 @@ class SapGuiWrapper:
         except Exception:
             pass
 
-        # 행 데이터 수집 (스크롤 처리 — 최대 500행)
-        max_rows = min(row_count, 500)
+        # 컬럼 필터링
+        read_cols = columns
+        if filter_columns:
+            fc_set = set(filter_columns)
+            read_cols = [c for c in columns if c.name in fc_set]
+
+        # 행 데이터 수집 (스크롤 처리)
+        max_rows = min(row_count, max_rows)
         rows: list[dict[str, str]] = []
         if visible_rows == 0:
             return SapTable(
@@ -878,7 +905,7 @@ class SapGuiWrapper:
             chunk_size = min(visible_rows, max_rows - read_count)
             for r in range(read_count, read_count + chunk_size):
                 row_data: dict[str, str] = {}
-                for col in columns:
+                for col in read_cols:
                     try:
                         row_data[col.name] = str(grid.GetCellValue(r, col.name))
                     except Exception:

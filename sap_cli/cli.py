@@ -240,9 +240,14 @@ def status() -> None:
 @app.command()
 def table(
     element_id: str = typer.Argument(help="테이블/그리드 ID"),
+    max_rows: int = typer.Option(50, "--max-rows", "-r", help="최대 읽을 행 수 (기본 50, 최대 500)"),
+    columns: Optional[str] = typer.Option(None, "--columns", "-c", help="읽을 컬럼 (쉼표 구분, 예: MATNR,MAKTX)"),
 ) -> None:
     """테이블 데이터 읽기."""
-    _run_command("table", {"element_id": element_id}, allow_daemon=True)
+    params: dict[str, Any] = {"element_id": element_id, "max_rows": max_rows}
+    if columns:
+        params["columns"] = columns
+    _run_command("table", params, allow_daemon=True)
 
 
 @app.command("tree")
