@@ -65,12 +65,22 @@ class TranscriptLogger:
         if not self._enabled:
             return
 
+        sap_user = ""
+        sap_system = ""
+        if before and isinstance(before, dict):
+            session = before.get("session", {})
+            if isinstance(session, dict):
+                sap_user = session.get("user", "")
+                sap_system = session.get("system_name", "")
+
         entry = {
             "ts": datetime.now(timezone.utc).isoformat(),
             "source": source,
+            "agent": agent,
+            "sap_user": sap_user,
+            "sap_system": sap_system,
             "command": command,
             "tool": tool_name,
-            "agent": agent,
             "permission": permission,
             "resource": resource,
             "allowed": allowed,
