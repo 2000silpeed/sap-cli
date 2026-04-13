@@ -1528,11 +1528,34 @@ def _dispatch_recipe_search(args: dict[str, Any]) -> dict[str, Any]:
     results = store.search(query)
 
     if len(results) == 1:
+        r = results[0]
+        execution_plan = []
+        for i, step in enumerate(r.steps):
+            plan_step = {
+                "order": i + 1,
+                "tool": step.tool,
+                "args": step.args,
+            }
+            if step.hint:
+                plan_step["hint"] = step.hint
+            execution_plan.append(plan_step)
+
         return {
             "query": query,
             "count": 1,
             "exact_match": True,
-            "recipe": results[0].model_dump(mode="json"),
+            "recipe_id": r.id,
+            "description": r.description,
+            "context": r.context,
+            "success_count": r.success_count,
+            "execution_plan": execution_plan,
+            "instruction": (
+                f"레시피 '{r.id}'가 검색되었습니다. "
+                "아래 execution_plan의 단계를 순서대로 정확히 실행하세요. "
+                "sap_tree_read, sap_screen 등으로 별도 탐색하지 마세요. "
+                "레시피의 tool과 args를 그대로 호출하면 됩니다. "
+                "모든 단계 완료 후 sap_recipe_success를 호출하세요."
+            ),
         }
 
     summaries = []
@@ -1557,10 +1580,35 @@ def _dispatch_recipe_search(args: dict[str, Any]) -> dict[str, Any]:
 def _dispatch_recipe_show(args: dict[str, Any]) -> dict[str, Any]:
     store = _get_recipe_store()
     recipe_id = str(args["recipe_id"])
-    recipe = store.load(recipe_id)
-    if recipe:
-        return recipe.model_dump(mode="json")
-    return {"error": True, "message": f"레시피 '{recipe_id}'를 찾을 수 없습니다."}
+    r = store.load(recipe_id)
+    if not r:
+        return {"error": True, "message": f"레시피 '{recipe_id}'를 찾을 수 없습니다."}
+
+    execution_plan = []
+    for i, step in enumerate(r.steps):
+        plan_step = {
+            "order": i + 1,
+            "tool": step.tool,
+            "args": step.args,
+        }
+        if step.hint:
+            plan_step["hint"] = step.hint
+        execution_plan.append(plan_step)
+
+    return {
+        "recipe_id": r.id,
+        "description": r.description,
+        "context": r.context,
+        "success_count": r.success_count,
+        "execution_plan": execution_plan,
+        "instruction": (
+            f"레시피 '{r.id}'의 상세 실행 계획입니다. "
+            "execution_plan의 단계를 순서대로 정확히 실행하세요. "
+            "sap_tree_read, sap_screen 등으로 별도 탐색하지 마세요. "
+            "레시피의 tool과 args를 그대로 호출하면 됩니다. "
+            "모든 단계 완료 후 sap_recipe_success를 호출하세요."
+        ),
+    }
 
 
 def _dispatch_recipe_list() -> dict[str, Any]:
