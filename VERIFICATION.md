@@ -1145,3 +1145,494 @@ sap macro-show MACRO_ID
 비고:
 - [특이사항]
 ```
+
+---
+
+## 시나리오 11: 트리 컨트롤 (SPRO 네비게이션)
+
+### 목표
+
+SPRO 등 트리 기반 화면에서 노드 읽기, 펼치기, 더블클릭, 버튼 클릭이 정상 작동하는지 확인.
+
+### 사전 조건
+
+- SAP 연결 완료 (`sap connect` 성공)
+- SPRO 실행 가능한 권한
+
+### 실행 단계
+
+```powershell
+# Step 1: SPRO 진입
+sap run SPRO
+
+# → 기대: SPRO 초기 화면 (SAP Reference IMG)
+sap status
+# → 기대: 에러 없음
+```
+
+```powershell
+# Step 2: 화면 구조 확인 — trees 배열에서 트리 ID 확인
+sap screen
+# → 기대: trees 배열에 트리 ID가 포함됨
+# → 메모: 트리 ID를 복사해둘 것 (예: "wnd[0]/shellcont/shell")
+```
+
+```powershell
+# Step 3: 트리 노드 읽기 (얕은 조회)
+sap tree "<트리ID>" --depth 0
+# → 기대: 루트 노드 목록이 출력됨
+# → 확인: 각 노드에 key, text, level이 있는지
+# → 메모: 루트 노드의 key를 복사 (예: "00001")
+```
+
+```powershell
+# Step 4: 루트 노드 펼치기
+sap tree-expand "<트리ID>" "<루트key>"
+# → 기대: 에러 없이 완료
+
+# Step 5: 펼친 후 자식 노드 확인
+sap tree "<트리ID>" --node-key "<루트key>" --depth 1
+# → 기대: 하위 노드 목록이 나옴 (text가 비어있지 않은지 확인)
+# → 메모: 자식 노드 중 하나의 key를 복사
+```
+
+```powershell
+# Step 6: 한 단계 더 펼치기
+sap tree-expand "<트리ID>" "<자식key>"
+sap tree "<트리ID>" --node-key "<자식key>" --depth 1
+# → 기대: 더 깊은 하위 노드가 나옴
+```
+
+```powershell
+# Step 7: 노드 선택
+sap tree-select "<트리ID>" "<자식key>"
+# → 기대: 에러 없이 완료
+
+# Step 8: 노드 더블클릭 (IMG Activity 진입)
+sap tree-doubleclick "<트리ID>" "<리프노드key>"
+# → 기대: 새 화면으로 전환되거나 설정 화면이 열림
+sap screen --fields-only
+# → 기대: 설정 화면의 필드가 표시됨
+```
+
+```powershell
+# Step 9: 뒤로 가기
+sap vkey 3
+# → 기대: SPRO 트리 화면으로 복귀
+```
+
+```powershell
+# Step 10: 트리 버튼 클릭 (SPRO 실행 아이콘)
+# SPRO 트리 컬럼: '2'=IMG Activity 실행, '1'=Documentation
+sap tree-press "<트리ID>" "<리프노드key>" "2"
+# → 기대: IMG Activity가 실행됨 (더블클릭과 동일한 효과)
+sap vkey 3
+```
+
+```powershell
+# Step 11: 노드 접기
+sap tree-collapse "<트리ID>" "<루트key>"
+sap tree "<트리ID>" --depth 0
+# → 기대: 다시 루트 노드만 표시됨
+```
+
+### 검증 포인트
+
+- [ ] 트리 ID가 sap screen에서 정상 확인됨
+- [ ] 트리 노드에 text가 정상 출력됨 (비어있지 않음)
+- [ ] tree-expand로 하위 노드가 펼쳐짐
+- [ ] tree-doubleclick으로 화면 전환됨
+- [ ] tree-press로 IMG Activity 실행됨
+- [ ] tree-collapse로 접기 정상
+- [ ] --depth, --node-key 옵션이 정상 작동
+
+### 실패 시 확인사항
+
+- 트리 text가 전부 비어있으면: Column Tree 컬럼 수집 문제 → `sap tree` 출력에서 items 확인
+- tree-press에서 에러: 컬럼 이름이 '2'가 아닐 수 있음 → `sap tree` 출력의 items 키 확인
+- 트리 ID를 못 찾음: `sap screen` 출력에서 trees 배열 확인, 없으면 shells 배열 확인
+
+---
+
+## 시나리오 12: AI 네비게이션 레시피 — 저장/검색/재활용
+
+### 목표
+
+레시피 저장 → 검색 → 다른 세션에서 재활용까지의 전체 사이클 검증.
+
+### 사전 조건
+
+- SAP 연결 완료
+- 시나리오 11 (SPRO 트리) 완료 — 성공한 경로를 알고 있어야 함
+
+### 실행 단계
+
+```powershell
+# Step 1: 레시피 목록 확인 (처음이면 빈 목록)
+sap recipe-list
+# → 기대: {"count": 0, "recipes": []}
+```
+
+```powershell
+# Step 2: 시나리오 11에서 성공한 SPRO 경로를 레시피로 저장
+# 예시: SPRO > Enterprise Structure > Definition > Logistics 경로
+sap recipe-save "spro-logistics-definition" "SPRO > Enterprise Structure > Definition > Logistics" "[{\"tool\":\"sap_run\",\"args\":{\"tcode\":\"SPRO\"},\"hint\":\"SPRO 진입\"},{\"tool\":\"sap_tree_expand\",\"args\":{\"element_id\":\"<트리ID>\",\"node_key\":\"<key1>\"},\"hint\":\"SAP Reference IMG 펼치기\"},{\"tool\":\"sap_tree_expand\",\"args\":{\"element_id\":\"<트리ID>\",\"node_key\":\"<key2>\"},\"hint\":\"Enterprise Structure 펼치기\"},{\"tool\":\"sap_tree_doubleclick\",\"args\":{\"element_id\":\"<트리ID>\",\"node_key\":\"<key3>\"},\"hint\":\"Definition 진입\"}]" -k "enterprise structure,logistics,조직구조,물류"
+
+# → 기대: {"saved": "spro-logistics-definition", "updated": false, "step_count": 4, "linked_tcodes": ["SPRO"]}
+# → linked_tcodes에 "SPRO"가 포함되면 온톨로지 자동 연결 성공
+```
+
+```powershell
+# Step 3: 레시피 목록 확인
+sap recipe-list
+# → 기대: count=1, 방금 저장한 레시피가 표시됨
+# → 확인: description, keywords, step_count, context가 정상인지
+```
+
+```powershell
+# Step 4: 키워드 검색
+sap recipe-search "logistics"
+# → 기대: 방금 저장한 레시피가 검색됨
+
+sap recipe-search "조직구조"
+# → 기대: 한글 키워드로도 검색됨
+
+sap recipe-search "pricing"
+# → 기대: 관련 없는 검색어이므로 결과 없음 (count=0)
+```
+
+```powershell
+# Step 5: 온톨로지에서 레시피 연결 확인
+sap ontology SPRO
+# → 기대: recipes 배열에 "spro-logistics-definition"이 포함됨
+# → 기대: recipe_details에 레시피 요약이 표시됨
+```
+
+```powershell
+# Step 6: 레시피 업데이트 (같은 ID로 다시 저장)
+sap recipe-save "spro-logistics-definition" "SPRO > Enterprise Structure > Definition > Logistics (updated)" "[{\"tool\":\"sap_run\",\"args\":{\"tcode\":\"SPRO\"},\"hint\":\"SPRO 진입\"}]" -k "enterprise structure,logistics,조직구조"
+# → 기대: {"saved": "spro-logistics-definition", "updated": true, ...}
+```
+
+```powershell
+# Step 7: 두 번째 레시피 저장 (같은 영역, 다른 목적)
+sap recipe-save "spro-logistics-assignment" "SPRO > Enterprise Structure > Assignment > Logistics" "[{\"tool\":\"sap_run\",\"args\":{\"tcode\":\"SPRO\"},\"hint\":\"SPRO 진입\"}]" -k "enterprise structure,logistics,할당,assignment"
+# → 기대: 두 번째 레시피 저장 성공
+```
+
+```powershell
+# Step 8: 구분 검색 — 같은 영역에서 다른 레시피 찾기
+sap recipe-search "logistics definition"
+# → 기대: spro-logistics-definition이 상위에 표시
+
+sap recipe-search "logistics assignment"
+# → 기대: spro-logistics-assignment가 상위에 표시
+```
+
+```powershell
+# Step 9: 레시피 삭제
+sap recipe-delete "spro-logistics-assignment"
+# → 기대: {"deleted": true, ...}
+
+sap recipe-list
+# → 기대: count=1, 삭제된 레시피는 사라짐
+```
+
+### 검증 포인트
+
+- [ ] recipe-save로 레시피 저장 성공
+- [ ] recipe-list에서 저장된 레시피 확인
+- [ ] recipe-search로 키워드 검색 (한글/영문 모두)
+- [ ] 온톨로지에 레시피 자동 연결 (linked_tcodes)
+- [ ] ontology 조회 시 recipe_details 포함
+- [ ] 같은 ID로 재저장 시 updated=true
+- [ ] 같은 영역의 다른 레시피 구분 검색 가능
+- [ ] recipe-delete로 삭제 정상
+
+---
+
+## 시나리오 13: MCP 서버에서 AI 레시피 활용 (Claude Code)
+
+### 목표
+
+Claude Code (MCP 연동)에서 AI가 레시피를 자동으로 활용하는지 확인.
+
+### 사전 조건
+
+- `pip install -e ".[mcp]"` 설치
+- Claude Code settings.json에 MCP 서버 설정 완료
+- SAP GUI 로그인 상태
+- 시나리오 12에서 레시피 1개 이상 저장됨
+
+### 실행 단계
+
+```
+# Step 1: Claude Code에서 SAP 연결
+Claude에게: "SAP에 연결해줘"
+# → 기대: sap_connect 호출 성공
+```
+
+```
+# Step 2: 레시피가 있는 작업 요청
+Claude에게: "SPRO에서 Enterprise Structure Definition Logistics 열어줘"
+# → 기대:
+#   1. AI가 먼저 sap_recipe_search("logistics definition") 호출
+#   2. 레시피를 찾으면 steps를 따라 실행
+#   3. sap_recipe_success 호출로 성공 기록
+```
+
+```
+# Step 3: 레시피가 없는 새 작업 요청
+Claude에게: "SPRO에서 판매조직 정의 화면 열어줘"
+# → 기대:
+#   1. AI가 sap_recipe_search("판매조직") 호출 → 결과 없음
+#   2. AI가 직접 SPRO 트리 탐색 (tree_expand → tree_read 반복)
+#   3. 목표 도달 후 sap_recipe_save 호출 → 경로 저장
+#   4. context에 상세 맥락이 포함되는지 확인
+```
+
+```
+# Step 4: 새 세션에서 저장된 레시피 재활용 확인
+Claude Code 새 세션 시작
+Claude에게: "SPRO에서 판매조직 정의 열어줘" (Step 3과 동일 요청)
+# → 기대:
+#   1. AI가 sap_recipe_search("판매조직") 호출 → 레시피 발견
+#   2. 저장된 steps를 따라 빠르게 실행 (헤매지 않음)
+#   3. 실행 시간이 Step 3보다 크게 단축됨
+```
+
+```
+# Step 5: 레시피 성공 카운트 확인
+sap recipe-list
+# → 기대: 해당 레시피의 success_count가 1 이상
+```
+
+### 검증 포인트
+
+- [ ] AI가 작업 전 sap_recipe_search를 자동 호출하는지
+- [ ] 레시피가 있으면 steps를 따라 실행하는지
+- [ ] 레시피가 없으면 직접 탐색 후 sap_recipe_save를 호출하는지
+- [ ] context에 상세 맥락이 포함되는지
+- [ ] 새 세션에서 레시피를 재활용하는지
+- [ ] success_count가 증가하는지
+- [ ] 2회차 실행이 1회차보다 빠른지
+
+### 실패 시 확인사항
+
+- AI가 recipe_search를 안 함: MCP 도구 설명에 안내가 있는지 확인 → sap_run, sap_tree_read 설명 확인
+- AI가 recipe_save를 안 함: sap_recipe_save 도구 설명의 가이드 확인
+- context가 비어있음: sap_recipe_save 설명의 context 작성 가이드 확인
+
+---
+
+## 시나리오 14: ALV Grid 읽기/더블클릭
+
+### 목표
+
+ALV Grid(GuiGridView)에서 테이블 데이터 읽기, 행 선택, 더블클릭이 정상 작동하는지 확인.
+
+### 사전 조건
+
+- SAP 연결 완료
+- ALV Grid가 있는 트랜잭션 접근 가능 (예: SE16, MB52, ME2M 등)
+
+### 실행 단계
+
+```powershell
+# Step 1: ALV Grid가 있는 트랜잭션 실행
+sap run SE16
+# → 기대: SE16 초기 화면
+
+# Step 2: 테이블명 입력 (예: MARA)
+sap fill TABLE=MARA
+sap vkey 0
+# → 기대: 선택 화면 또는 ALV Grid 표시
+```
+
+```powershell
+# Step 3: 화면 구조 확인
+sap screen
+# → 기대: tables 배열에 ALV Grid ID가 있음
+# → 메모: 테이블 ID 복사 (예: "wnd[0]/usr/cntlGRID1/shellcont/shell")
+```
+
+```powershell
+# Step 4: ALV Grid 데이터 읽기
+sap table "<ALV_ID>"
+# → 기대: 행 데이터가 JSON으로 출력됨
+# → 확인: row_count, column_count, rows, columns 모두 있는지
+# → 확인: rows가 비어있지 않은지
+```
+
+```powershell
+# Step 5: 테이블 행 선택
+sap table-select "<ALV_ID>" 0
+# → 기대: 첫 번째 행 선택 (에러 없음)
+```
+
+```powershell
+# Step 6: 테이블 셀 더블클릭 (column 생략 — 첫 컬럼 자동 선택)
+sap table-doubleclick "<ALV_ID>" 0
+# → 기대: 디테일 화면으로 이동
+sap screen --fields-only
+# → 기대: 디테일 화면 필드가 표시됨
+```
+
+```powershell
+# Step 7: 뒤로 가기
+sap vkey 3
+# → 기대: ALV Grid 화면으로 복귀
+```
+
+### 검증 포인트
+
+- [ ] ALV Grid ID가 sap screen에서 확인됨
+- [ ] sap table로 데이터 읽기 성공 (rows 비어있지 않음)
+- [ ] table-select로 행 선택 성공
+- [ ] table-doubleclick 시 column 생략해도 첫 컬럼 자동 선택
+- [ ] 디테일 화면 전환 및 복귀 정상
+
+### 실패 시 확인사항
+
+- table-doubleclick 에러: ALV Grid 타입 확인 → GuiGridView인지 GuiShell(GridView)인지
+- 데이터가 비어있음: VisibleRowCount가 0일 수 있음 → 화면을 활성화한 후 재시도
+- 무한 대기: VisibleRowCount=0 방지 로직 확인 (com_wrapper.py)
+
+---
+
+## 시나리오 15: 통합 풀 사이클 (전체 기능 횡단)
+
+### 목표
+
+하나의 업무 흐름에서 CLI의 모든 주요 기능을 연속으로 사용하여 통합 안정성 확인.
+
+### 시나리오: "새 자재 조회 → 화면 학습 → 매크로 녹화 → 레시피 저장"
+
+```powershell
+# ── Phase A: 기본 연결 + 조작 ──
+
+# A1. 연결
+sap connect
+sap session
+sap status
+
+# A2. 트랜잭션 실행
+sap run MM03
+
+# A3. 필드 입력 (fill 명령)
+sap fill MATNR=100-100
+# → 기대: 자재번호 입력 + Enter
+
+# A4. 모달 처리 (뷰 선택 팝업)
+sap modal
+sap screen --fields-only
+sap table-select "wnd[1]/usr/tblSAPLMGMMTC_VIEW" 0
+sap vkey 0
+
+# A5. 화면 정보 읽기
+sap screen --search "MAKTX"
+sap get "wnd[0]/usr/txtMAKT-MAKTX"
+sap status
+```
+
+```powershell
+# ── Phase B: 온톨로지 학습 ──
+
+# B1. 현재 화면 학습
+sap learn
+# → 기대: 화면 온톨로지가 저장됨
+
+# B2. 학습 결과 확인
+sap ontology MM03
+# → 기대: screens, fields, recipe_details(있으면) 출력
+```
+
+```powershell
+# ── Phase C: 매크로 녹화 ──
+
+# C1. 뒤로 가기 (MM03 초기 화면으로)
+sap vkey 3
+sap vkey 3
+
+# C2. 매크로 녹화 시작
+sap record-start
+sap record-status
+# → 기대: {"recording": true, ...}
+
+# C3. 단계 기록 (자재 조회 과정)
+sap record-step run MM03
+sap record-step set "wnd[0]/usr/ctxtRMMG1-MATNR" 100-100
+sap record-step vkey 0
+
+# C4. 녹화 종료
+sap record-finish mm03-lookup "MM03 자재 조회"
+# → 기대: 매크로 저장 성공
+
+# C5. 매크로 확인
+sap macro-list
+sap macro-show mm03-lookup
+```
+
+```powershell
+# ── Phase D: 스크린샷 ──
+
+# D1. 현재 화면 캡처
+sap capture "mm03-result"
+# → 기대: 스크린샷 파일 저장
+
+# D2. 캡처 목록
+sap captures MM03
+# → 기대: 방금 저장한 캡처가 목록에 표시
+```
+
+```powershell
+# ── Phase E: 레시피 ──
+
+# E1. 레시피 저장 (지금까지의 경로)
+sap recipe-save "mm03-basic-lookup" "MM03 기본 자재 조회" "[{\"tool\":\"sap_run\",\"args\":{\"tcode\":\"MM03\"},\"hint\":\"MM03 실행\"},{\"tool\":\"sap_fill_fields\",\"args\":{\"fields\":{\"MATNR\":\"100-100\"}},\"hint\":\"자재번호 입력\"}]" -k "MM03,자재조회,material"
+
+# E2. 검색 확인
+sap recipe-search "자재조회"
+# → 기대: 방금 저장한 레시피가 검색됨
+```
+
+```powershell
+# ── Phase F: 데몬 모드 ──
+
+# F1. 데몬 시작
+sap daemon start
+sap daemon status
+# → 기대: {"daemon": "running", ...}
+
+# F2. 데몬 경유 명령 실행 (속도 비교)
+sap status
+sap screen --fields-only
+
+# F3. 데몬 종료
+sap daemon stop
+```
+
+```powershell
+# ── Phase G: 정리 ──
+
+# G1. 매크로 삭제
+sap macro-delete mm03-lookup
+
+# G2. 레시피 삭제
+sap recipe-delete "mm03-basic-lookup"
+
+# G3. 최종 상태 확인
+sap recipe-list
+sap macro-list
+```
+
+### 검증 포인트
+
+- [ ] Phase A: 연결 → 트랜잭션 → fill → 모달 → 필드 읽기 전체 성공
+- [ ] Phase B: 온톨로지 학습 + 조회 성공
+- [ ] Phase C: 매크로 녹화 → 저장 → 목록 확인 성공
+- [ ] Phase D: 스크린샷 캡처 + 목록 확인 성공
+- [ ] Phase E: 레시피 저장 + 검색 성공
+- [ ] Phase F: 데몬 start/status/stop + 데몬 경유 명령 성공
+- [ ] Phase G: 정리(삭제) 성공
+- [ ] 전체 흐름에서 에러/크래시 없이 완주
