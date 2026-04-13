@@ -652,7 +652,8 @@ class SapGuiWrapper:
                         row_count = int(getattr(child, "RowCount", 0))
                         col_count = int(getattr(child, "ColumnCount", 0))
                         columns = []
-                        for c in range(col_count):
+                        scan_cols = min(col_count, 20)
+                        for c in range(scan_cols):
                             try:
                                 col_id = child.ColumnOrder(c)
                                 titles = child.GetColumnTitles(col_id)
@@ -676,10 +677,13 @@ class SapGuiWrapper:
                         # 트리/기타 쉘 — 위치만 기록, 데이터는 sap tree로 읽기
                         node_count = 0
                         try:
-                            node_keys = child.GetAllNodeKeys()
-                            node_count = node_keys.Count if node_keys else 0
+                            node_count = int(child.TopNodeKeyCount)
                         except Exception:
-                            pass
+                            try:
+                                node_keys = child.GetAllNodeKeys()
+                                node_count = node_keys.Count if node_keys else 0
+                            except Exception:
+                                pass
                         screen.trees.append(SapTable(
                             id=child_id,
                             name=self._extract_name(child_id),
@@ -693,7 +697,7 @@ class SapGuiWrapper:
                     col_count = int(getattr(child, "ColumnCount", 0))
                     columns = []
                     if comp_type == GuiComponentType.GRID_VIEW:
-                        for c in range(col_count):
+                        for c in range(min(col_count, 20)):
                             try:
                                 col_id = child.ColumnOrder(c)
                                 columns.append(SapTableColumn(
