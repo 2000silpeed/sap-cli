@@ -672,15 +672,15 @@ sap transcript-plan --command set --index 0
 
 ```powershell
 # 1. 프로세스 목록 조회
-sap process list
+sap process-list
 # → procurement_basic, sales_to_billing 2개 반환
 
 # 2. 조달 프로세스 상세 조회
-sap process show procurement_basic
+sap process-show procurement_basic
 # → steps 4개 (MM01→ME21N→MIGO→MIRO), data_flows 3개
 
 # 3. 판매 프로세스 상세 조회
-sap process show sales_to_billing
+sap process-show sales_to_billing
 # → steps 3개 (VA01→VL01N→VF01), data_flows 2개
 
 # 4. 프로세스 구조 검증 — 데이터 흐름 확인
@@ -698,12 +698,12 @@ sap ontology --list
 # 기대: sap_process_create 호출
 
 # 7. 생성된 프로세스 확인
-sap process list
-sap process show <생성된_id>
+sap process-list
+sap process-show <생성된_id>
 
 # 8. 프로세스 삭제 테스트
-sap process delete <생성된_id>
-sap process list
+sap process-delete <생성된_id>
+sap process-list
 # → 삭제된 프로세스가 목록에서 사라짐
 ```
 
@@ -744,43 +744,43 @@ AI 에이전트가 각 스텝을 수동 실행하고, 결과(문서번호)를 �
 
 ```powershell
 # 1. 조달 프로세스 실행 시작
-sap process start procurement_basic
+sap process-start procurement_basic
 # → status: running, current_step: 0
 # → pending_inputs: {MTART: "ROH", MBRSH: "M"} (고정 입력)
 
 # 2. 현재 상태 확인
-sap process status
+sap process-status
 # → current_step: 0, current_tcode: MM01
 # → pending_inputs: 고정 입력값
 # → context: {} (아직 비어있음)
 
 # 3. Step 0 완료 보고 (MM01 — 자재 생성 결과)
-sap process step 0 --status success --outputs '{"MATNR": "100-100"}'
+sap process-step 0 --outputs '{"MATNR": "100-100"}'
 # → context에 step0.MATNR = "100-100" 저장
 
 # 4. 다음 스텝 입력값 확인 — 핵심 검증 포인트
-sap process status
+sap process-status
 # → current_step: 1, current_tcode: ME21N
 # → pending_inputs: {MATNR: "100-100"}  ← DataFlow 자동 연결!
 
 # 5. Step 1 완료 보고 (ME21N — 구매오더 생성)
-sap process step 1 --status success --outputs '{"EBELN": "4500012345"}'
+sap process-step 1 --outputs '{"EBELN": "4500012345"}'
 
 # 6. 다음 스텝 입력값 확인
-sap process status
+sap process-status
 # → current_step: 2, current_tcode: MIGO
 # → pending_inputs: {EBELN: "4500012345"}  ← DataFlow 자동!
 
 # 7. Step 2 완료 보고 (MIGO — 입고)
-sap process step 2 --status success --outputs '{"MBLNR": "5000000001"}'
+sap process-step 2 --outputs '{"MBLNR": "5000000001"}'
 
 # 8. 다음 스텝 입력값 확인
-sap process status
+sap process-status
 # → current_step: 3, current_tcode: MIRO
 # → pending_inputs: {MBLNR: "5000000001"}
 
 # 9. Step 3 완료 보고 (MIRO — 송장검증)
-sap process step 3 --status success --outputs '{"BELNR": "5100000001"}'
+sap process-step 3 --outputs '{"BELNR": "5100000001"}'
 # → 마지막 스텝이므로 자동 완료
 # → saved_to: ~/.sap_cli/executions/procurement_basic_...json
 # → status: completed
@@ -790,10 +790,10 @@ sap process step 3 --status success --outputs '{"BELNR": "5100000001"}'
 
 ```powershell
 # 1. 프로세스 시작
-sap process start procurement_basic
+sap process-start procurement_basic
 
 # 2. 상태 확인 → pending_inputs 보고 고정 입력값 확인
-sap process status
+sap process-status
 
 # 3. Step 0: MM01 실행
 sap run MM01
@@ -807,10 +807,10 @@ sap status
 # → 자재번호 추출
 
 # 4. Step 0 완료 보고
-sap process step 0 --status success --outputs '{"MATNR": "추출한자재번호"}'
+sap process-step 0 --outputs '{"MATNR": "추출한자재번호"}'
 
 # 5. 다음 입력 확인
-sap process status
+sap process-status
 # → pending_inputs에 MATNR이 자동으로 들어있음
 
 # 6. Step 1: ME21N 실행 → pending_inputs의 MATNR 사용
@@ -820,7 +820,7 @@ sap status
 # → "Standard PO 4500XXXXXX has been created"
 
 # 7. Step 1 완료 보고
-sap process step 1 --status success --outputs '{"EBELN": "추출한PO번호"}'
+sap process-step 1 --outputs '{"EBELN": "추출한PO번호"}'
 
 # 8. Step 2: MIGO 실행 → pending_inputs의 EBELN 사용
 sap run MIGO
@@ -828,7 +828,7 @@ sap run MIGO
 sap status
 
 # 9. Step 2 완료 보고
-sap process step 2 --status success --outputs '{"MBLNR": "추출한입고문서번호"}'
+sap process-step 2 --outputs '{"MBLNR": "추출한입고문서번호"}'
 
 # 10. Step 3: MIRO 실행 → pending_inputs의 MBLNR 사용
 sap run MIRO
@@ -836,7 +836,7 @@ sap run MIRO
 sap status
 
 # 11. Step 3 완료 → 자동 저장
-sap process step 3 --status success --outputs '{"BELNR": "추출한전표번호"}'
+sap process-step 3 --outputs '{"BELNR": "추출한전표번호"}'
 # → saved_to 경로 확인
 ```
 
@@ -860,13 +860,13 @@ Claude Code 대화창에서:
 
 ```powershell
 # 에러 케이스
-sap process start procurement_basic
-sap process step 0 --status error --error "자재유형이 유효하지 않습니다"
-sap process status
+sap process-start procurement_basic
+sap process-step 0 --outputs '{}' # error: "자재유형이 유효하지 않습니다"
+sap process-status
 # → failed_steps: 1, status: running (계속 가능)
 
 # Optional 스텝 스킵 (MIRO가 optional인 프로세스를 별도 정의한 경우)
-sap process step 2 --status skipped --error "입고 불필요"
+sap process-step 2 --outputs '{}' # skipped: "입고 불필요"
 ```
 
 ### Phase E: 실행 기록 확인
@@ -896,8 +896,8 @@ ls ~/.sap_cli/executions/
 
 ### 실패 시 확인사항
 
-- "실행 중인 프로세스가 없습니다" → `sap process start`를 먼저 호출했는지 확인
-- pending_inputs가 비어있음 → `sap process show`로 data_flows 정의 확인
+- "실행 중인 프로세스가 없습니다" → `sap process-start`를 먼저 호출했는지 확인
+- pending_inputs가 비어있음 → `sap process-show`로 data_flows 정의 확인
 - 실행 기록이 안 만들어짐 → `~/.sap_cli/executions/` 디렉토리 존재 확인
 - MCP에서 도구가 안 보임 → TOOL_PERMISSION_MAP에 process 도구가 등록되어 있는지 확인
 - 상태바에서 문서번호 추출 실패 → `sap status`로 원문 확인 후 수동으로 outputs에 입력

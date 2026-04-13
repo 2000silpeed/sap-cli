@@ -701,10 +701,10 @@ sap captures VL03N
 
 ```powershell
 # 등록된 프로세스 목록
-sap process list
+sap process-list
 
 # 프로세스 상세 조회
-sap process show procurement_basic
+sap process-show procurement_basic
 ```
 
 출력 예시:
@@ -737,20 +737,20 @@ AI 에이전트가 각 스텝을 실행하고 결과를 보고하면, 다음 스
 
 ```powershell
 # 1. 프로세스 실행 시작
-sap process start procurement_basic
+sap process-start procurement_basic
 # → status: running, current_step: 0, pending_inputs: {MTART: "ROH"}
 
 # 2. AI가 MM01 실행 → 자재 생성 → 상태바에서 번호 추출
 #    sap run MM01 → 필드 입력 → 저장
-sap process step 0 --outputs '{"MATNR": "100-100"}'
+sap process-step 0 --outputs '{"MATNR": "100-100"}'
 # → context에 저장, pending_inputs: {MATNR: "100-100"} (DataFlow 자동)
 
 # 3. 다음 스텝 입력 확인
-sap process status
+sap process-status
 # → current_step: 1, current_tcode: ME21N, pending_inputs: {MATNR: "100-100"}
 
 # 4. AI가 ME21N 실행 → MATNR 입력 → 구매오더 생성
-sap process step 1 --outputs '{"EBELN": "4500012345"}'
+sap process-step 1 --outputs '{"EBELN": "4500012345"}'
 
 # 5. ... 반복 → 마지막 스텝 완료 시 실행 기록 자동 저장
 ```

@@ -513,10 +513,10 @@ class BusinessProcess(BaseModel):
 
 ### 4. CLI/MCP 명령
 
-- `sap process list` — 등록된 프로세스 목록
-- `sap process show <id>` — 프로세스 상세 (스텝 + 데이터 흐름)
-- `sap process create <id> --name "..." --steps MM01,ME21N,MIGO` — 신규 생성
-- `sap process delete <id>` — 프로세스 삭제
+- `sap process-list` — 등록된 프로세스 목록
+- `sap process-show <id>` — 프로세스 상세 (스텝 + 데이터 흐름)
+- `sap process-create <id> --name "..." --steps MM01,ME21N,MIGO` — 신규 생성
+- `sap process-delete <id>` — 프로세스 삭제
 - MCP: `process_list`, `process_show`, `process_create`, `process_delete` 도구 추가
 
 ### 5. ProcessExecutor — 실행 엔진 (`sap_cli/ontology/process_executor.py`)
