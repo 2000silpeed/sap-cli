@@ -14,6 +14,8 @@ SOS(Study Ontology System)의 온톨로지 사상을 적용하여, 단순 스크
 2. [설치](#2-설치)
 3. [SAP GUI 스크립팅 활성화](#3-sap-gui-스크립팅-활성화)
 4. [기본 사용법 (CLI)](#4-기본-사용법-cli)
+   - 4.10 [트리 컨트롤 (SPRO 등)](#410-트리-컨트롤-spro-등)
+   - 4.11 [AI 네비게이션 레시피](#411-ai-네비게이션-레시피)
 5. [매크로 녹화/재생](#5-매크로-녹화재생)
 6. [온톨로지 시스템](#6-온톨로지-시스템)
 6.4. [스크린샷 캡처](#64-스크린샷-캡처-사용자-설명서-제작)
@@ -260,7 +262,57 @@ sap vkey 0                 # → 모달에 Enter 전송
 sap vkey 12                # → 모달에 Cancel
 ```
 
-### 4.10 스크린샷 캡처
+### 4.10 트리 컨트롤 (SPRO 등)
+
+```powershell
+# 트리 노드 읽기 (sap screen의 trees에서 트리 ID 확인)
+sap tree "wnd[0]/shellcont/shell"
+
+# 특정 노드의 자식만 조회 (토큰 절약)
+sap tree "wnd[0]/shellcont/shell" --node-key "00001" --depth 1
+
+# 트리 노드 펼치기/접기
+sap tree-expand "wnd[0]/shellcont/shell" "00001"
+sap tree-collapse "wnd[0]/shellcont/shell" "00001"
+
+# 노드 선택
+sap tree-select "wnd[0]/shellcont/shell" "00005"
+
+# 노드 더블클릭 (IMG Activity 진입 등)
+sap tree-doubleclick "wnd[0]/shellcont/shell" "00005"
+
+# 트리 내 버튼 클릭 (SPRO 실행 아이콘)
+sap tree-press "wnd[0]/shellcont/shell" "00005" "2"
+```
+
+SPRO 트리 컬럼: `2` = IMG Activity 실행, `1` = Documentation 조회
+
+### 4.11 AI 네비게이션 레시피
+
+AI가 성공한 SAP 조작 경로를 저장하고, 다음에 같은 요청이 오면 재활용합니다.
+매크로(VBS)와 달리 AI에게 힌트를 주는 방식으로, AI가 상황 판단하면서 따라갑니다.
+
+```powershell
+# 레시피 검색
+sap recipe-search "가격결정"
+
+# 저장된 모든 레시피 목록
+sap recipe-list
+
+# 레시피 저장 (AI가 MCP로 자동 저장하지만, 수동도 가능)
+sap recipe-save "spro-pricing-condition" "SPRO > SD > 가격결정" '[{"tool":"sap_run","args":{"tcode":"SPRO"},"hint":"SPRO 진입"}]' -k "가격결정,pricing"
+
+# 레시피 삭제
+sap recipe-delete "spro-pricing-condition"
+```
+
+AI MCP 사용 흐름:
+1. 사용자 요청 → AI가 `sap_recipe_search`로 기존 레시피 확인
+2. 레시피 있으면 단계 따라 실행, 없으면 직접 탐색
+3. 성공 시 `sap_recipe_save`로 경로 저장 (context에 상세 맥락 포함)
+4. `sap_recipe_success`로 성공 카운트 증가 → 다음 검색 시 우선순위 상승
+
+### 4.13 스크린샷 캡처
 
 ```powershell
 # 현재 SAP GUI 화면 캡처
@@ -275,7 +327,7 @@ sap captures MM03                # tcode별 필터
 
 저장 위치: `~/.sap_cli/screenshots/{tcode}/{tcode}_{step}_screen{num}_{label}.png`
 
-### 4.11 전체 시나리오 예시: MM03 자재 조회
+### 4.12 전체 시나리오 예시: MM03 자재 조회
 
 ```powershell
 # 1. SAP 연결
@@ -753,7 +805,7 @@ Windows의 Claude Code `settings.json`에 추가:
 }
 ```
 
-### 7.2 사용 가능한 MCP 도구 (22개)
+### 7.2 사용 가능한 MCP 도구
 
 > `~/.sap_cli/policy.yaml` 파일이 존재하면 ReBAC 권한관리가 활성화되어 에이전트별로 허용된 도구만 호출할 수 있습니다. 정책 파일이 없으면 모든 도구가 허용됩니다 (하위 호환).
 
@@ -772,18 +824,41 @@ Windows의 Claude Code `settings.json`에 추가:
 | `sap_press` | 버튼 클릭 / 탭 선택 (GuiTab 자동 감지) |
 | `sap_send_vkey` | VKey 전송 |
 
-#### 상태/지식/운영 (6개)
+#### 상태/지식/운영
 
 | 도구 | 설명 |
 |------|------|
 | `sap_get_status` | 상태바 메시지 |
 | `sap_modal` | 모달 팝업 존재 여부와 텍스트 |
 | `sap_table_read` | 테이블 데이터 읽기 |
-| `sap_ontology_query` | 온톨로지 조회 |
+| `sap_table_select` | 테이블 행 선택 |
+| `sap_table_doubleclick` | 테이블 셀 더블클릭 (ALV 행 진입) |
+| `sap_ontology_query` | 온톨로지 조회 (연결된 레시피 포함) |
 | `sap_transcript_query` | 최근 transcript 조회 |
 | `sap_transcript_plan` | transcript 재실행 검토 계획 생성 |
 
-#### 학습 (1개)
+#### 트리 컨트롤 (SPRO 등)
+
+| 도구 | 설명 |
+|------|------|
+| `sap_tree_read` | 트리 노드 읽기 (depth/node_key로 범위 제한) |
+| `sap_tree_select` | 트리 노드 선택 |
+| `sap_tree_doubleclick` | 트리 노드 더블클릭 (IMG Activity 진입) |
+| `sap_tree_expand` | 트리 노드 확장 (하위 메뉴 펼치기) |
+| `sap_tree_collapse` | 트리 노드 접기 |
+| `sap_tree_press` | 트리 내 버튼/아이콘 클릭 (SPRO 실행 아이콘) |
+
+#### AI 네비게이션 레시피
+
+| 도구 | 설명 |
+|------|------|
+| `sap_recipe_search` | 키워드로 레시피 검색 (작업 전 자동 조회 권장) |
+| `sap_recipe_save` | 성공한 네비게이션 경로를 레시피로 저장 |
+| `sap_recipe_list` | 저장된 레시피 목록 조회 |
+| `sap_recipe_delete` | 레시피 삭제 |
+| `sap_recipe_success` | 레시피 실행 성공 기록 (우선순위 상승) |
+
+#### 학습
 
 | 도구 | 설명 |
 |------|------|
@@ -1138,6 +1213,7 @@ sap_cli/
 │   ├── mcp_server.py           # MCP 서버 (23개 도구)
 │   ├── service.py              # CLI/MCP 공통 서비스 레이어
 │   ├── learner.py              # 온톨로지 학습 엔진
+│   ├── recipe.py               # AI 네비게이션 레시피 저장/검색
 │   ├── auth/
 │   │   ├── __init__.py
 │   │   ├── policy.py           # 정책 로더 (policy.yaml 파싱)
