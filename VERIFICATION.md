@@ -1305,7 +1305,15 @@ sap recipe-search "pricing"
 # Step 5: 온톨로지에서 레시피 연결 확인
 sap ontology SPRO
 # → 기대: recipes 배열에 "spro-logistics-definition"이 포함됨
-# → 기대: recipe_details에 레시피 요약이 표시됨
+# → 기대: available_actions에 경로 요약이 표시됨
+# → 기대: action_paths에 저장된 경로가 있음
+```
+
+```powershell
+# Step 5-1: 온톨로지 action_search로 경로 검색
+sap ontology SPRO --action-search "logistics"
+# → 기대: exact_match=true이면 execution_plan 포함
+# → 기대: 여러 개면 context 비교용 요약 반환
 ```
 
 ```powershell
@@ -1343,8 +1351,9 @@ sap recipe-list
 - [ ] recipe-save로 레시피 저장 성공
 - [ ] recipe-list에서 저장된 레시피 확인
 - [ ] recipe-search로 키워드 검색 (한글/영문 모두)
-- [ ] 온톨로지에 레시피 자동 연결 (linked_tcodes)
-- [ ] ontology 조회 시 recipe_details 포함
+- [ ] 온톨로지에 레시피 자동 연결 (linked_tcodes + action_paths)
+- [ ] ontology 조회 시 available_actions에 경로 요약 포함
+- [ ] action_search로 특정 경로 검색 시 execution_plan 반환
 - [ ] 같은 ID로 재저장 시 updated=true
 - [ ] 같은 영역의 다른 레시피 구분 검색 가능
 - [ ] recipe-delete로 삭제 정상

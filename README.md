@@ -307,10 +307,16 @@ sap recipe-delete "spro-pricing-condition"
 ```
 
 AI MCP 사용 흐름:
-1. 사용자 요청 → AI가 `sap_recipe_search`로 기존 레시피 확인
-2. 레시피 있으면 단계 따라 실행, 없으면 직접 탐색
-3. 성공 시 `sap_recipe_save`로 경로 저장 (context에 상세 맥락 포함)
-4. `sap_recipe_success`로 성공 카운트 증가 → 다음 검색 시 우선순위 상승
+1. 사용자 요청 → AI가 `sap_ontology_query(tcode, action_search="키워드")`로 온톨로지 내 경로 검색
+2. 경로 있으면 `execution_plan` 따라 즉시 실행 (별도 탐색 불필요)
+3. 경로 없으면 `sap_recipe_search`로 외부 레시피 검색, 그래도 없으면 직접 탐색
+4. 성공 시 `sap_recipe_save`로 저장 → 온톨로지 `action_paths`에 자동 연결
+5. `sap_recipe_success`로 성공 카운트 증가
+
+온톨로지와 레시피의 관계:
+- `sap_ontology_query SPRO` → `available_actions`에 저장된 모든 경로 표시
+- `sap_ontology_query SPRO --action-search "shipping point"` → 해당 경로의 실행 계획 반환
+- 레시피 저장 시 온톨로지 `action_paths`에도 자동 등록
 
 ### 4.13 스크린샷 캡처
 
@@ -833,7 +839,7 @@ Windows의 Claude Code `settings.json`에 추가:
 | `sap_table_read` | 테이블 데이터 읽기 |
 | `sap_table_select` | 테이블 행 선택 |
 | `sap_table_doubleclick` | 테이블 셀 더블클릭 (ALV 행 진입) |
-| `sap_ontology_query` | 온톨로지 조회 (연결된 레시피 포함) |
+| `sap_ontology_query` | 온톨로지 조회 + action_search로 경로 검색 |
 | `sap_transcript_query` | 최근 transcript 조회 |
 | `sap_transcript_plan` | transcript 재실행 검토 계획 생성 |
 

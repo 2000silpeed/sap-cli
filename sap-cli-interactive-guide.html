@@ -1219,12 +1219,13 @@ active_agent: "standard"</pre>
       {
         key: "recipe",
         title: "Recipe는 AI의 행동 기억이다",
-        summary: "AI가 성공한 SAP 네비게이션 경로를 저장하고, 같은 요청이 오면 헤매지 않고 직행하는 학습 레이어입니다.",
+        summary: "AI가 성공한 SAP 네비게이션 경로를 온톨로지에 직접 저장하고, 같은 요청이 오면 execution_plan을 따라 즉시 실행하는 학습 레이어입니다.",
         points: [
           "매크로(VBS)와 달리 AI에게 힌트를 주는 방식입니다. AI가 상황 판단하면서 레시피를 따라갑니다.",
-          "context 필드에 상세 맥락을 저장하여 같은 영역의 여러 레시피(예: Shipping Point 생성 vs 할당)를 구분합니다.",
-          "성공할 때마다 success_count가 올라가 검증된 레시피가 검색 상위에 노출됩니다.",
-          "온톨로지와 자동 연결됩니다. 레시피 저장 시 steps에서 tcode를 추출하여 TransactionOntology.recipes에 참조가 추가됩니다."
+          "온톨로지에 action_paths로 직접 저장됩니다. sap_ontology_query(action_search='키워드')로 경로를 찾으면 execution_plan이 바로 나옵니다.",
+          "context 필드에 상세 맥락을 저장하여 같은 영역의 여러 경로(예: Shipping Point 생성 vs 할당)를 구분합니다.",
+          "성공할 때마다 success_count가 올라가 검증된 경로가 검색 상위에 노출됩니다.",
+          "execution_plan 반환 시 '별도 탐색 금지' 지시가 포함되어 AI가 트리를 다시 읽지 않습니다."
         ]
       },
       {
@@ -1431,17 +1432,17 @@ active_agent: "standard"</pre>
       {
         key: "recipe",
         title: "AI 레시피 학습 사이클",
-        blurb: "AI가 성공한 경로를 저장하고, 다음에 같은 요청이 오면 재활용하는 학습 패턴입니다.",
-        why: "SPRO처럼 복잡한 네비게이션에서 AI가 헤매는 시간을 줄이고, 반복 요청에 즉시 대응할 수 있게 합니다.",
+        blurb: "AI가 성공한 경로를 온톨로지에 저장하고, 다음에 같은 요청이 오면 execution_plan을 따라 즉시 실행하는 학습 패턴입니다.",
+        why: "SPRO처럼 복잡한 네비게이션에서 AI가 헤매는 시간을 줄이고, 온톨로지에 경로가 축적될수록 AI가 점점 빨라집니다.",
         steps: [
-          ["1회차: recipe-search", "레시피가 없으면 직접 탐색을 시작합니다."],
-          ["1회차: 직접 탐색", "tree-expand, tree-read를 반복하며 목표에 도달합니다."],
-          ["1회차: recipe-save", "성공한 경로를 context와 함께 저장합니다."],
-          ["2회차: recipe-search", "레시피를 발견하고 steps를 따라 빠르게 실행합니다."],
-          ["2회차: recipe-success", "성공 카운트를 올립니다."],
-          ["반복", "성공할수록 검색 우선순위가 올라갑니다."]
+          ["1회차: ontology_query(action_search)", "온톨로지에 저장된 경로를 먼저 검색합니다."],
+          ["1회차: 직접 탐색", "경로가 없으면 tree-expand, tree-read를 반복하며 목표에 도달합니다."],
+          ["1회차: recipe-save", "성공한 경로를 저장 → 온톨로지 action_paths에 자동 등록됩니다."],
+          ["2회차: ontology_query(action_search)", "경로를 발견하고 execution_plan을 받습니다."],
+          ["2회차: execution_plan 실행", "별도 탐색 없이 plan의 단계를 순서대로 실행합니다."],
+          ["2회차: recipe-success", "성공 카운트를 올립니다."]
         ],
-        code: "# 1회차: 레시피 없음 → 직접 탐색 → 저장\nsap recipe-search \"판매조직\"\n# → count: 0\n# ... AI가 SPRO 탐색 ...\nsap recipe-save \"spro-sales-org\" \"SPRO > 판매조직 정의\" '[...]' -k \"판매조직,sales org\"\n\n# 2회차: 레시피 발견 → 바로 실행\nsap recipe-search \"판매조직\"\n# → 레시피 발견, steps를 따라 실행\n# 성공 후:\nsap recipe-list  # success_count 확인"
+        code: "# 1회차: 온톨로지에 경로 없음 → 직접 탐색 → 저장\nsap ontology SPRO --action-search \"판매조직\"  # → count: 0\n# ... AI가 SPRO 탐색 ...\nsap recipe-save \"spro-sales-org\" \"SPRO > 판매조직 정의\" '[...]' -k \"판매조직\"\n# → 온톨로지 action_paths에 자동 등록\n\n# 2회차: 온톨로지에서 바로 실행 계획 반환\nsap ontology SPRO --action-search \"판매조직\"\n# → execution_plan + instruction: 별도 탐색 금지\n# AI가 plan 따라 즉시 실행"
       },
       {
         key: "screenshot",
