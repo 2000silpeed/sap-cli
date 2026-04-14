@@ -114,6 +114,8 @@ def _summarize_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "command": entry.get("command"),
         "tool": entry.get("tool"),
         "agent": entry.get("agent"),
+        "sap_user": entry.get("sap_user"),
+        "sap_system": entry.get("sap_system"),
         "outcome": entry.get("outcome"),
         "allowed": entry.get("allowed"),
         "approval_required": entry.get("approval_required"),
