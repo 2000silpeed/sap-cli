@@ -66,7 +66,8 @@ class ProcessExecutor:
         """프로세스 실행 시작."""
         self.execution.started_at = _now_iso()
         self.execution.status = "running"
-        self.execution.current_step = 0
+        first_step = min(s.step_number for s in self.process.steps)
+        self.execution.current_step = first_step
         self.execution.context = {}
         self.execution.step_results = []
         return self.execution
