@@ -67,11 +67,14 @@ class TranscriptLogger:
 
         sap_user = ""
         sap_system = ""
-        if before and isinstance(before, dict):
-            session = before.get("session", {})
-            if isinstance(session, dict):
-                sap_user = session.get("user", "")
-                sap_system = session.get("system_name", "")
+        for state in (before, after):
+            if state and isinstance(state, dict):
+                session = state.get("session", {})
+                if isinstance(session, dict):
+                    sap_user = sap_user or session.get("user", "")
+                    sap_system = sap_system or session.get("system_name", "")
+            if sap_user:
+                break
 
         entry = {
             "ts": datetime.now(timezone.utc).isoformat(),
