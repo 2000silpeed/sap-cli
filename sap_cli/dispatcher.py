@@ -1846,6 +1846,22 @@ def _log_transcript(
 ) -> None:
     if not should_log_transcript:
         return
+
+    def _has_session(state: dict[str, Any] | None) -> bool:
+        return bool(state and isinstance(state.get("session"), dict))
+
+    if not _has_session(before_state) and not _has_session(after_state):
+        sap = _get_existing_sap()
+        if sap is not None:
+            try:
+                session = sap.get_session_info().model_dump(mode="json")
+                if before_state is None:
+                    before_state = {"session": session}
+                else:
+                    before_state["session"] = session
+            except Exception:
+                pass
+
     reason = authz.approval_reason if authz.approval_required else authz.reason
     transcript.log(
         source=ctx.source,

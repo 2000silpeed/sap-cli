@@ -67,13 +67,13 @@ class TranscriptLogger:
 
         sap_user = ""
         sap_system = ""
-        for state in (before, after):
+        for state in (after, before, result):
             if state and isinstance(state, dict):
-                session = state.get("session", {})
+                session = state.get("session") or state.get("post_action", {}).get("session")
                 if isinstance(session, dict):
                     sap_user = sap_user or session.get("user", "")
                     sap_system = sap_system or session.get("system_name", "")
-            if sap_user:
+            if sap_user and sap_system:
                 break
 
         entry = {

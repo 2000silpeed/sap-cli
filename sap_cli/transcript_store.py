@@ -108,14 +108,17 @@ def _summarize_entry(entry: dict[str, Any]) -> dict[str, Any]:
     after_status = _nested(entry, "after", "status")
     after_screen = _nested(entry, "after", "screen_summary")
 
+    sap_user = entry.get("sap_user") or after_session.get("user") or before_session.get("user") or ""
+    sap_system = entry.get("sap_system") or after_session.get("system_name") or before_session.get("system_name") or ""
+
     summary = {
         "ts": entry.get("ts"),
         "source": entry.get("source"),
         "command": entry.get("command"),
         "tool": entry.get("tool"),
         "agent": entry.get("agent"),
-        "sap_user": entry.get("sap_user"),
-        "sap_system": entry.get("sap_system"),
+        "sap_user": sap_user,
+        "sap_system": sap_system,
         "outcome": entry.get("outcome"),
         "allowed": entry.get("allowed"),
         "approval_required": entry.get("approval_required"),
