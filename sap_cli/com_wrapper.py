@@ -803,7 +803,7 @@ class SapGuiWrapper:
         self, element_id: str, grid: Any,
         max_rows: int = 50, filter_columns: list[str] | None = None,
     ) -> SapTable:
-        row_count = grid.RowCount
+        raw_row_count = grid.RowCount
         col_count = grid.ColumnCount
         columns = []
         for c in range(col_count):
@@ -820,19 +820,25 @@ class SapGuiWrapper:
             read_cols = [c for c in columns if c.name in fc_set]
 
         rows = []
-        for r in range(min(row_count, max_rows)):
+        for r in range(min(raw_row_count, max_rows)):
             row_data = {}
+            all_empty = True
             for col in read_cols:
                 try:
-                    row_data[col.name] = grid.GetCellValue(r, col.name)
+                    val = grid.GetCellValue(r, col.name)
+                    row_data[col.name] = val
+                    if val and str(val).strip():
+                        all_empty = False
                 except Exception:
                     row_data[col.name] = ""
+            if all_empty:
+                break
             rows.append(row_data)
 
         return SapTable(
             id=element_id,
             type=GuiComponentType.GRID_VIEW,
-            row_count=row_count,
+            row_count=len(rows),
             column_count=col_count,
             visible_rows=grid.VisibleRowCount,
             columns=columns,
@@ -844,7 +850,7 @@ class SapGuiWrapper:
         max_rows: int = 50, filter_columns: list[str] | None = None,
     ) -> SapTable:
         """GuiShell(SubType=GridView) ALV Grid 읽기. 스크롤 처리 포함."""
-        row_count = int(grid.RowCount)
+        raw_row_count = int(grid.RowCount)
         col_count = int(grid.ColumnCount)
         visible_rows = int(grid.VisibleRowCount)
 
@@ -884,14 +890,14 @@ class SapGuiWrapper:
             read_cols = [c for c in columns if c.name in fc_set]
 
         # 행 데이터 수집 (스크롤 처리)
-        max_rows = min(row_count, max_rows)
+        max_rows = min(raw_row_count, max_rows)
         rows: list[dict[str, str]] = []
         if visible_rows == 0:
             return SapTable(
                 id=element_id,
                 type=GuiComponentType.SHELL,
                 sub_type="GridView",
-                row_count=row_count,
+                row_count=0,
                 column_count=col_count,
                 visible_rows=0,
                 columns=columns,
@@ -899,17 +905,25 @@ class SapGuiWrapper:
                 filtered_columns=filtered,
                 sorted_columns=sorted_cols,
             )
+        hit_empty = False
         read_count = 0
-        while read_count < max_rows:
+        while read_count < max_rows and not hit_empty:
             grid.FirstVisibleRow = read_count
             chunk_size = min(visible_rows, max_rows - read_count)
             for r in range(read_count, read_count + chunk_size):
                 row_data: dict[str, str] = {}
+                all_empty = True
                 for col in read_cols:
                     try:
-                        row_data[col.name] = str(grid.GetCellValue(r, col.name))
+                        val = str(grid.GetCellValue(r, col.name))
+                        row_data[col.name] = val
+                        if val.strip():
+                            all_empty = False
                     except Exception:
                         row_data[col.name] = ""
+                if all_empty:
+                    hit_empty = True
+                    break
                 rows.append(row_data)
             read_count += chunk_size
 
@@ -917,7 +931,7 @@ class SapGuiWrapper:
             id=element_id,
             type=GuiComponentType.SHELL,
             sub_type="GridView",
-            row_count=row_count,
+            row_count=len(rows),
             column_count=col_count,
             visible_rows=visible_rows,
             columns=columns,
@@ -927,7 +941,7 @@ class SapGuiWrapper:
         )
 
     def _read_table_control(self, element_id: str, table: Any) -> SapTable:
-        row_count = table.RowCount
+        raw_row_count = table.RowCount
         visible_rows = table.VisibleRowCount
         columns = []
         for c in range(table.Columns.Count):
@@ -939,20 +953,26 @@ class SapGuiWrapper:
             ))
 
         rows = []
-        for r in range(min(row_count, visible_rows)):
+        for r in range(min(raw_row_count, visible_rows)):
             row_data = {}
+            all_empty = True
             for col in columns:
                 try:
                     cell = table.GetCell(r, col.position)
-                    row_data[col.name] = str(cell.Text)
+                    val = str(cell.Text)
+                    row_data[col.name] = val
+                    if val.strip():
+                        all_empty = False
                 except Exception:
                     row_data[col.name] = ""
+            if all_empty:
+                break
             rows.append(row_data)
 
         return SapTable(
             id=element_id,
             type=GuiComponentType.TABLE_CONTROL,
-            row_count=row_count,
+            row_count=len(rows),
             column_count=len(columns),
             visible_rows=visible_rows,
             columns=columns,
