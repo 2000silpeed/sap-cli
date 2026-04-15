@@ -135,13 +135,19 @@ def _try_daemon(cmd: str, args: dict) -> bool:
 def connect(
     connection: int = typer.Option(0, "--connection", "-c", help="연결 인덱스"),
     session: int = typer.Option(0, "--session", "-s", help="세션 인덱스"),
+    system: str = typer.Option(None, "--system", help="시스템 ID(SID)로 연결 자동 탐색"),
 ) -> None:
     """실행 중인 SAP GUI에 연결."""
-    _run_command(
-        "connect",
-        {"connection": connection, "session": session},
-        allow_daemon=True,
-    )
+    args: dict = {"connection": connection, "session": session}
+    if system:
+        args["system"] = system
+    _run_command("connect", args, allow_daemon=True)
+
+
+@app.command("connections")
+def list_connections() -> None:
+    """모든 활성 SAP 연결 목록 조회."""
+    _run_command("connections", {}, allow_daemon=True)
 
 
 @app.command("session")

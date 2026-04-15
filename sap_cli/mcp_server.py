@@ -53,14 +53,20 @@ def _error_result(msg: str) -> list[TextContent]:
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "sap_connect",
-        "description": "실행 중인 SAP GUI에 연결합니다. SAP GUI가 이미 실행 중이고 로그인된 상태여야 합니다.",
+        "description": "실행 중인 SAP GUI에 연결합니다. SAP GUI가 이미 실행 중이고 로그인된 상태여야 합니다. system 파라미터로 시스템 ID(SID)를 지정하면 자동으로 올바른 연결을 찾습니다.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "connection_index": {"type": "integer", "default": 0, "description": "연결 인덱스 (기본: 0)"},
                 "session_index": {"type": "integer", "default": 0, "description": "세션 인덱스 (기본: 0)"},
+                "system": {"type": "string", "description": "시스템 ID(SID)로 연결 자동 탐색 (예: 'PR1', 'ERP')"},
             },
         },
+    },
+    {
+        "name": "sap_connections",
+        "description": "현재 SAP GUI의 모든 활성 연결 목록을 조회합니다. 각 연결의 시스템 ID, 클라이언트, 세션 정보를 반환합니다.",
+        "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "sap_session",

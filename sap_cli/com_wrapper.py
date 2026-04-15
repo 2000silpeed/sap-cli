@@ -64,23 +64,25 @@ class SapGuiWrapper:
         self._connection: Any = None
         self._session: Any = None
         self._user_tcode: str | None = None  # sap run으로 실행한 원래 tcode
+        self._last_connection_index: int = 0
+        self._last_session_index: int = 0
+        self._last_system_id: str | None = None
+        self._connected_identity: dict[str, str] | None = None
+        self._auto_reconnect: bool = True
+        self._max_reconnect_attempts: int = 3
 
     # -------------------------------------------------------------------
     # Connection Management
     # -------------------------------------------------------------------
 
-    def connect(self, connection_index: int = 0, session_index: int = 0) -> SapSession:
-        """실행 중인 SAP GUI에 연결.
-
-        SAP GUI가 이미 실행 중이고 로그인된 상태여야 한다.
-        ROT(Running Object Table)을 통해 SAP GUI 프로세스에 접근한다.
-        """
+    def _get_application(self) -> Any:
+        """ROT에서 SAP GUI Application 객체를 가져온다."""
         if not _WIN32:
             raise SapGuiError("SAP GUI COM is only available on Windows")
-
         try:
             rot_entry = win32com.client.GetObject("SAPGUI")
             self._application = rot_entry.GetScriptingEngine
+            return self._application
         except Exception as e:
             raise SapGuiError(
                 "SAP GUI에 연결할 수 없습니다. SAP GUI가 실행 중인지, "
@@ -89,16 +91,46 @@ class SapGuiWrapper:
                 "클라이언트: SAP GUI Options > Accessibility > Enable scripting"
             ) from e
 
-        if self._application.Connections.Count == 0:
+    def connect(
+        self,
+        connection_index: int = 0,
+        session_index: int = 0,
+        system: str | None = None,
+    ) -> SapSession:
+        """실행 중인 SAP GUI에 연결.
+
+        SAP GUI가 이미 실행 중이고 로그인된 상태여야 한다.
+        ROT(Running Object Table)을 통해 SAP GUI 프로세스에 접근한다.
+
+        system을 지정하면 시스템 ID(SID)로 올바른 연결을 자동 탐색한다.
+        """
+        app = self._get_application()
+
+        if app.Connections.Count == 0:
             raise SapGuiError("활성 SAP 연결이 없습니다. SAP에 로그인하세요.")
 
-        if connection_index >= self._application.Connections.Count:
+        if system:
+            idx = self._find_connection_by_system(system)
+            if idx is None:
+                available = [
+                    c["system_name"] for c in self.list_connections()["connections"]
+                ]
+                raise SapGuiError(
+                    f"시스템 '{system}'에 해당하는 연결을 찾을 수 없습니다. "
+                    f"활성 시스템: {available}"
+                )
+            connection_index = idx
+            self._last_system_id = system
+        else:
+            self._last_system_id = None
+
+        if connection_index >= app.Connections.Count:
             raise SapGuiError(
                 f"연결 인덱스 {connection_index} 없음. "
-                f"활성 연결 수: {self._application.Connections.Count}"
+                f"활성 연결 수: {app.Connections.Count}"
             )
 
-        self._connection = self._application.Connections(connection_index)
+        self._connection = app.Connections(connection_index)
 
         if session_index >= self._connection.Sessions.Count:
             raise SapGuiError(
@@ -107,11 +139,100 @@ class SapGuiWrapper:
             )
 
         self._session = self._connection.Sessions(session_index)
-        return self.get_session_info()
+        self._last_connection_index = connection_index
+        self._last_session_index = session_index
+        info = self.get_session_info()
+        self._connected_identity = {
+            "system_name": info.system_name,
+            "client": info.client,
+            "user": info.user,
+        }
+        return info
+
+    def list_connections(self) -> dict[str, Any]:
+        """현재 SAP GUI의 모든 활성 연결 목록을 반환한다."""
+        app = self._application
+        if app is None:
+            app = self._get_application()
+
+        connections = []
+        for i in range(app.Connections.Count):
+            conn = app.Connections(i)
+            conn_info: dict[str, Any] = {
+                "index": i,
+                "description": conn.Description,
+                "session_count": conn.Sessions.Count,
+                "sessions": [],
+            }
+            try:
+                conn_info["system_name"] = ""
+                conn_info["client"] = ""
+                if conn.Sessions.Count > 0:
+                    s = conn.Sessions(0)
+                    conn_info["system_name"] = s.Info.SystemName
+                    conn_info["client"] = s.Info.Client
+            except Exception:
+                pass
+            for j in range(conn.Sessions.Count):
+                try:
+                    sess = conn.Sessions(j)
+                    conn_info["sessions"].append({
+                        "index": j,
+                        "user": sess.Info.User,
+                        "transaction": sess.Info.Transaction,
+                    })
+                except Exception:
+                    pass
+            connections.append(conn_info)
+
+        return {
+            "connection_count": app.Connections.Count,
+            "connections": connections,
+        }
+
+    def _find_connection_by_system(self, system: str) -> int | None:
+        """시스템 ID(SID) 또는 Description으로 연결 인덱스를 찾는다.
+
+        SystemName 정확 매칭을 우선하고, 없으면 Description 부분 매칭으로 폴백한다.
+        """
+        app = self._application
+        if app is None:
+            app = self._get_application()
+
+        system_upper = system.upper()
+
+        for i in range(app.Connections.Count):
+            conn = app.Connections(i)
+            try:
+                if conn.Sessions.Count > 0:
+                    s = conn.Sessions(0)
+                    if s.Info.SystemName.upper() == system_upper:
+                        return i
+            except Exception:
+                continue
+
+        matches = []
+        for i in range(app.Connections.Count):
+            conn = app.Connections(i)
+            if system_upper in conn.Description.upper():
+                matches.append(i)
+
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            logger.warning(
+                "시스템 '%s'에 대해 복수의 Description 매칭 발견 (인덱스: %s) — 첫 번째 사용",
+                system, matches,
+            )
+            return matches[0]
+
+        return None
 
     @property
     def session(self) -> Any:
         if not self.is_connected:
+            if self._auto_reconnect and self._connected_identity and self._try_reconnect():
+                return self._session
             raise SapGuiError("SAP GUI에 연결되지 않았습니다. connect()를 먼저 호출하세요.")
         return self._session
 
@@ -127,6 +248,41 @@ class SapGuiWrapper:
             self._connection = None
             self._application = None
             return False
+
+    def _try_reconnect(self) -> bool:
+        """이전 연결 파라미터로 자동 재연결을 시도한다."""
+        expected = self._connected_identity
+        for attempt in range(1, self._max_reconnect_attempts + 1):
+            try:
+                logger.info(
+                    "세션 복구 시도 %d/%d (system=%s, conn=%d, sess=%d)",
+                    attempt, self._max_reconnect_attempts,
+                    self._last_system_id or "-",
+                    self._last_connection_index, self._last_session_index,
+                )
+                info = self.connect(
+                    connection_index=self._last_connection_index,
+                    session_index=self._last_session_index,
+                    system=self._last_system_id,
+                )
+                if expected and info.system_name != expected["system_name"]:
+                    logger.warning(
+                        "복구된 세션이 다른 시스템입니다: %s (기대: %s)",
+                        info.system_name, expected["system_name"],
+                    )
+                    self._session = None
+                    self._connection = None
+                    self._application = None
+                    return False
+                logger.info("세션 복구 성공")
+                return True
+            except Exception:
+                if attempt < self._max_reconnect_attempts:
+                    import time
+                    time.sleep(1)
+                continue
+        logger.warning("세션 복구 실패 — %d회 시도 후 포기", self._max_reconnect_attempts)
+        return False
 
     def disconnect(self) -> None:
         self._session = None

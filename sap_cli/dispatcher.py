@@ -45,6 +45,7 @@ class CommandDef:
 
 COMMAND_REGISTRY: dict[str, CommandDef] = {
     "connect":        CommandDef("sap_connect",           Permission.ADMIN),
+    "connections":    CommandDef("sap_connections",       Permission.READ),
     "session":        CommandDef("sap_session",           Permission.READ),
     "screen":         CommandDef("sap_screen",            Permission.READ),
     "run":            CommandDef("sap_run",               Permission.EXECUTE),
@@ -306,6 +307,8 @@ def _execute_command(
 ) -> dict[str, Any]:
     if command == "connect":
         return _dispatch_connect(args, ctx)
+    if command == "connections":
+        return _dispatch_connections(args, ctx)
     if command == "session":
         return _get_sap().get_session_info().model_dump(mode="json")
     if command == "screen":
@@ -550,8 +553,9 @@ def _dispatch_connect(args: dict[str, Any], ctx: DispatchContext) -> dict[str, A
 
     sap = SapGuiWrapper()
     info = sap.connect(
-        int(args.get("connection", args.get("connection_index", 0))),
-        int(args.get("session", args.get("session_index", 0))),
+        connection_index=int(args.get("connection", args.get("connection_index", 0))),
+        session_index=int(args.get("session", args.get("session_index", 0))),
+        system=args.get("system"),
     )
     _svc._sap = sap
     payload = {
@@ -559,6 +563,11 @@ def _dispatch_connect(args: dict[str, Any], ctx: DispatchContext) -> dict[str, A
         "session": info.model_dump(mode="json"),
     }
     return _with_post_action(payload, sap, "connect", ctx)
+
+
+def _dispatch_connections(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    sap = SapGuiWrapper()
+    return sap.list_connections()
 
 
 def _dispatch_screen(args: dict[str, Any]) -> dict[str, Any]:

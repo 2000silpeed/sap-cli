@@ -726,13 +726,13 @@ e494fad feat: AI 네비게이션 레시피 시스템 구현
 | 레시피 RAG 검색 | 키워드 매칭 → 벡터 임베딩 기반 시맨틱 검색 전환 | 대기 |
 | 온톨로지 통합 심화 | 같은 tcode라도 목적별 다른 경로 표현 | 대기 |
 
-### Phase 16: 연결 안정성
+### Phase 16: 연결 안정성 (2026-04-15 ✅)
 
 | 작업 | 내용 | 상태 |
 |------|------|------|
-| 멀티 시스템 연결 | connection_index 자동 탐색 — 시스템 ID로 올바른 연결 선택 | 대기 |
-| 설계 방향 | Connections 순회하며 Description/SystemName 매칭, sap connect --system SID 지원 | - |
-| 세션 복구 | COM 연결 끊김 시 자동 재연결 + 상태 복원 | 대기 |
+| 멀티 시스템 연결 | connection_index 자동 탐색 — 시스템 ID로 올바른 연결 선택 | ✅ |
+| 설계 방향 | Connections 순회하며 Description/SystemName 매칭, sap connect --system SID 지원 | ✅ |
+| 세션 복구 | COM 연결 끊김 시 자동 재연결 + 상태 복원 | ✅ |
 
 ### Phase 17: AI 학습 루프
 

@@ -41,6 +41,7 @@ RELATION_PERMISSIONS: dict[Relation, set[Permission]] = {
 
 TOOL_PERMISSION_MAP: dict[str, Permission] = {
     "sap_connect": Permission.ADMIN,
+    "sap_connections": Permission.READ,
     "sap_session": Permission.READ,
     "sap_screen": Permission.READ,
     "sap_get_field": Permission.READ,
