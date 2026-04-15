@@ -659,5 +659,58 @@ class FieldRegistry(BaseModel):
     last_rebuilt: str = ""
 
 
+# ---------------------------------------------------------------------------
+# MCP Session (AI 실행 세션) — Phase 14-1
+# ---------------------------------------------------------------------------
+
+class SessionStep(BaseModel):
+    """세션 내 개별 단계."""
+    step_number: int
+    timestamp: str = ""
+
+    command: str = ""
+    tool_name: str = ""
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+    intent: str = ""
+
+    outcome: str = ""
+    error: str = ""
+
+    before_transaction: str = ""
+    before_screen: int = 0
+    after_transaction: str = ""
+    after_screen: int = 0
+    status_message: str = ""
+
+    is_exploration: bool = False
+    is_recovery: bool = False
+
+
+class McpSession(BaseModel):
+    """AI 실행 세션 — 사용자 요청부터 최종 결과까지."""
+    id: str
+    started_at: str = ""
+    finished_at: str | None = None
+    status: str = "running"
+
+    agent: str = ""
+    sap_user: str = ""
+    sap_system: str = ""
+    source: str = "mcp"
+
+    user_request: str = ""
+    ai_reasoning: str = ""
+
+    steps: list[SessionStep] = Field(default_factory=list)
+
+    outcome: str = ""
+    outcome_summary: str = ""
+
+    candidate: bool = False
+    approved: bool = False
+    recipe_id: str | None = None
+
+
 # TransactionOntology에서 참조하는 forward ref 해결
 SapTransaction.model_rebuild()

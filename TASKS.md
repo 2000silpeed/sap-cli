@@ -386,6 +386,86 @@ daemon TCP 요청에 `context` 필드 추가:
 
 ---
 
+## Phase 14: MCP Session Store + 온톨로지 학습 파이프라인 (2026-04-15)
+
+> 상세 설계: [DESIGN_MCP_SESSION.md](DESIGN_MCP_SESSION.md)
+
+### 배경
+
+현재 transcript는 개별 SAP 명령 단위로 기록한다.
+AI가 사용자 요청을 받아 여러 명령을 실행하는 **전체 흐름**(의도 → 추론 → 실행 → 결과)이 보이지 않는다.
+성공한 흐름을 온톨로지에 학습시켜 다음에 비슷한 요청이 오면 더 정확하게 실행하는 구조가 필요하다.
+
+### 핵심 구조
+
+```
+사용자 요청 → AI 추론 → SAP 명령 시퀀스 → 결과
+         ↓                                  ↓
+    MCP Session Store (별도 저장소)     성공 시 candidate 마킹
+                                           ↓
+                                    AI 정제 (헤맨 부분 제거)
+                                           ↓
+                                    관리자 승인 → Workflow Recipe
+                                           ↓
+                                    온톨로지에 저장 → 다음 실행에 참고
+```
+
+### Phase 14-1: MCP Session Logger (핵심)
+
+| # | 작업 | 내용 | 상태 |
+|---|------|------|------|
+| 1 | 스키마 정의 | McpSession, SessionStep 모델 (schema.py) | ✅ |
+| 2 | Session Store | sessions/ 디렉토리 CRUD (session_store.py 신규) | ✅ |
+| 3 | 설정 추가 | SessionConfig (enabled, log_dir) — auth/policy.py | ✅ |
+| 4 | MCP 세션 도구 | sap_session_start, sap_session_end, sap_session_list, sap_session_show | ✅ |
+| 5 | Dispatcher 연동 | _log_session_step + SESSION_SKIP_COMMANDS + _active_session_id 관리 | ✅ |
+| 6 | 테스트 20건 | 세션 CRUD + 단계 기록 + 조회 + 보안(path traversal) + 동시성 | ✅ |
+
+### Phase 14-2: Session Analyzer (정제 엔진)
+
+| # | 작업 | 내용 | 상태 |
+|---|------|------|------|
+| 1 | 탐색 단계 감지 | screen/status/modal 조회만 한 단계 → is_exploration 마킹 | ✅ |
+| 2 | 에러 복구 감지 | 에러 → vkey 12(취소)/n 패턴 → is_recovery 마킹 | ✅ |
+| 3 | 반복 제거 | 동일 명령 연속 retry 중 마지막만 유지 | ✅ |
+| 4 | 핵심 흐름 추출 | exploration/recovery 제거 후 정제된 시퀀스 반환 | ✅ |
+| 5 | candidate 마킹 | 성공 + 3단계 이상 + tcode 포함 → candidate=True | ✅ |
+| 6 | 테스트 | 정제 규칙별 + candidate 마킹 (27건 pass) | ✅ |
+
+### Phase 14-3: Workflow Recipe + 관리자 승인
+
+| # | 작업 | 내용 | 상태 |
+|---|------|------|------|
+| 1 | 스키마 정의 | WorkflowRecipe, RecipeStep 모델 (schema.py) | |
+| 2 | Recipe Store | knowledge/recipes/ CRUD (store.py 확장) | |
+| 3 | 세션→레시피 변환 | 정제된 세션을 RecipeStep으로 변환 + 변수 치환 | |
+| 4 | 승인 도구 | sap_session_candidates, sap_session_approve | |
+| 5 | 온톨로지 연결 | TransactionOntology.recipes에 recipe_id 추가 | |
+| 6 | 테스트 | 변환 + 승인 흐름 + 온톨로지 반영 | |
+
+### Phase 14-4: Recipe 활용 (AI 자동 참조)
+
+| # | 작업 | 내용 | 상태 |
+|---|------|------|------|
+| 1 | ontology_query 확장 | 트랜잭션 조회 시 관련 recipes 요약 포함 | |
+| 2 | recipe 키워드 검색 | trigger_pattern 기반 매칭 | |
+| 3 | sap_recipe_query | recipe 조회 MCP 도구 (tcode/키워드) | |
+| 4 | 테스트 | 검색 + AI 참조 시나리오 | |
+
+### 구현 순서
+
+```
+Phase 14-1 (Session Logger) ← 핵심, 나머지의 기반
+    ↓
+Phase 14-2 (Session Analyzer) ← 14-1 완료 후
+    ↓
+Phase 14-3 (Recipe + 승인) ← 14-2 완료 후
+    ↓
+Phase 14-4 (Recipe 활용) ← 14-3 완료 후
+```
+
+---
+
 ## 남은 작업
 
 ### ReBAC / 운영 커널 후속 작업
@@ -636,3 +716,15 @@ e494fad feat: AI 네비게이션 레시피 시스템 구현
 | 레시피 품질 관리 | 실패 카운트 추가, 실패율 높은 레시피 자동 비활성화 | 대기 |
 | 레시피 버전닝 | SAP 업그레이드/패치 후 경로 변경 대응, 이전 버전 보존 | 대기 |
 | 크로스 트랜잭션 레시피 | SPRO → MM03 → VA01 등 여러 tcode를 걸치는 복합 레시피 | 대기 |
+
+### Phase 18: 온톨로지 Q&A — SAP 문의 자동 응답
+
+> 상세 설계: [DESIGN_MCP_SESSION.md § 10](DESIGN_MCP_SESSION.md)
+
+저장된 온톨로지(7개 트랜잭션 + 프로세스 + 패턴 + 레시피)를 활용하여 SAP 관련 질문에 구조화된 답변을 자동 제공.
+
+| # | 단계 | 내용 | 상태 |
+|---|------|------|------|
+| 1 | Claude Code 스킬 | skill/sap-ontology-qa/ — 코드 변경 없이 온톨로지 JSON 직접 읽어 답변 | 대기 |
+| 2 | CLI 커맨드 | sap ontology ask "<질문>" — OntologyGraph 기반 자연어→그래프 탐색 | 대기 |
+| 3 | MCP 도구 강화 | sap_ontology_query 확장 — field_semantic, field_cross, process_guide 등 | 대기 |

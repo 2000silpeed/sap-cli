@@ -87,6 +87,10 @@ TOOL_PERMISSION_MAP: dict[str, Permission] = {
     "sap_recipe_list": Permission.READ,
     "sap_recipe_delete": Permission.ADMIN,
     "sap_recipe_success": Permission.WRITE,
+    "sap_session_start": Permission.WRITE,
+    "sap_session_end": Permission.WRITE,
+    "sap_session_list": Permission.READ,
+    "sap_session_show": Permission.READ,
 }
 
 
@@ -124,6 +128,12 @@ class TranscriptConfig(BaseModel):
     include_screen_summary: bool = False
 
 
+class SessionConfig(BaseModel):
+    enabled: bool = True
+    log_dir: str = "~/.sap_cli/sessions"
+    auto_log_steps: bool = True
+
+
 class Policy(BaseModel):
     version: int = 1
     agents: dict[str, AgentPolicy] = Field(default_factory=dict)
@@ -131,6 +141,7 @@ class Policy(BaseModel):
     dangerous_transactions: list[DangerousTransaction] = Field(default_factory=list)
     audit: AuditConfig = Field(default_factory=AuditConfig)
     transcript: TranscriptConfig = Field(default_factory=TranscriptConfig)
+    session: SessionConfig = Field(default_factory=SessionConfig)
     active_agent: str = ""
 
     def get_agent(self, agent_name: str) -> AgentPolicy | None:

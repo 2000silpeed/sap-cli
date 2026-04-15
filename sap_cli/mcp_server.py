@@ -719,6 +719,62 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "required": ["recipe_id"],
         },
     },
+    {
+        "name": "sap_session_start",
+        "description": (
+            "AI 실행 세션을 시작합니다. 사용자의 SAP 작업 요청을 받았을 때 가장 먼저 호출하세요. "
+            "세션은 사용자 요청 → AI 추론 → SAP 명령 시퀀스 → 결과의 전체 흐름을 기록합니다. "
+            "세션을 시작하면 이후 실행되는 모든 SAP 명령이 자동으로 세션 단계로 기록됩니다. "
+            "작업 완료 후 반드시 sap_session_end를 호출하세요."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "user_request": {"type": "string", "description": "사용자의 원래 요청 (예: 'VL33N에서 46개 아이템 배송 처리해줘')"},
+                "ai_reasoning": {"type": "string", "description": "AI의 실행 계획/추론 (예: 'VL33N 배송 문서 변경 → 아이템 선택 → 배송 처리')"},
+            },
+            "required": ["user_request"],
+        },
+    },
+    {
+        "name": "sap_session_end",
+        "description": (
+            "AI 실행 세션을 종료합니다. SAP 작업이 완료되면 결과와 함께 호출하세요. "
+            "성공한 세션은 자동으로 온톨로지 학습 후보로 평가됩니다."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "sap_session_start에서 반환된 세션 ID"},
+                "outcome": {"type": "string", "enum": ["success", "partial", "failed"], "description": "결과 (success/partial/failed)"},
+                "outcome_summary": {"type": "string", "description": "결과 요약 (예: '46개 아이템 중 46개 배송 처리 완료')"},
+            },
+            "required": ["session_id", "outcome"],
+        },
+    },
+    {
+        "name": "sap_session_list",
+        "description": "기록된 AI 실행 세션 목록을 조회합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "date": {"type": "string", "description": "날짜 필터 (YYYY-MM-DD)"},
+                "status": {"type": "string", "description": "상태 필터 (running/completed/failed/aborted)"},
+                "limit": {"type": "integer", "description": "최대 결과 수 (기본 20)"},
+            },
+        },
+    },
+    {
+        "name": "sap_session_show",
+        "description": "특정 AI 실행 세션의 상세 정보를 조회합니다. 세션의 모든 단계(steps)와 결과를 확인할 수 있습니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "조회할 세션 ID"},
+            },
+            "required": ["session_id"],
+        },
+    },
 ]
 
 TOOLS: list = []
@@ -769,6 +825,9 @@ def _use_daemon() -> bool:
     return raw in {"1", "true", "yes"}
 
 
+_active_session_id: str | None = None
+
+
 # -------------------------------------------------------------------
 # Tool Handlers
 # -------------------------------------------------------------------
@@ -778,24 +837,26 @@ def _dispatch_via_daemon(
     args: dict[str, Any],
     tool_name: str,
     agent_name: str | None,
+    session_id: str | None = None,
 ) -> dict[str, Any] | None:
     """daemon 경유 실행. 성공하면 결과 dict, 실패/미실행이면 None."""
     from . import daemon
 
-    # daemon 미실행 시 자동 시작 시도
     if not daemon.is_running():
         if not daemon.start_daemon():
-            return None  # 시작 실패 → fallback
+            return None
 
-    ctx = {
+    ctx: dict[str, Any] = {
         "source": "mcp",
         "tool_name": tool_name,
         "agent_name": agent_name,
         "include_screen_summary": _screen_summary_enabled(),
     }
+    if session_id:
+        ctx["session_id"] = session_id
     result = daemon.send_command(command, args, context=ctx)
     if result is None:
-        return None  # 통신 실패 → fallback
+        return None
     return result
 
 
@@ -814,6 +875,8 @@ def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             )
         return _error_result(f"현재 MCP 구성에는 '{name}' 도구가 노출되지 않습니다.")
 
+    global _active_session_id
+
     try:
         command, normalized_args = resolve_mcp_call(name, arguments)
 
@@ -821,10 +884,16 @@ def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         if _use_daemon():
             daemon_result = _dispatch_via_daemon(
                 command, normalized_args, name, effective_agent,
+                session_id=_active_session_id,
             )
             if daemon_result is not None:
                 if daemon_result.get("ok"):
-                    return _json_result(daemon_result["data"])
+                    data = daemon_result["data"]
+                    if command == "session_start" and isinstance(data, dict):
+                        _active_session_id = data.get("session_id")
+                    elif command == "session_end" and isinstance(data, dict) and "error" not in data:
+                        _active_session_id = None
+                    return _json_result(data)
                 if daemon_result.get("approval_required"):
                     return _json_result({
                         "approval_required": True,
@@ -834,16 +903,20 @@ def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 return _error_result(daemon_result.get("error", "daemon error"))
             # daemon 사용 불가 → fallback to direct dispatch
 
-        result = dispatch_command(
-            command,
-            normalized_args,
-            DispatchContext(
-                source="mcp",
-                tool_name=name,
-                agent_name=effective_agent,
-                include_screen_summary=_screen_summary_enabled(),
-            ),
+        ctx = DispatchContext(
+            source="mcp",
+            tool_name=name,
+            agent_name=effective_agent,
+            include_screen_summary=_screen_summary_enabled(),
+            session_id=_active_session_id,
         )
+        result = dispatch_command(command, normalized_args, ctx)
+
+        if command == "session_start" and isinstance(result, dict):
+            _active_session_id = result.get("session_id")
+        elif command == "session_end" and isinstance(result, dict) and "error" not in result:
+            _active_session_id = None
+
         return _json_result(result)
     except ApprovalRequiredError as e:
         return _json_result(e.to_payload())

@@ -6,11 +6,14 @@ CLI, daemon, MCP 서버가 모두 이 경로를 타도록 만들어
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+_logger = logging.getLogger(__name__)
 
 from .auth.audit import AuditLogger
 from .auth.checker import PermissionChecker
@@ -26,6 +29,7 @@ from .service import (
     get_macro_store as _get_macro_store,
     get_recorder as _get_recorder,
     get_sap as _get_sap,
+    get_session_store as _get_session_store,
     get_store as _get_store,
     map_action as _map_action,
 )
@@ -93,6 +97,10 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "recipe_list":    CommandDef("sap_recipe_list",       Permission.READ),
     "recipe_delete":  CommandDef("sap_recipe_delete",     Permission.ADMIN),
     "recipe_success": CommandDef("sap_recipe_success",    Permission.WRITE),
+    "session_start":  CommandDef("sap_session_start",     Permission.WRITE),
+    "session_end":    CommandDef("sap_session_end",       Permission.WRITE),
+    "session_list":   CommandDef("sap_session_list",      Permission.READ),
+    "session_show":   CommandDef("sap_session_show",      Permission.READ),
 }
 
 COMMAND_TOOL_MAP: dict[str, str] = {cmd: d.tool_name for cmd, d in COMMAND_REGISTRY.items()}
@@ -114,6 +122,10 @@ POST_ACTION_COMMANDS = {
 TRANSCRIPT_OMIT_COMMANDS = {
     "transcript_query",
     "transcript_plan",
+    "session_start",
+    "session_end",
+    "session_list",
+    "session_show",
 }
 
 
@@ -156,6 +168,7 @@ class DispatchContext:
     enforce_auth: bool = True
     include_post_action_context: bool = True
     include_screen_summary: bool = False
+    session_id: str | None = None
 
 
 def dispatch_command(
@@ -176,9 +189,11 @@ def dispatch_command(
 
     transcript = TranscriptLogger(policy.transcript if policy else None)
     should_log_transcript = transcript.should_log(authz.permission) and command not in TRANSCRIPT_OMIT_COMMANDS
+    should_log_session = bool(ctx.session_id) and command not in SESSION_SKIP_COMMANDS
+    need_state = should_log_transcript or should_log_session
     transcript_with_screen_summary = transcript.include_screen_summary or ctx.include_screen_summary
     before_state = None
-    if should_log_transcript:
+    if need_state:
         before_state = _capture_transcript_state(
             command,
             include_screen_summary=transcript_with_screen_summary,
@@ -216,7 +231,7 @@ def dispatch_command(
         result = _execute_command(command, args, ctx, policy)
     except Exception as exc:
         after_state = None
-        if should_log_transcript:
+        if need_state:
             after_state = _capture_transcript_state(
                 command,
                 include_screen_summary=transcript_with_screen_summary,
@@ -234,10 +249,20 @@ def dispatch_command(
             after_state=after_state,
             error=str(exc),
         )
+        _log_session_step(
+            ctx=ctx,
+            command=command,
+            tool_name=tool_name,
+            arguments=args,
+            outcome="error",
+            error=str(exc),
+            before_state=before_state,
+            after_state=after_state,
+        )
         raise
 
     after_state = _extract_transcript_state_from_result(result)
-    if should_log_transcript and after_state is None:
+    if need_state and after_state is None:
         after_state = _capture_transcript_state(
             command,
             include_screen_summary=transcript_with_screen_summary,
@@ -254,6 +279,15 @@ def dispatch_command(
         before_state=before_state,
         after_state=after_state,
         result=result,
+    )
+    _log_session_step(
+        ctx=ctx,
+        command=command,
+        tool_name=tool_name,
+        arguments=args,
+        outcome="success",
+        before_state=before_state,
+        after_state=after_state,
     )
     return result
 
@@ -470,6 +504,14 @@ def _execute_command(
         return _dispatch_recipe_delete(args)
     if command == "recipe_success":
         return _dispatch_recipe_success(args)
+    if command == "session_start":
+        return _dispatch_session_start(args, ctx)
+    if command == "session_end":
+        return _dispatch_session_end(args)
+    if command == "session_list":
+        return _dispatch_session_list(args)
+    if command == "session_show":
+        return _dispatch_session_show(args)
     raise ValueError(f"미구현 명령: {command}")
 
 
@@ -1714,6 +1756,74 @@ def _dispatch_recipe_success(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _dispatch_session_start(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    policy = load_policy()
+    config = policy.session if policy else None
+    if config and not config.enabled:
+        return {"error": "세션 로깅이 비활성화되어 있습니다"}
+    store = _get_session_store(config)
+
+    sap_user, sap_system = "", ""
+    sap = _get_existing_sap()
+    if sap is not None:
+        try:
+            info = sap.get_session_info()
+            sap_user = info.user
+            sap_system = info.system_name
+        except Exception:
+            pass
+
+    session = store.create_session(
+        user_request=str(args.get("user_request", "")),
+        ai_reasoning=str(args.get("ai_reasoning", "")),
+        agent=ctx.agent_name or "",
+        sap_user=sap_user,
+        sap_system=sap_system,
+        source=ctx.source,
+    )
+    return {
+        "session_id": session.id,
+        "status": session.status,
+        "started_at": session.started_at,
+    }
+
+
+def _dispatch_session_end(args: dict[str, Any]) -> dict[str, Any]:
+    store = _get_session_store()
+    session_id = str(args["session_id"])
+    outcome = str(args.get("outcome", "success"))
+    summary = str(args.get("outcome_summary", ""))
+    session = store.finish_session(session_id, outcome=outcome, outcome_summary=summary)
+    if session is None:
+        return {"error": f"세션을 찾을 수 없습니다: {session_id}"}
+    return {
+        "session_id": session.id,
+        "status": session.status,
+        "outcome": session.outcome,
+        "step_count": len(session.steps),
+        "finished_at": session.finished_at,
+    }
+
+
+def _dispatch_session_list(args: dict[str, Any]) -> dict[str, Any]:
+    store = _get_session_store()
+    sessions = store.list_sessions(
+        date=args.get("date"),
+        status=args.get("status"),
+        limit=int(args.get("limit", 20)),
+    )
+    return {"sessions": sessions, "count": len(sessions)}
+
+
+def _dispatch_session_show(args: dict[str, Any]) -> dict[str, Any]:
+    store = _get_session_store()
+    session_id = str(args["session_id"])
+    session = store.load(session_id)
+    if session is None:
+        return {"error": f"세션을 찾을 수 없습니다: {session_id}"}
+    return session.model_dump(mode="json", exclude_none=True)
+
+
 def _evaluate_authorization(
     tool_name: str,
     args: dict[str, Any],
@@ -1880,6 +1990,49 @@ def _log_transcript(
         result=result,
         error=error,
     )
+
+
+SESSION_SKIP_COMMANDS = {
+    "session_start", "session_end", "session_list", "session_show",
+    "transcript_query", "transcript_plan",
+    "ontology_query", "macro_list", "macro_show", "macro_delete",
+    "capture", "capture_list",
+}
+
+
+def _log_session_step(
+    *,
+    ctx: DispatchContext,
+    command: str,
+    tool_name: str,
+    arguments: dict[str, Any],
+    outcome: str,
+    error: str = "",
+    before_state: dict[str, Any] | None = None,
+    after_state: dict[str, Any] | None = None,
+) -> None:
+    if not ctx.session_id or command in SESSION_SKIP_COMMANDS:
+        return
+    try:
+        store = _get_session_store()
+        if not store.auto_log_steps:
+            return
+        status_msg = ""
+        if after_state and isinstance(after_state.get("status"), dict):
+            status_msg = after_state["status"].get("message", "")
+        store.add_step(
+            ctx.session_id,
+            command=command,
+            tool_name=tool_name,
+            arguments=arguments,
+            outcome=outcome,
+            error=error,
+            before_state=before_state,
+            after_state=after_state,
+            status_message=status_msg,
+        )
+    except Exception:
+        _logger.warning("세션 단계 기록 실패: session_id=%s, command=%s", ctx.session_id, command, exc_info=True)
 
 
 def _capture_transcript_state(

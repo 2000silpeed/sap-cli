@@ -8,6 +8,7 @@ from .macro.recorder import MacroRecorder
 from .macro.store import MacroStore
 from .ontology.schema import ActionType
 from .ontology.store import OntologyStore
+from .session_store import SessionStore
 
 
 # ---------------------------------------------------------------------------
@@ -19,6 +20,7 @@ _store: OntologyStore | None = None
 _learner: OntologyLearner | None = None
 _recorder: MacroRecorder | None = None
 _macro_store: MacroStore | None = None
+_session_store: SessionStore | None = None
 
 
 def get_sap() -> SapGuiWrapper:
@@ -56,6 +58,17 @@ def get_macro_store() -> MacroStore:
     if _macro_store is None:
         _macro_store = MacroStore()
     return _macro_store
+
+
+_session_config = None
+
+
+def get_session_store(config=None) -> SessionStore:
+    global _session_store, _session_config
+    if _session_store is None or (config is not None and config != _session_config):
+        _session_config = config
+        _session_store = SessionStore(config)
+    return _session_store
 
 
 # ---------------------------------------------------------------------------
