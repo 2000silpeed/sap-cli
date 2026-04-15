@@ -711,13 +711,13 @@ e494fad feat: AI 네비게이션 레시피 시스템 구현
 | 3 | 포매터 | 7개 질문 유형별 구조화된 JSON 답변 생성 | ✅ |
 | 4 | 테스트 | 파서 11개 + 포매터 9개 = 20개 테스트 전체 통과 | ✅ |
 
-#### Phase 15-3: MCP 도구 강화 (예정)
+#### Phase 15-3: MCP 도구 강화
 
 | # | 작업 | 내용 | 상태 |
 |---|------|------|------|
-| 1 | sap_ontology_query 확장 | field_semantic, field_cross, process_guide, dependency_chain 쿼리 타입 추가 | 대기 |
-| 2 | 시맨틱 검색 | synonyms + domain_context 기반 퍼지 매칭 | 대기 |
-| 3 | 테스트 | 쿼리 타입별 응답 검증 | 대기 |
+| 1 | sap_ontology_query 확장 | field_semantic, field_cross, process_guide, dependency_chain 쿼리 타입 추가 | ✅ |
+| 2 | 시맨틱 검색 | synonyms + domain_context 기반 퍼지 매칭 | ✅ |
+| 3 | 테스트 | 시맨틱 검색 10개 + 확장 쿼리 13개 = 23개 테스트 전체 통과 | ✅ |
 
 #### 장기: 레시피 RAG (레시피 100개+ 축적 후)
 

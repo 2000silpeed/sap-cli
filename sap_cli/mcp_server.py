@@ -316,7 +316,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "description": (
             "학습된 SAP 온톨로지를 조회합니다. 화면 구조, 필드, 가능한 액션 경로 등 도메인 지식을 반환합니다. "
             "SPRO 등 트리 네비게이션이 필요할 때 action_search로 저장된 경로를 먼저 검색하세요. "
-            "경로가 있으면 execution_plan이 반환되므로 그대로 실행하면 됩니다."
+            "경로가 있으면 execution_plan이 반환되므로 그대로 실행하면 됩니다. "
+            "query_type으로 시맨틱 검색, 크로스 트랜잭션 필드 조회, 프로세스 가이드, 종속성 체인을 사용할 수 있습니다."
         ),
         "inputSchema": {
             "type": "object",
@@ -325,6 +326,17 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "field_search": {"type": "string", "description": "필드명/라벨 검색 (선택)"},
                 "action_search": {"type": "string", "description": "액션 경로 검색 (예: 'shipping point', '가격결정'). SPRO 등에서 저장된 네비게이션 경로를 찾습니다."},
                 "list_all": {"type": "boolean", "default": False, "description": "저장된 모든 온톨로지 목록"},
+                "query_type": {
+                    "type": "string",
+                    "enum": ["field_semantic", "field_cross", "process_guide", "dependency_chain"],
+                    "description": (
+                        "확장 쿼리 타입. "
+                        "field_semantic: synonyms/domain_context 기반 퍼지 필드 검색 (field_search 필수). "
+                        "field_cross: 특정 필드가 사용되는 모든 트랜잭션/화면 조회 (field_search 필수). "
+                        "process_guide: 프로세스 단계별 가이드 (tcode 또는 field_search로 프로세스 ID 지정). "
+                        "dependency_chain: 필드 종속성 체인 추적 (field_search 필수)."
+                    ),
+                },
             },
         },
     },
