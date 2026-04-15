@@ -743,14 +743,64 @@ e494fad feat: AI 네비게이션 레시피 시스템 구현
 | 레시피 버전닝 | SAP 업그레이드/패치 후 경로 변경 대응, 이전 버전 보존 | 대기 |
 | 크로스 트랜잭션 레시피 | SPRO → MM03 → VA01 등 여러 tcode를 걸치는 복합 레시피 | 대기 |
 
-### Phase 18: 온톨로지 Q&A — SAP 문의 자동 응답
+### Phase 18: ~~온톨로지 Q&A — SAP 문의 자동 응답~~ (Phase 15에서 완료)
 
-> 상세 설계: [DESIGN_MCP_SESSION.md § 10](DESIGN_MCP_SESSION.md)
+> Phase 15-1~15-3에서 모두 구현 완료. 이 Phase는 폐기.
 
-저장된 온톨로지(7개 트랜잭션 + 프로세스 + 패턴 + 레시피)를 활용하여 SAP 관련 질문에 구조화된 답변을 자동 제공.
+### Phase 19: ADT 온톨로지 통합 — ABAP 코드 메타데이터 연동
 
-| # | 단계 | 내용 | 상태 |
+> 참고 레포: [mcp-abap-adt](https://github.com/mario-andreschak/mcp-abap-adt), [mcp-abap-abap-adt-api](https://github.com/mario-andreschak/mcp-abap-abap-adt-api)
+
+SAP ADT(ABAP Development Tools) REST API를 활용하여 온톨로지에 **코드 레벨 메타데이터**를 추가.
+현재 GUI 화면 기반(tcode → screen → field) 온톨로지를 **tcode → program → class/table/function** 까지 확장.
+
+**전제 조건:**
+- SAP 시스템에서 `/sap/bc/adt` SICF 서비스 활성화
+- ADT 접근 권한이 있는 SAP 계정 (개발자 키 불필요, 읽기 전용)
+- 레시피 50개+ 축적 후 착수 권장
+
+#### Phase 19-1: ADT 클라이언트 기반 구축
+
+| # | 작업 | 내용 | 상태 |
 |---|------|------|------|
-| 1 | Claude Code 스킬 | skill/sap-ontology-qa/ — 코드 변경 없이 온톨로지 JSON 직접 읽어 답변 | 대기 |
-| 2 | CLI 커맨드 | sap ontology ask "<질문>" — OntologyGraph 기반 자연어→그래프 탐색 | 대기 |
-| 3 | MCP 도구 강화 | sap_ontology_query 확장 — field_semantic, field_cross, process_guide 등 | 대기 |
+| 1 | ADT HTTP 클라이언트 | `adt_client.py` — Basic Auth + CSRF 토큰 자동 처리, `requests` 기반 | 대기 |
+| 2 | 연결 설정 | `~/.sap_cli/adt_config.json` — URL, client, user, 시스템별 다중 연결 | 대기 |
+| 3 | CLI 커맨드 | `sap adt connect` / `sap adt status` — ADT 연결 테스트 | 대기 |
+| 4 | 테스트 | CSRF 토큰 흐름 mock 테스트, 연결 실패 핸들링 | 대기 |
+
+#### Phase 19-2: 읽기 전용 ADT 도구 (온톨로지 보강용)
+
+| # | 작업 | 내용 | 상태 |
+|---|------|------|------|
+| 1 | 트랜잭션 프로그램 조회 | `sap adt tcode-info <tcode>` — tcode → 실행 프로그램명, 프로그램 타입 | 대기 |
+| 2 | 오브젝트 검색 | `sap adt search <query>` — 프로그램/클래스/함수모듈/테이블 검색 | 대기 |
+| 3 | 테이블 DDic 조회 | `sap adt table <table>` — 필드 목록, 데이터 요소, 도메인, 체크 테이블 | 대기 |
+| 4 | 소스 코드 조회 | `sap adt source <object>` — 프로그램/클래스/함수모듈 소스 읽기 전용 | 대기 |
+| 5 | 패키지 구조 조회 | `sap adt package <package>` — 패키지 하위 오브젝트 트리 | 대기 |
+
+#### Phase 19-3: 온톨로지 스키마 확장
+
+| # | 작업 | 내용 | 상태 |
+|---|------|------|------|
+| 1 | 노드 타입 추가 | `program`, `class`, `function_module`, `table`, `data_element`, `domain` | 대기 |
+| 2 | 엣지 타입 추가 | `executes_program`, `reads_table`, `calls_function`, `uses_data_element` | 대기 |
+| 3 | tcode→program 자동 매핑 | ADT에서 tcode 속성 조회 → 온톨로지에 `executes_program` 엣지 자동 생성 | 대기 |
+| 4 | field→data_element 매핑 | 화면 필드의 DDic 바인딩 → `uses_data_element` 엣지 생성 | 대기 |
+| 5 | 테스트 | 확장 스키마 검증, 기존 온톨로지 호환성 테스트 | 대기 |
+
+#### Phase 19-4: MCP 도구 확장
+
+| # | 작업 | 내용 | 상태 |
+|---|------|------|------|
+| 1 | sap_adt_query MCP 도구 | tcode_info, search_object, table_structure 쿼리 타입 | 대기 |
+| 2 | 온톨로지 쿼리 확장 | `code_trace` 쿼리 — tcode에서 실행되는 프로그램/테이블 역추적 | 대기 |
+| 3 | 통합 Q&A | "VA01이 사용하는 테이블은?" 같은 코드 레벨 질문 지원 | 대기 |
+| 4 | 테스트 | MCP 도구 단위 테스트 + 통합 시나리오 테스트 | 대기 |
+
+#### 장기: ADT 쓰기 기능 (Go/No-Go 후)
+
+| 작업 | 내용 | 상태 |
+|------|------|------|
+| 오브젝트 잠금/수정 | 소스코드 수정 + 트랜스포트 생성 (경영진 승인 필요) | 대기 |
+| ATC 정적 분석 | 코드 품질 검사 자동 실행 | 대기 |
+| 단위 테스트 실행 | ABAP Unit 원격 실행 + 결과 수집 | 대기 |

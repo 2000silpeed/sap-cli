@@ -383,3 +383,203 @@ sap ontology ask "WERKS 필드가 사용되는 트랜잭션"
 3. **한국어 우선**: synonyms에 한국어 포함, 질문도 한국어 지원
 4. **점진적 확장**: 온톨로지 데이터가 쌓일수록 답변 범위 자동 확대
 5. **하위 호환**: 기존 ontology_query, field_dependencies 도구는 그대로 유지
+
+---
+
+## 11. ADT 온톨로지 통합 — ABAP 코드 메타데이터 연동 (Phase 19)
+
+> 참고 레포: [mcp-abap-adt](https://github.com/mario-andreschak/mcp-abap-adt), [mcp-abap-abap-adt-api](https://github.com/mario-andreschak/mcp-abap-abap-adt-api)
+
+### 11.1 목표
+
+현재 온톨로지는 **GUI 화면 기반** (tcode → screen → field/button/tree).
+ADT REST API로 **코드 레벨 메타데이터**를 추가하여 온톨로지를 확장한다.
+
+```
+현재:  tcode → screen → field → value_help
+확장:  tcode → program → class → table → data_element → domain
+              ↓                    ↓
+        function_module      check_table
+```
+
+AI 에이전트가 "VA01이 읽는 테이블은?", "MATNR 필드의 체크 테이블은?" 같은 코드 레벨 질문에 답할 수 있게 된다.
+
+### 11.2 기존 구조와의 관계
+
+```
+기존 유지:
+  ontology/schema.py    — SOS 기반 노드/엣지 스키마
+  ontology/graph.py     — OntologyGraph 탐색 엔진
+  ontology/store.py     — JSON 파일 기반 저장
+  ontology/meta_edge.py — 엣지 타입 정의
+
+확장:
+  adt/client.py         — ADT REST API HTTP 클라이언트 (신규)
+  adt/mapper.py         — ADT 응답 → 온톨로지 노드/엣지 변환 (신규)
+  ontology/schema.py    — 노드/엣지 타입 추가 (수정)
+  cli.py                — `sap adt` 서브커맨드 추가 (수정)
+  mcp_server.py         — sap_adt_query 도구 추가 (수정)
+```
+
+### 11.3 ADT 클라이언트 설계
+
+#### 11.3.1 인증 흐름
+
+```
+1. GET /sap/bc/adt/discovery
+   → Header: Authorization: Basic base64(user:pass)
+   → Header: X-SAP-Client: 100
+   → Header: X-CSRF-Token: Fetch
+   → Response Header에서 X-CSRF-Token 추출
+
+2. 이후 모든 POST/PUT 요청에 CSRF 토큰 첨부
+```
+
+#### 11.3.2 연결 설정
+
+```json
+// ~/.sap_cli/adt_config.json
+{
+  "connections": {
+    "DEV": {
+      "url": "https://sapdev.company.com:44300",
+      "client": "100",
+      "user": "DEVELOPER",
+      "language": "KO"
+    },
+    "PRD": {
+      "url": "https://sapprd.company.com:44300",
+      "client": "100",
+      "user": "READONLY"
+    }
+  },
+  "default": "DEV"
+}
+```
+
+비밀번호는 설정 파일에 저장하지 않음. 환경변수 `SAP_ADT_PASSWORD` 또는 첫 연결 시 프롬프트.
+
+#### 11.3.3 주요 ADT 엔드포인트
+
+| 용도 | HTTP | 경로 |
+|------|------|------|
+| 서비스 디스커버리 | GET | `/sap/bc/adt/discovery` |
+| 트랜잭션 속성 | GET | `/sap/bc/adt/repository/informationsystem/objectproperties/values` |
+| 오브젝트 검색 | GET | `/sap/bc/adt/repository/informationsystem/search?query=<q>&type=<type>` |
+| 프로그램 소스 | GET | `/sap/bc/adt/programs/programs/<name>/source/main` |
+| 클래스 소스 | GET | `/sap/bc/adt/oo/classes/<name>/source/main` |
+| 함수모듈 소스 | GET | `/sap/bc/adt/functions/groups/<group>/fmodules/<name>/source/main` |
+| 테이블 DDic | GET | `/sap/bc/adt/ddic/tables/<name>/source/main` |
+| 구조체 DDic | GET | `/sap/bc/adt/ddic/structures/<name>/source/main` |
+| 데이터 요소 | GET | `/sap/bc/adt/ddic/dataelements/<name>` |
+| 도메인 | GET | `/sap/bc/adt/ddic/domains/<name>` |
+| 인터페이스 소스 | GET | `/sap/bc/adt/oo/interfaces/<name>/source/main` |
+| 패키지 구조 | GET | `/sap/bc/adt/packages/<name>` |
+
+### 11.4 온톨로지 스키마 확장
+
+#### 11.4.1 새 노드 타입
+
+```python
+# ontology/schema.py 확장
+"program": {
+    "required": ["name", "type"],        # type: REPORT, MODULE_POOL, FUNCTION_GROUP, CLASS_POOL
+    "optional": ["package", "description", "created_by"]
+}
+"abap_class": {
+    "required": ["name"],
+    "optional": ["package", "superclass", "interfaces", "description"]
+}
+"function_module": {
+    "required": ["name", "function_group"],
+    "optional": ["description", "import_params", "export_params"]
+}
+"table": {
+    "required": ["name", "table_type"],   # TRANSP, CLUSTER, POOL
+    "optional": ["package", "description", "fields"]
+}
+"data_element": {
+    "required": ["name"],
+    "optional": ["domain", "description", "label_short", "label_medium", "label_long"]
+}
+"domain": {
+    "required": ["name", "data_type"],
+    "optional": ["length", "value_range", "check_table"]
+}
+```
+
+#### 11.4.2 새 엣지 타입
+
+```python
+# ontology/meta_edge.py 확장
+"executes_program":    (tcode → program)
+"calls_function":      (program → function_module)
+"uses_class":          (program → abap_class)
+"reads_table":         (program → table)  # SELECT 문 기반
+"writes_table":        (program → table)  # INSERT/UPDATE/MODIFY 문 기반
+"has_field":           (table → data_element)
+"uses_domain":         (data_element → domain)
+"checks_against":      (domain → table)   # check_table 관계
+"belongs_to_package":  (program|class|table → package)
+```
+
+#### 11.4.3 기존 온톨로지와의 연결
+
+```
+기존 field 노드의 data_element 속성을 통해 자동 연결:
+
+  screen:field(MATNR)
+      ↓ uses_data_element
+  data_element(MATNR)
+      ↓ uses_domain
+  domain(MATNR)
+      ↓ checks_against
+  table(MARA)  ← "자재 마스터 테이블"
+```
+
+### 11.5 ADT → 온톨로지 매핑 파이프라인
+
+```
+1. sap adt enrich <tcode>
+   → ADT에서 tcode 속성 조회 → program 노드 생성 + executes_program 엣지
+   → 프로그램 소스 조회 → SELECT/CALL FUNCTION 파싱 → table/function 노드 + 엣지
+   → 테이블 DDic 조회 → data_element/domain 노드 + 엣지
+   → 온톨로지 store에 저장
+
+2. 자동화 (Phase 19-4 이후):
+   learner.py 확장 — 화면 학습 시 ADT 메타데이터도 동시 수집
+```
+
+### 11.6 MCP 도구 설계
+
+```python
+# sap_adt_query: ADT 기반 코드 메타데이터 조회
+{
+    "name": "sap_adt_query",
+    "params": {
+        "query_type": "tcode_info | search_object | table_structure | code_trace | source_code",
+        "target": "<tcode|object_name|table_name>",
+        "options": {}  # search_type, max_results 등
+    }
+}
+
+# 기존 sap_ontology_query 확장
+# → code_trace 쿼리 타입 추가: tcode에서 실행되는 프로그램/테이블 역추적
+```
+
+### 11.7 설계 원칙
+
+1. **읽기 전용 우선**: 쓰기 기능은 경영진 Go 이후에만 검토
+2. **점진적 확장**: 기존 GUI 온톨로지는 그대로 유지, 코드 메타데이터는 별도 레이어로 추가
+3. **SOS 철학 유지**: 벡터 검색이 아닌 구조적 그래프 탐색
+4. **권한 분리**: ADT 접근은 GUI COM 접근과 별도 인증. ReBAC 정책에 `adt:read` 액션 추가
+5. **소스 파싱은 최소한**: 정규식 기반 SELECT/CALL FUNCTION 추출만. AST 파싱은 과잉
+6. **오프라인 캐시**: ADT 응답은 로컬 캐시 → 네트워크 없이도 온톨로지 조회 가능
+
+### 11.8 착수 조건
+
+- [ ] Phase 16 (연결 안정성) 완료
+- [ ] Phase 17 (AI 학습 루프) 완료 또는 병행 가능 판단
+- [ ] 레시피 50개+ 축적 (코드 레벨 질문 수요 확인)
+- [ ] SAP 시스템 ADT SICF 서비스 활성화 확인
+- [ ] 경영진 Go/No-Go 결정 후
