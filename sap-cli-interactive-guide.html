@@ -813,6 +813,11 @@
               <span class="chip">SPRO 트리 네비게이션</span>
               <span class="chip">AI 레시피 학습 → 재활용</span>
               <span class="chip">ALV Grid 읽기/더블클릭</span>
+              <span class="chip">멀티 시스템 연결 (SID 탐색)</span>
+              <span class="chip">세션 자동 복구</span>
+              <span class="chip">온톨로지 Q&A (시맨틱 검색)</span>
+              <span class="chip">AI 실행 세션 추적</span>
+              <span class="chip">데몬 모드 (단일 연결)</span>
             </div>
           </div>
         </section>
@@ -821,7 +826,7 @@
           <div class="section-head">
             <div>
               <strong>Concepts</strong>
-              <h2>꼭 알아야 할 개념 7가지</h2>
+              <h2>꼭 알아야 할 개념 9가지</h2>
               <p>
                 기능이 많아 보이지만, 실제로는 층이 깔끔하게 나뉘어 있습니다.
                 왼쪽 항목을 클릭하면 각각이 뭘 하는지 바로 확인할 수 있어요.
@@ -982,6 +987,8 @@
                 <div class="tool-pill"><strong>온톨로지</strong><br>이 트랜잭션은 원래 어떤 화면, 필드, 버튼으로 구성되어 있는지 기억합니다.</div>
                 <div class="tool-pill"><strong>실행 기록</strong><br>방금 뭘 했고, 결과가 어땠는지 — 모든 조작이 자동으로 남습니다.</div>
                 <div class="tool-pill"><strong>재실행 검토</strong><br>같은 작업을 다시 해도 될지, 뭘 먼저 확인해야 할지 알려줍니다.</div>
+                <div class="tool-pill"><strong>세션 추적</strong><br>AI의 하나의 요청 처리를 세션으로 묶어 의도부터 결과까지 추적합니다.</div>
+                <div class="tool-pill"><strong>연결 복구</strong><br>COM 연결이 끊어져도 이전 시스템으로 자동 재연결하고, 잘못된 시스템은 거부합니다.</div>
               </div>
             </article>
             <article class="card">
@@ -1100,13 +1107,14 @@ active_agent: "standard"</pre>
 
     <footer>
       프로젝트 문서와 코드를 바탕으로 정리한 인터랙티브 가이드입니다.
-      마지막 업데이트: 2026-04-08.
+      마지막 업데이트: 2026-04-15.
     </footer>
   </div>
 
   <script>
     const commands = [
-      { cli: "sap connect", mcp: "sap_connect", category: "inspect", permission: "admin", surfaces: ["CLI", "MCP"], desc: "실행 중인 SAP GUI 세션에 연결합니다.", example: "sap connect --connection 0 --session 0", hint: "모든 작업의 출발점입니다." },
+      { cli: "sap connect", mcp: "sap_connect", category: "inspect", permission: "admin", surfaces: ["CLI", "MCP"], desc: "실행 중인 SAP GUI 세션에 연결합니다. --system으로 시스템 ID(SID) 자동 탐색이 가능합니다.", example: "sap connect --system PR1", hint: "모든 작업의 출발점입니다. 여러 시스템에 동시 로그인 시 --system이 유용합니다." },
+      { cli: "sap connections", mcp: "sap_connections", category: "inspect", permission: "read", surfaces: ["CLI", "MCP"], desc: "현재 SAP GUI의 모든 활성 연결 목록을 조회합니다. 시스템 ID, 클라이언트, 세션 정보를 반환합니다.", example: "sap connections", hint: "여러 시스템 중 어디에 연결할지 확인할 때 사용합니다." },
       { cli: "sap session", mcp: "sap_session", category: "inspect", permission: "read", surfaces: ["CLI", "MCP", "Shell"], desc: "사용자, 트랜잭션, 화면번호, 시스템명 같은 현재 세션 정보를 읽습니다.", example: "sap session", hint: "현재 어디에 있는지 먼저 확인할 때 사용합니다." },
       { cli: "sap screen", mcp: "sap_screen", category: "inspect", permission: "read", surfaces: ["CLI", "MCP", "Shell"], desc: "현재 화면의 전체 UI 구조를 JSON으로 반환합니다. --search로 패턴 검색, 모달 자동 감지, 탭/테이블 내부 스캔 지원.", example: "sap screen --search \"MATNR\"", hint: "--fields-only는 읽기전용 포함 전체 필드 + 테이블, --search는 ID/라벨/시맨틱 부분 일치 검색." },
       { cli: "sap status", mcp: "sap_get_status", category: "inspect", permission: "read", surfaces: ["CLI", "MCP", "Shell"], desc: "상태바 메시지를 조회합니다.", example: "sap status", hint: "실행 뒤 결과 확인의 핵심입니다." },
@@ -1139,6 +1147,12 @@ active_agent: "standard"</pre>
 
       { cli: "sap ontology", mcp: "sap_ontology_query", category: "ontology", permission: "read", surfaces: ["CLI", "MCP"], desc: "학습된 트랜잭션 구조, 필드, 액션 지식을 조회합니다.", example: "sap ontology MM03 --actions", hint: "구조를 모를 때 먼저 보는 지식 레이어입니다." },
       { cli: "sap learn", mcp: "sap_learn", category: "ontology", permission: "admin", surfaces: ["CLI", "MCP"], desc: "현재 화면을 스캔해서 온톨로지 지식으로 저장합니다.", example: "sap learn", hint: "즐겨 쓰는 트랜잭션은 먼저 학습해 두는 편이 좋습니다." },
+      { cli: "sap ontology-ask", mcp: "sap_ontology_ask", category: "ontology", permission: "read", surfaces: ["CLI", "MCP"], desc: "자연어로 SAP 도메인 질문을 하면 축적된 온톨로지에서 구조화된 답변을 생성합니다.", example: "sap ontology-ask \"수주에 필요한 필수 필드는?\"", hint: "SAP 연결 없이도 동작합니다. 저장된 온톨로지 JSON 기반." },
+      { cli: "sap ontology-relationships", mcp: "sap_ontology_relationships", category: "ontology", permission: "read", surfaces: ["CLI", "MCP"], desc: "트랜잭션의 온톨로지 관계(필드 종속성, 문서 흐름 등)를 탐색합니다.", example: "sap ontology-relationships MM03 --type field_dependency", hint: "필드 간 숨겨진 종속 관계를 파악할 수 있습니다." },
+      { cli: "sap field-dependencies", mcp: "sap_field_dependencies", category: "ontology", permission: "read", surfaces: ["CLI", "MCP"], desc: "특정 트랜잭션의 필드 종속성을 조회합니다.", example: "sap field-dependencies VA01 KUNNR", hint: "어떤 필드가 다른 필드에 영향을 주는지 확인합니다." },
+      { cli: "sap document-flow", mcp: "sap_document_flow", category: "ontology", permission: "read", surfaces: ["CLI", "MCP"], desc: "트랜잭션 간 문서 흐름(수주→출하→청구 등)을 조회합니다.", example: "sap document-flow VA01", hint: "트랜잭션 체인 이해에 유용합니다." },
+      { cli: "sap process-path", mcp: "sap_process_path", category: "ontology", permission: "read", surfaces: ["CLI", "MCP"], desc: "두 트랜잭션 사이의 프로세스 경로를 탐색합니다.", example: "sap process-path MM01 MIRO", hint: "어떤 중간 단계를 거쳐야 하는지 확인합니다." },
+      { cli: "sap ontology-rebuild", mcp: "sap_ontology_rebuild", category: "ontology", permission: "admin", surfaces: ["CLI", "MCP"], desc: "온톨로지 관계 그래프를 재구축합니다.", example: "sap ontology-rebuild", hint: "온톨로지 데이터 수정 후 인덱스를 다시 빌드합니다." },
       { cli: "sap capture", mcp: "sap_capture", category: "inspect", permission: "read", surfaces: ["CLI", "MCP"], desc: "현재 SAP GUI 화면을 스크린샷으로 캡처합니다. 사용자 설명서 제작용.", example: "sap capture 01_초기화면", hint: "라벨을 지정하면 파일명에 반영됩니다. --output으로 경로 직접 지정도 가능." },
       { cli: "sap captures", mcp: "sap_capture_list", category: "inspect", permission: "read", surfaces: ["CLI", "MCP"], desc: "저장된 스크린샷 목록을 조회합니다.", example: "sap captures VL03N", hint: "tcode별로 필터링할 수 있습니다." },
 
@@ -1161,7 +1175,10 @@ active_agent: "standard"</pre>
       { cli: "sap process-step", mcp: "sap_process_step", category: "process", permission: "execute", surfaces: ["CLI", "MCP"], desc: "스텝 완료를 보고하고 출력값을 등록합니다. DataFlow에 따라 다음 스텝 입력에 자동 연결됩니다.", example: "sap process-step 0 --outputs '{\"MATNR\": \"100-100\"}'", hint: "outputs에 이 스텝에서 추출한 문서번호 등을 넣으세요." },
       { cli: "sap process-status", mcp: "sap_process_status", category: "process", permission: "read", surfaces: ["CLI", "MCP"], desc: "현재 실행 중인 프로세스의 상태와 다음 스텝에 입력할 값(pending_inputs)을 조회합니다.", example: "sap process-status", hint: "다음에 뭘 해야 하는지 확인할 때 사용합니다." },
 
-      { cli: "sap daemon", mcp: null, category: "runtime", permission: "runtime", surfaces: ["CLI", "Runtime"], desc: "백그라운드 데몬을 시작/종료/상태조회합니다.", example: "sap daemon start", hint: "COM 연결을 유지해서 응답 속도를 줄입니다." },
+      { cli: null, mcp: "sap_recipe_success", category: "recipe", permission: "write", surfaces: ["MCP"], desc: "레시피 실행 성공을 기록합니다. 성공 카운트가 올라갈수록 검색 시 우선순위가 높아집니다.", example: "sap_recipe_success(recipe_id=\"spro-pricing\")", hint: "AI가 레시피를 성공적으로 따라간 후 자동 호출합니다." },
+      { cli: null, mcp: "sap_session_start", category: "guardrail", permission: "write", surfaces: ["MCP"], desc: "AI 실행 세션을 시작합니다. 사용자 요청과 AI 추론을 기록합니다.", example: "sap_session_start(user_request=\"자재 조회\", ai_reasoning=\"MM03 사용\")", hint: "여러 도구 호출을 하나의 세션으로 묶어 추적합니다." },
+      { cli: null, mcp: "sap_session_end", category: "guardrail", permission: "write", surfaces: ["MCP"], desc: "AI 실행 세션을 종료합니다. 결과(success/failed/aborted)를 기록합니다.", example: "sap_session_end(outcome=\"success\")", hint: "세션 종료 시 모든 단계의 before/after 상태가 함께 저장됩니다." },
+      { cli: "sap daemon", mcp: null, category: "runtime", permission: "runtime", surfaces: ["CLI", "Runtime"], desc: "백그라운드 데몬을 시작/종료/상태조회합니다. COM 연결을 유지하여 응답 시간을 줄입니다.", example: "sap daemon start", hint: "SAP_CLI_USE_DAEMON=1과 함께 사용하면 MCP → 데몬 위임 모드가 활성화됩니다." },
       { cli: "sap shell", mcp: null, category: "runtime", permission: "runtime", surfaces: ["CLI", "Shell", "Runtime"], desc: "대화형 셸로 반복 실행 지연을 줄입니다.", example: "sap shell", hint: "사람이 수동으로 여러 명령을 실험할 때 좋습니다." }
     ];
 
@@ -1236,6 +1253,28 @@ active_agent: "standard"</pre>
           "조달(MM01→ME21N→MIGO→MIRO), 판매(VA01→VL01N→VF01) 같은 실무 워크플로우를 정의합니다.",
           "ProcessExecutor가 스텝 간 실행 컨텍스트를 관리합니다. process_start → 스텝 실행 → process_step(출력 보고) → 다음 pending_inputs 자동 계산.",
           "실행 완료 후 기록이 JSON으로 저장되어 사후 검토와 반복 실행의 토대가 됩니다."
+        ]
+      },
+      {
+        key: "connection",
+        title: "연결 안정성 — 멀티 시스템 + 세션 복구",
+        summary: "여러 SAP 시스템에 동시 접속하고, COM 연결이 끊어져도 자동으로 복구하는 안정성 레이어입니다.",
+        points: [
+          "sap connect --system PR1처럼 시스템 ID(SID)로 올바른 연결을 자동 탐색합니다. SystemName 정확 매칭 → Description 부분 매칭 순으로 찾습니다.",
+          "sap connections로 모든 활성 연결과 세션을 한눈에 확인할 수 있습니다.",
+          "COM 연결이 끊어지면 이전 파라미터로 자동 재연결을 시도합니다. 복구 후 시스템 ID가 달라지면 안전하게 거부합니다.",
+          "데몬 모드와 결합하면 MCP 서버가 단일 COM 연결을 유지하면서도 끊김에 강건합니다."
+        ]
+      },
+      {
+        key: "session",
+        title: "AI 실행 세션 — 의도에서 실행까지 추적",
+        summary: "AI 에이전트의 하나의 요청 처리를 '세션'으로 묶어, 왜 실행했고 어떤 결과였는지를 구조화합니다.",
+        points: [
+          "sap_session_start로 사용자 요청과 AI 추론을 기록하고, 여러 도구 호출을 하나의 세션 ID로 묶습니다.",
+          "각 단계의 before/after 트랜잭션, 화면, 상태가 자동으로 기록됩니다.",
+          "sap_session_end로 세션을 종료하면 성공/실패/중단 결과가 JSON으로 영구 저장됩니다.",
+          "세션 기록은 레시피 자동 추출과 온톨로지 품질 개선의 입력이 됩니다."
         ]
       }
     ];
@@ -1457,6 +1496,20 @@ active_agent: "standard"</pre>
           ["sap captures VL03N", "캡처 목록 확인"]
         ],
         code: "sap run VL03N\nsap capture 01_초기화면\nsap fill VBELN=80000123\nsap capture 02_번호입력후\nsap vkey 0\nsap capture 03_상세화면\nsap captures VL03N\n# → ~/.sap_cli/screenshots/VL03N/ 에 PNG 파일 생성"
+      },
+      {
+        key: "multi-system",
+        title: "멀티 시스템 연결 + 세션 복구",
+        blurb: "여러 SAP 시스템(SID)에 동시 접속하고, 끊김 시 자동 복구되는 패턴입니다.",
+        why: "운영환경에서는 DEV·QAS·PRD 등 복수 시스템을 오가며 작업합니다. SID 기반 연결과 자동 복구로 끊김 걱정 없이 작업할 수 있습니다.",
+        steps: [
+          ["sap connections", "현재 활성 연결 목록 조회"],
+          ["sap connect --system PR1", "PR1 시스템에 연결"],
+          ["sap status", "연결 상태 확인"],
+          ["sap connect --system ERP", "ERP 시스템으로 전환"],
+          ["sap status", "전환된 시스템 확인"]
+        ],
+        code: "# 활성 연결 확인\nsap connections\n# → PR1 (100/USER1), ERP (200/USER2)\n\n# SID로 특정 시스템 연결\nsap connect --system ERP\n# → ERP 시스템 연결 완료\n\n# COM 끊김 발생 시 자동 복구\nsap status\n# → [자동 재연결] ERP 세션 복구 완료\n# 동일 시스템(ERP)인지 검증 후 복구됨"
       }
     ];
 
@@ -1464,8 +1517,8 @@ active_agent: "standard"</pre>
       inspect: {
         title: "구조 파악 / 조사",
         description: "새 트랜잭션을 만났을 때 안전하게 맥락을 수집하는 흐름입니다.",
-        cli: ["sap connect", "sap session", "sap ontology MM03", "sap screen --fields-only", "sap status"],
-        mcp: ["sap_connect", "sap_session", "sap_ontology_query", "sap_screen(fields_only=true)", "sap_get_status"],
+        cli: ["sap connections", "sap connect --system PR1", "sap session", "sap ontology MM03", "sap screen --fields-only", "sap status"],
+        mcp: ["sap_connections", "sap_connect(system='PR1')", "sap_session", "sap_ontology_query", "sap_screen(fields_only=true)", "sap_get_status"],
         note: "readonly 또는 verifier 프로필로도 충분한 경우가 많습니다."
       },
       execute: {
@@ -1518,7 +1571,7 @@ active_agent: "standard"</pre>
       const cliCount = commands.length;
       const mcpCount = commands.filter((item) => item.surfaces.includes("MCP")).length;
       const profileCount = profiles.length;
-      const memoryCount = 3;
+      const memoryCount = 5;
       return [
         { value: cliCount, label: "CLI Commands", color: "var(--accent-strong)" },
         { value: mcpCount, label: "MCP Tools / Mappings", color: "var(--teal)" },

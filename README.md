@@ -14,13 +14,17 @@ SOS(Study Ontology System)의 온톨로지 사상을 적용하여, 단순 스크
 2. [설치](#2-설치)
 3. [SAP GUI 스크립팅 활성화](#3-sap-gui-스크립팅-활성화)
 4. [기본 사용법 (CLI)](#4-기본-사용법-cli)
+   - 4.1 [SAP 연결 (멀티 시스템 지원)](#41-sap-연결-멀티-시스템-지원)
    - 4.10 [트리 컨트롤 (SPRO 등)](#410-트리-컨트롤-spro-등)
    - 4.11 [AI 네비게이션 레시피](#411-ai-네비게이션-레시피)
+   - 4.14 [온톨로지 Q&A (시맨틱 검색)](#414-온톨로지-qa-시맨틱-검색)
 5. [매크로 녹화/재생](#5-매크로-녹화재생)
 6. [온톨로지 시스템](#6-온톨로지-시스템)
-6.4. [스크린샷 캡처](#64-스크린샷-캡처-사용자-설명서-제작)
-6.5. [업무 프로세스 (BusinessProcess)](#65-업무-프로세스-businessprocess)
+   - 6.4 [스크린샷 캡처](#64-스크린샷-캡처-사용자-설명서-제작)
+   - 6.5 [업무 프로세스 (BusinessProcess)](#65-업무-프로세스-businessprocess)
 7. [Claude Code MCP 연동](#7-claude-code-mcp-연동)
+   - 7.3 [데몬 모드 (단일 연결)](#73-데몬-모드-단일-연결)
+   - 7.4 [AI 실행 세션 관리](#74-ai-실행-세션-관리)
 8. [MCP 도구를 활용한 AI 자동화 시나리오](#8-mcp-도구를-활용한-ai-자동화-시나리오)
 9. [트러블슈팅](#9-트러블슈팅)
 10. [아키텍처](#10-아키텍처)
@@ -93,7 +97,7 @@ sap --help
 
 ## 4. 기본 사용법 (CLI)
 
-### 4.1 SAP 연결
+### 4.1 SAP 연결 (멀티 시스템 지원)
 
 SAP GUI에 로그인한 상태에서:
 
@@ -103,9 +107,16 @@ sap connect
 
 # 특정 연결/세션 지정
 sap connect --connection 0 --session 1
+
+# 시스템 ID(SID)로 자동 연결 — 여러 시스템에 동시 로그인 시 유용
+sap connect --system PR1
+sap connect --system ERP
+
+# 모든 활성 연결 목록 조회
+sap connections
 ```
 
-출력 예시:
+출력 예시 (`sap connect`):
 ```json
 {
   "connected": true,
@@ -120,6 +131,21 @@ sap connect --connection 0 --session 1
   }
 }
 ```
+
+출력 예시 (`sap connections`):
+```json
+{
+  "connection_count": 2,
+  "connections": [
+    {"index": 0, "system_name": "PR1", "client": "100", "session_count": 1,
+     "sessions": [{"index": 0, "user": "SAPUSER", "transaction": "SESSION_MANAGER"}]},
+    {"index": 1, "system_name": "ERP", "client": "200", "session_count": 2,
+     "sessions": [{"index": 0, "user": "ADMIN", "transaction": "MM03"}, {"index": 1, "user": "ADMIN", "transaction": "VA01"}]}
+  ]
+}
+```
+
+> **세션 자동 복구**: COM 연결이 끊어지면 이전 연결 파라미터(시스템 ID, 연결/세션 인덱스)로 자동 재연결을 시도합니다. 복구 후 시스템 ID가 달라지면 안전하게 거부합니다.
 
 ### 4.2 세션 정보 조회
 
@@ -394,6 +420,41 @@ sap transcript-plan --command set --index 0
 - 재실행 전에 확인할 조건
 - 권장 확인 순서 (`sap session`, `sap ontology MM03`, `sap status`, `sap modal`, `sap screen --fields-only`)
 - 원본 단계를 다시 실행하려면 어떤 CLI 명령이 필요한지
+
+### 4.14 온톨로지 Q&A (시맨틱 검색)
+
+SAP 도메인 질문에 대해 축적된 온톨로지를 기반으로 구조화된 답변을 제공합니다.
+
+```powershell
+# 자연어로 SAP 질문하기
+sap ontology-ask "MM03에서 자재번호를 입력하는 필드는?"
+sap ontology-ask "수주를 생성하려면 어떤 필드가 필수인가?"
+
+# 온톨로지 관계 탐색
+sap ontology-relationships MM03 --type field_dependency
+sap ontology-relationships VA01 --type document_flow
+
+# 필드 종속성 조회
+sap field-dependencies MM03 MATNR
+
+# 문서 흐름 조회 (트랜잭션 간 연결)
+sap document-flow VA01
+
+# 프로세스 경로 탐색
+sap process-path MM01 MIRO
+```
+
+MCP 도구로도 동일하게 사용할 수 있습니다:
+
+```
+sap_ontology_ask(question="SPRO에서 출하 포인트를 설정하는 경로는?")
+sap_ontology_relationships(tcode="MM03", relationship_type="field_dependency")
+sap_field_dependencies(tcode="VA01", field_name="KUNNR")
+sap_document_flow(tcode="VA01")
+sap_process_path(from_tcode="MM01", to_tcode="MIRO")
+```
+
+> 온톨로지 Q&A는 SAP 연결 없이도 동작합니다 — 저장된 온톨로지 JSON에서 직접 답변을 생성합니다.
 
 ---
 
@@ -816,11 +877,12 @@ Windows의 Claude Code `settings.json`에 추가:
 > `~/.sap_cli/policy.yaml` 파일이 존재하면 ReBAC 권한관리가 활성화되어 에이전트별로 허용된 도구만 호출할 수 있습니다. 정책 파일이 없으면 모든 도구가 허용됩니다 (하위 호환).
 
 
-#### 기본 SAP 조작 (9개)
+#### 기본 SAP 조작 (11개)
 
 | 도구 | 설명 |
 |------|------|
-| `sap_connect` | SAP GUI에 연결 |
+| `sap_connect` | SAP GUI에 연결 (system 파라미터로 SID 자동 탐색) |
+| `sap_connections` | 모든 활성 SAP 연결 목록 조회 |
 | `sap_session` | 세션 정보 조회 |
 | `sap_screen` | 현재 화면 UI 구조 (JSON) |
 | `sap_run` | 트랜잭션 실행 |
@@ -829,6 +891,7 @@ Windows의 Claude Code `settings.json`에 추가:
 | `sap_get_field` | 필드 값 읽기 |
 | `sap_press` | 버튼 클릭 / 탭 선택 (GuiTab 자동 감지) |
 | `sap_send_vkey` | VKey 전송 |
+| `sap_fill_fields` | 여러 필드를 한번에 입력 (필드명 자동 매핑) |
 
 #### 상태/지식/운영
 
@@ -864,6 +927,24 @@ Windows의 Claude Code `settings.json`에 추가:
 | `sap_recipe_delete` | 레시피 삭제 |
 | `sap_recipe_success` | 레시피 실행 성공 기록 (우선순위 상승) |
 
+#### 온톨로지 Q&A (시맨틱 검색)
+
+| 도구 | 설명 |
+|------|------|
+| `sap_ontology_ask` | 자연어로 SAP 도메인 질문 (온톨로지 기반 답변) |
+| `sap_ontology_relationships` | 온톨로지 관계 탐색 (필드 종속성, 문서 흐름 등) |
+| `sap_field_dependencies` | 특정 필드의 종속성 조회 |
+| `sap_document_flow` | 트랜잭션 간 문서 흐름 조회 |
+| `sap_process_path` | 두 트랜잭션 사이의 프로세스 경로 탐색 |
+| `sap_ontology_rebuild` | 온톨로지 관계 그래프 재구축 |
+
+#### AI 실행 세션 관리
+
+| 도구 | 설명 |
+|------|------|
+| `sap_session_start` | AI 실행 세션 시작 (의도/맥락 기록) |
+| `sap_session_end` | AI 실행 세션 종료 (결과 기록) |
+
 #### 학습
 
 | 도구 | 설명 |
@@ -880,6 +961,57 @@ Windows의 Claude Code `settings.json`에 추가:
 | `sap_macro_list` | 매크로 목록 조회 |
 | `sap_macro_show` | 매크로 상세 조회 |
 | `sap_macro_delete` | 매크로 삭제 |
+
+### 7.3 데몬 모드 (단일 연결)
+
+MCP 서버는 각 도구 호출마다 새로운 Python 프로세스를 시작할 수 있어, COM 초기화 오버헤드가 누적됩니다. 데몬 모드를 사용하면 하나의 상주 프로세스에서 COM 연결을 유지하여 응답 시간을 크게 줄입니다.
+
+```powershell
+# 데몬 시작
+sap daemon start
+
+# 데몬 상태 확인
+sap daemon status
+
+# 데몬 정지
+sap daemon stop
+```
+
+MCP 서버가 데몬 모드를 사용하도록 설정:
+
+```json
+{
+  "mcpServers": {
+    "sap-gui": {
+      "command": "python",
+      "args": ["-m", "sap_cli.mcp_server"],
+      "env": {
+        "SAP_CLI_USE_DAEMON": "1"
+      }
+    }
+  }
+}
+```
+
+`SAP_CLI_USE_DAEMON=1`이면 MCP → 데몬(TCP 18471)으로 명령을 위임하고, 데몬이 없으면 자동으로 직접 실행으로 폴백합니다.
+
+### 7.4 AI 실행 세션 관리
+
+AI 에이전트의 실행 단위를 "세션"으로 관리합니다. 하나의 사용자 요청 → 여러 도구 호출 → 결과를 하나의 세션으로 묶어 추적합니다.
+
+```
+사용자: "MM03에서 자재 100-100을 조회해줘"
+
+AI Agent:
+  sap_session_start(user_request="자재 조회", ai_reasoning="MM03 사용")
+  sap_connect()
+  sap_run(tcode="MM03")
+  sap_fill_fields(fields={"MATNR": "100-100"})
+  sap_screen()
+  sap_session_end(outcome="success")
+```
+
+세션 기록은 `~/.sap_cli/sessions/{date}/{session_id}.json`에 저장되며, 각 단계의 before/after 상태가 함께 기록됩니다.
 
 ---
 
@@ -1171,11 +1303,17 @@ sap transcript-plan --command set --index 0
 │  ┌────────────────────────────────────┐     │
 │  │ CLI (typer)  │  MCP Server (mcp)   │     │
 │  └──────┬───────┴──────┬──────────────┘     │
+│         │              │                     │
+│         │    ┌─────────▼──────────────┐     │
+│         │    │ Daemon (TCP 18471)     │     │
+│         │    │ 단일 COM 연결 유지      │     │
+│         │    │ + 세션 자동 복구        │     │
+│         │    └─────────┬──────────────┘     │
 │  ┌──────▼──────────────▼──────────────┐     │
-│  │ Auth Layer (ReBAC)                 │     │
-│  │ ├── Policy (policy.yaml 로드)      │     │
-│  │ ├── Checker (도구 허용 여부 판단)   │     │
-│  │ └── Audit (감사 로그 기록)          │     │
+│  │ Central Dispatcher                  │     │
+│  │ ├── Auth (ReBAC 정책/감사)          │     │
+│  │ ├── Session Store (AI 실행 세션)    │     │
+│  │ └── Transcript (실행 기록)          │     │
 │  └──────┬─────────────────────────────┘     │
 │  ┌──────▼──────────────────────────────┐    │
 │  │ Service Layer (공통 비즈니스 로직)   │    │
@@ -1188,16 +1326,20 @@ sap transcript-plan --command set --index 0
 │  └──────┬─────────────────────────────┘     │
 │  ┌──────▼─────────────────────────────┐     │
 │  │ COM Wrapper (win32com)             │     │
+│  │ ├── 멀티 시스템 연결 (SID 탐색)     │     │
+│  │ ├── 세션 자동 복구 (identity 검증)  │     │
 │  │ └── SAP GUI Scripting API          │     │
 │  └──────┬─────────────────────────────┘     │
 │  ┌──────▼─────────────────────────────┐     │
 │  │ Ontology Layer                     │     │
 │  │ ├── Schema (Object/Link/Action)    │     │
+│  │ ├── Q&A (시맨틱 검색)              │     │
 │  │ ├── Meta-Edge (필드 종속성 규칙)    │     │
 │  │ ├── Graph (GraphRAG 탐색)          │     │
 │  │ ├── Analysis Space (6공간 분석)    │     │
 │  │ ├── BusinessProcess (업무 프로세스)  │     │
 │  │ ├── ProcessExecutor (실행 엔진)    │     │
+│  │ ├── Recipe (AI 네비게이션 레시피)   │     │
 │  │ └── Knowledge (시드 데이터)         │     │
 │  └────────────────────────────────────┘     │
 └──────────────┬──────────────────────────────┘
@@ -1213,18 +1355,25 @@ sap transcript-plan --command set --index 0
 sap_cli/
 ├── pyproject.toml
 ├── README.md
+├── sap-cli-interactive-guide.html  # 인터랙티브 가이드
 ├── sap_cli/
-│   ├── cli.py                  # CLI 엔트리포인트 (22개 커맨드)
-│   ├── com_wrapper.py          # SAP GUI COM 래퍼
-│   ├── mcp_server.py           # MCP 서버 (23개 도구)
+│   ├── cli.py                  # CLI 엔트리포인트
+│   ├── com_wrapper.py          # SAP GUI COM 래퍼 (멀티 시스템 + 세션 복구)
+│   ├── dispatcher.py           # 중앙 명령 디스패처 (권한/감사/실행)
+│   ├── mcp_server.py           # MCP 서버
+│   ├── daemon.py               # 데몬 서버 (TCP 18471, 단일 COM 연결)
 │   ├── service.py              # CLI/MCP 공통 서비스 레이어
 │   ├── learner.py              # 온톨로지 학습 엔진
 │   ├── recipe.py               # AI 네비게이션 레시피 저장/검색
+│   ├── session_store.py        # AI 실행 세션 기록
+│   ├── transcript_store.py     # 실행 transcript 저장
+│   ├── transcript_planner.py   # 재실행 검토 계획 생성
+│   ├── command_parser.py       # SAP 명령 파서
 │   ├── auth/
-│   │   ├── __init__.py
 │   │   ├── policy.py           # 정책 로더 (policy.yaml 파싱)
 │   │   ├── checker.py          # 도구 허용 여부 판단
 │   │   ├── audit.py            # 감사 로그 기록
+│   │   ├── transcript.py       # Transcript 로거
 │   │   └── default_policy.yaml # 기본 정책 파일 (배포용)
 │   ├── macro/
 │   │   ├── schema.py           # 매크로 데이터 모델
@@ -1232,7 +1381,7 @@ sap_cli/
 │   │   ├── player.py           # 매크로 재생기
 │   │   └── store.py            # 매크로 저장소
 │   └── ontology/
-│       ├── schema.py           # 온톨로지 4요소 스키마
+│       ├── schema.py           # 온톨로지 스키마 (SapSession, ScreenOntology 등)
 │       ├── meta_edge.py        # 메타엣지 규칙 엔진
 │       ├── analysis_space.py   # 6공간 분석 프레임워크
 │       ├── graph.py            # GraphRAG 관계 그래프
@@ -1243,11 +1392,20 @@ sap_cli/
 │           ├── processes/      # procurement_basic, sales_to_billing
 │           ├── meta_edges/     # 메타엣지 규칙
 │           └── patterns/       # 공통 패턴 (메타온톨로지)
-└── tests/
-    ├── test_macro.py           # 매크로 녹화/재생/변수 치환 테스트
-    ├── test_ontology.py        # 온톨로지 스키마/그래프 테스트
+├── skill/
+│   ├── SKILL.md                # SAP GUI 자동화 스킬 정의
+│   └── sap-ontology-qa/
+│       └── SKILL.md            # 온톨로지 Q&A 스킬 정의
+└── tests/                      # 326개 테스트 (SAP/Windows 불필요)
+    ├── test_dispatcher.py      # 디스패처 통합 테스트
+    ├── test_mcp_server.py      # MCP 서버 테스트
+    ├── test_mcp_daemon.py      # MCP → 데몬 위임 테스트
     ├── test_auth.py            # ReBAC 정책/감사 로그 테스트
-    └── test_service.py         # 서비스 레이어 단위 테스트
+    ├── test_session_store.py   # AI 실행 세션 테스트
+    ├── test_connection_stability.py  # 멀티 시스템/세션 복구 테스트
+    ├── test_ontology_ask.py    # 온톨로지 Q&A 테스트
+    ├── test_recipe_query.py    # 레시피 검색 테스트
+    └── ...                     # 기타 단위 테스트
 ```
 
 > 실제 매크로 데이터는 `~/.sap_cli/macros/`, 온톨로지 지식 데이터는 `~/.sap_cli/knowledge/`에 저장됩니다. 패키지의 `knowledge/` 디렉토리는 시드 데이터 역할만 합니다.
@@ -1276,8 +1434,8 @@ pytest tests/ -v
 
 | 항목 | 값 |
 |------|---|
-| 총 테스트 수 | 68개 |
-| 실행 시간 | 약 0.13초 |
+| 총 테스트 수 | 326개 |
+| 실행 시간 | 약 0.44초 |
 | SAP/Windows 필요 여부 | 불필요 |
 
-매크로 변수 치환, 온톨로지 스키마 검증, ReBAC 정책 판단, 서비스 레이어 로직을 포함합니다.
+매크로 변수 치환, 온톨로지 스키마 검증, ReBAC 정책 판단, 디스패처 통합, MCP 서버 라우팅, 데몬 위임, 세션 스토어, 레시피 검색, 온톨로지 Q&A, 연결 안정성(멀티 시스템/세션 복구) 등을 포함합니다.
