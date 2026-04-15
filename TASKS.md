@@ -447,10 +447,10 @@ AI가 사용자 요청을 받아 여러 명령을 실행하는 **전체 흐름**
 
 | # | 작업 | 내용 | 상태 |
 |---|------|------|------|
-| 1 | ontology_query 확장 | 트랜잭션 조회 시 관련 recipes 요약 포함 | |
-| 2 | recipe 키워드 검색 | trigger_pattern 기반 매칭 | |
-| 3 | sap_recipe_query | recipe 조회 MCP 도구 (tcode/키워드) | |
-| 4 | 테스트 | 검색 + AI 참조 시나리오 | |
+| 1 | ontology_query 확장 | 트랜잭션 조회 시 관련 recipes 요약 포함 (context, keywords, recipe_hint) | ✅ |
+| 2 | recipe 키워드 검색 | RecipeStore.query_for_ai (tcode+키워드 통합 검색) | ✅ |
+| 3 | sap_recipe_query | recipe 조회 MCP 도구 (tcode/키워드) | ✅ |
+| 4 | 테스트 | 검색 + AI 참조 시나리오 (21건 pass) | ✅ |
 
 ### 구현 순서
 

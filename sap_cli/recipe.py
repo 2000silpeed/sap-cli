@@ -147,3 +147,53 @@ class RecipeStore:
                 continue
         results.sort(key=lambda r: -r.success_count)
         return results
+
+    def query_for_ai(
+        self,
+        tcode: str | None = None,
+        keywords: str | None = None,
+    ) -> list[tuple[int, Recipe]]:
+        """tcode + 키워드 통합 검색. (score, Recipe) 반환."""
+        all_recipes = self._load_all()
+        results: list[tuple[int, Recipe]] = []
+        tcode_upper = tcode.upper() if tcode else None
+        kw_words = keywords.lower().split() if keywords else []
+
+        for r in all_recipes:
+            score = 0
+            if tcode_upper:
+                for s in r.steps:
+                    if s.tool in ("sap_run", "sap_command"):
+                        val = str(s.args.get("tcode", s.args.get("cmd", ""))).upper()
+                        if tcode_upper in val:
+                            score += 5
+                            break
+                if tcode_upper in r.id.upper():
+                    score += 3
+
+            if kw_words:
+                desc_lower = r.description.lower()
+                ctx_lower = r.context.lower()
+                kw_lower = [k.lower() for k in r.keywords]
+                for word in kw_words:
+                    if any(word in k for k in kw_lower):
+                        score += 3
+                    if word in desc_lower:
+                        score += 1
+                    if word in ctx_lower:
+                        score += 2
+
+            if score > 0:
+                results.append((score, r))
+
+        results.sort(key=lambda x: (-x[0], -x[1].success_count))
+        return results
+
+    def _load_all(self) -> list[Recipe]:
+        recipes = []
+        for path in self._dir.glob("*.json"):
+            try:
+                recipes.append(Recipe.model_validate_json(path.read_text(encoding="utf-8")))
+            except Exception:
+                continue
+        return recipes

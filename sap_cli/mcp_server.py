@@ -709,6 +709,23 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_recipe_query",
+        "description": (
+            "트랜잭션 코드와/또는 키워드로 레시피를 통합 검색합니다. "
+            "sap_recipe_search보다 정밀한 검색으로, tcode 기반 매칭과 키워드 매칭을 함께 수행합니다. "
+            "사용자의 SAP 작업 요청을 받았을 때, 직접 탐색 전에 이 도구로 기존 레시피를 먼저 확인하세요. "
+            "결과가 1개면 execution_plan이 바로 포함됩니다. "
+            "여러 개면 context를 비교하여 sap_recipe_show로 상세 조회하세요."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tcode": {"type": "string", "description": "트랜잭션 코드 (예: VL33N, ME21N)"},
+                "keywords": {"type": "string", "description": "검색 키워드 (예: '출고 납품 변경', 'shipping point 설정')"},
+            },
+        },
+    },
+    {
         "name": "sap_recipe_success",
         "description": "[필수] 레시피의 모든 단계를 성공적으로 완료한 후 반드시 호출하세요. sap_recipe_search로 레시피를 찾아 실행했다면, 완료 후 이 도구를 호출해야 성공 카운트가 올라가고 다음 검색에서 우선순위가 높아집니다. 호출하지 않으면 성공이 기록되지 않습니다.",
         "inputSchema": {

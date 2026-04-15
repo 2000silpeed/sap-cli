@@ -97,6 +97,7 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "recipe_list":    CommandDef("sap_recipe_list",       Permission.READ),
     "recipe_delete":  CommandDef("sap_recipe_delete",     Permission.ADMIN),
     "recipe_success": CommandDef("sap_recipe_success",    Permission.WRITE),
+    "recipe_query":   CommandDef("sap_recipe_query",     Permission.READ),
     "session_start":      CommandDef("sap_session_start",      Permission.WRITE),
     "session_end":        CommandDef("sap_session_end",        Permission.WRITE),
     "session_list":       CommandDef("sap_session_list",       Permission.READ),
@@ -508,6 +509,8 @@ def _execute_command(
         return _dispatch_recipe_delete(args)
     if command == "recipe_success":
         return _dispatch_recipe_success(args)
+    if command == "recipe_query":
+        return _dispatch_recipe_query(args)
     if command == "session_start":
         return _dispatch_session_start(args, ctx)
     if command == "session_end":
@@ -880,10 +883,20 @@ def _dispatch_ontology_query(args: dict[str, Any]) -> dict[str, Any]:
                     recipe_details.append({
                         "id": r.id,
                         "description": r.description,
+                        "context": r.context,
+                        "keywords": r.keywords,
                         "step_count": len(r.steps),
                         "success_count": r.success_count,
                     })
-            result["recipe_details"] = recipe_details
+            recipe_details.sort(key=lambda x: -x["success_count"])
+            if recipe_details:
+                result["recipe_details"] = recipe_details
+                result["recipe_hint"] = (
+                    f"이 트랜잭션에 {len(recipe_details)}개의 레시피가 있습니다. "
+                    "사용자의 요청과 description/context를 비교하여 적합한 레시피가 있으면 "
+                    "sap_recipe_show(recipe_id=...)로 실행 계획을 조회하세요. "
+                    "직접 탐색보다 레시피를 따르는 것이 빠르고 정확합니다."
+                )
         if ontology.action_paths:
             result["available_actions"] = [
                 {"path": p, "context": a.context, "step_count": len(a.steps), "success_count": a.success_count}
@@ -1764,6 +1777,74 @@ def _dispatch_recipe_success(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _dispatch_recipe_query(args: dict[str, Any]) -> dict[str, Any]:
+    """tcode + 키워드 통합 레시피 조회. AI 자동 참조용."""
+    store = _get_recipe_store()
+    tcode = args.get("tcode")
+    keywords = args.get("keywords")
+
+    if not tcode and not keywords:
+        raise ValueError("tcode 또는 keywords 중 하나는 필수입니다.")
+
+    scored = store.query_for_ai(tcode=tcode, keywords=keywords)
+    if not scored:
+        return {
+            "tcode": tcode,
+            "keywords": keywords,
+            "count": 0,
+            "recipes": [],
+            "hint": "일치하는 레시피가 없습니다. 직접 트랜잭션을 탐색하세요.",
+        }
+
+    if len(scored) == 1:
+        score, r = scored[0]
+        execution_plan = [
+            {"order": i + 1, "tool": s.tool, "args": s.args, **({"hint": s.hint} if s.hint else {})}
+            for i, s in enumerate(r.steps)
+        ]
+        return {
+            "tcode": tcode,
+            "keywords": keywords,
+            "count": 1,
+            "exact_match": True,
+            "recipe_id": r.id,
+            "description": r.description,
+            "context": r.context,
+            "success_count": r.success_count,
+            "execution_plan": execution_plan,
+            "instruction": (
+                f"레시피 '{r.id}'가 검색되었습니다. "
+                "execution_plan의 단계를 순서대로 정확히 실행하세요. "
+                "별도 탐색(sap_tree_read, sap_screen)하지 마세요. "
+                "모든 단계 완료 후 sap_recipe_success를 호출하세요."
+            ),
+        }
+
+    recipes = []
+    for score, r in scored:
+        recipes.append({
+            "id": r.id,
+            "description": r.description,
+            "context": r.context,
+            "keywords": r.keywords,
+            "step_count": len(r.steps),
+            "success_count": r.success_count,
+            "relevance_score": score,
+        })
+    return {
+        "tcode": tcode,
+        "keywords": keywords,
+        "count": len(recipes),
+        "exact_match": False,
+        "recipes": recipes,
+        "hint": (
+            "여러 레시피가 검색되었습니다. description과 context를 비교하여 "
+            "가장 적합한 레시피를 선택한 후 sap_recipe_show(recipe_id=...)로 "
+            "실행 계획을 조회하세요."
+        ),
+    }
+
+
 def _dispatch_session_start(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
     policy = load_policy()
     config = policy.session if policy else None
@@ -2077,7 +2158,7 @@ SESSION_SKIP_COMMANDS = {
     "session_candidates", "session_approve",
     "transcript_query", "transcript_plan",
     "ontology_query", "macro_list", "macro_show", "macro_delete",
-    "capture", "capture_list",
+    "capture", "capture_list", "recipe_query",
 }
 
 
