@@ -709,6 +709,14 @@ def process_path(
     )
 
 
+@app.command("ontology-ask")
+def ontology_ask(
+    question: str = typer.Argument(help="자연어 질문 (예: 'VA01이 뭐야?', 'MATNR 어디서 사용?')"),
+) -> None:
+    """온톨로지 자연어 Q&A - 질문을 파싱하여 그래프 기반으로 답변."""
+    _output_json(_dispatch_local("ontology_ask", {"question": question}))
+
+
 @app.command("process-list")
 def process_list_cmd() -> None:
     """등록된 업무 프로세스 목록 조회."""

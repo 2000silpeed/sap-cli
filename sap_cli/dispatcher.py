@@ -84,6 +84,7 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "tree_expand":    CommandDef("sap_tree_expand",        Permission.EXECUTE),
     "tree_collapse":  CommandDef("sap_tree_collapse",      Permission.EXECUTE),
     "tree_press":     CommandDef("sap_tree_press",         Permission.EXECUTE),
+    "ontology_ask":   CommandDef("sap_ontology_ask",      Permission.READ),
     "ontology_relationships": CommandDef("sap_ontology_relationships", Permission.READ),
     "field_dependencies": CommandDef("sap_field_dependencies", Permission.READ),
     "document_flow":      CommandDef("sap_document_flow",      Permission.READ),
@@ -483,6 +484,8 @@ def _execute_command(
         return _dispatch_annotate_dependency(args)
     if command == "fill":
         return _dispatch_fill(args, ctx)
+    if command == "ontology_ask":
+        return _dispatch_ontology_ask(args)
     if command == "ontology_relationships":
         return _dispatch_ontology_relationships(args)
     if command == "field_dependencies":
@@ -797,6 +800,21 @@ def _dispatch_macro_delete(args: dict[str, Any]) -> dict[str, Any]:
     macro_id = str(args["macro_id"])
     deleted = _get_macro_store().delete(macro_id)
     return {"deleted": deleted, "macro_id": macro_id}
+
+
+def _dispatch_ontology_ask(args: dict[str, Any]) -> dict[str, Any]:
+    """자연어 질문 → 온톨로지 그래프 탐색 → 구조화된 답변."""
+    from .ontology.answer_formatter import OntologyAnswerFormatter
+    from .ontology.question_parser import parse_question
+
+    question = str(args.get("question", ""))
+    if not question:
+        raise ValueError("질문을 입력하세요. 예: sap ontology-ask 'VA01이 뭐야?'")
+
+    store = _get_store()
+    parsed = parse_question(question)
+    formatter = OntologyAnswerFormatter(store)
+    return formatter.answer(parsed)
 
 
 def _dispatch_ontology_query(args: dict[str, Any]) -> dict[str, Any]:
@@ -2157,7 +2175,7 @@ SESSION_SKIP_COMMANDS = {
     "session_start", "session_end", "session_list", "session_show",
     "session_candidates", "session_approve",
     "transcript_query", "transcript_plan",
-    "ontology_query", "macro_list", "macro_show", "macro_delete",
+    "ontology_query", "ontology_ask", "macro_list", "macro_show", "macro_delete",
     "capture", "capture_list", "recipe_query",
 }
 
@@ -2204,7 +2222,7 @@ def _capture_transcript_state(
 ) -> dict[str, Any] | None:
     if command not in COMMAND_REGISTRY:
         return None
-    if command in {"ontology_query", "macro_control", "macro_list", "macro_show", "macro_delete", "transcript_query", "transcript_plan"}:
+    if command in {"ontology_query", "ontology_ask", "macro_control", "macro_list", "macro_show", "macro_delete", "transcript_query", "transcript_plan"}:
         return None
 
     sap = _get_existing_sap()
