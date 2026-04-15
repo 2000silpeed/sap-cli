@@ -1,8 +1,11 @@
-"""Session Analyzer — 세션 정제 엔진 (Phase 14-2)."""
+"""Session Analyzer — 세션 정제 + 레시피 변환 엔진 (Phase 14-2, 14-3)."""
 
 from __future__ import annotations
 
 import logging
+import re
+import time
+import uuid
 from typing import Any
 
 from .ontology.schema import McpSession, SessionStep
@@ -103,3 +106,134 @@ def analyze(session: McpSession) -> dict[str, Any]:
         "candidate": session.candidate,
         "core_flow": [s.model_dump(mode="json", exclude_none=True) for s in deduplicated],
     }
+
+
+# ---------------------------------------------------------------
+# Phase 14-3: 세션 → 레시피 변환 + 변수 치환
+# ---------------------------------------------------------------
+
+_DOC_NUMBER_RE = re.compile(r"^\d{8,10}$")
+_NUMERIC_VALUE_RE = re.compile(r"^\d+(\.\d+)?$")
+
+_GENERALIZE_KEYS: dict[str, tuple[str, re.Pattern[str] | None]] = {
+    "tcode": ("${tcode}", None),
+    "document_number": ("${document_number}", _DOC_NUMBER_RE),
+    "row": ("${row}", None),
+    "count": ("${count}", None),
+}
+
+_PRESERVE_KEYS = frozenset({"key", "vkey", "element", "field", "cmd", "action"})
+
+
+def _generalize_args(args: dict[str, Any]) -> dict[str, Any]:
+    """구체값을 ${variable} 플레이스홀더로 치환."""
+    result: dict[str, Any] = {}
+    for k, v in args.items():
+        if k in _PRESERVE_KEYS:
+            result[k] = v
+            continue
+        sv = str(v) if isinstance(v, (int, float)) else v if isinstance(v, str) else None
+        if sv is None:
+            result[k] = v
+            continue
+        if k in _GENERALIZE_KEYS:
+            placeholder, pattern = _GENERALIZE_KEYS[k]
+            if pattern is None or pattern.match(sv):
+                result[k] = placeholder
+                continue
+        if k == "value" and _NUMERIC_VALUE_RE.match(sv):
+            result[k] = "${value}"
+            continue
+        result[k] = v
+    return result
+
+
+def _extract_tcode(steps: list[SessionStep]) -> str:
+    """세션 단계에서 주 tcode를 추출. sap_run 명령 우선."""
+    for step in steps:
+        if step.tool_name in ("sap_run", "sap_command"):
+            tcode = step.arguments.get("tcode", "") or step.arguments.get("cmd", "")
+            if isinstance(tcode, str) and tcode:
+                cleaned = tcode.lstrip("/nNoO")
+                if cleaned:
+                    return cleaned.upper()
+    for step in steps:
+        tcode = step.after_transaction or step.before_transaction
+        if tcode:
+            return tcode.upper()
+    return ""
+
+
+def _extract_keywords(session: McpSession, tcode: str) -> list[str]:
+    """세션 정보에서 검색 키워드를 추출."""
+    keywords: list[str] = []
+    if tcode:
+        keywords.append(tcode)
+    words = session.user_request.split()
+    for w in words:
+        w_clean = w.strip(".,!?\"'()[]{}").strip()
+        if len(w_clean) >= 2 and w_clean not in keywords:
+            keywords.append(w_clean)
+    return keywords[:10]
+
+
+def _safe_recipe_id(tcode: str, session_id: str) -> str:
+    """recipe_id를 [A-Za-z0-9_-]+ 형식으로 안전하게 생성."""
+    safe_tcode = re.sub(r"[^A-Za-z0-9_\-]", "_", tcode) if tcode else ""
+    return f"{safe_tcode}_{session_id}" if safe_tcode else session_id
+
+
+def session_to_recipe(session: McpSession, approved_by: str = "") -> dict[str, Any]:
+    """정제된 세션을 Recipe dict로 변환.
+
+    Returns dict compatible with recipe.Recipe(**result).
+    """
+    from .recipe import RecipeStep as RStep
+
+    analysis = analyze(session)
+    core_flow: list[dict[str, Any]] = analysis["core_flow"]
+
+    core_steps = [SessionStep.model_validate(s) for s in core_flow]
+    tcode = _extract_tcode(core_steps) or _extract_tcode(session.steps)
+    keywords = _extract_keywords(session, tcode)
+
+    recipe_steps: list[dict[str, Any]] = []
+    for i, step_data in enumerate(core_flow):
+        generalized_args = _generalize_args(step_data.get("arguments", {}))
+        recipe_steps.append({
+            "tool": step_data.get("tool_name", ""),
+            "args": generalized_args,
+            "hint": step_data.get("intent", ""),
+        })
+
+    recipe_id = _safe_recipe_id(tcode, session.id)
+
+    return {
+        "id": recipe_id,
+        "description": session.user_request or session.ai_reasoning or f"{tcode} 워크플로우",
+        "context": session.ai_reasoning,
+        "keywords": keywords,
+        "steps": recipe_steps,
+        "source_session": session.id,
+        "approved_by": approved_by,
+    }
+
+
+def approve_session(
+    session: McpSession,
+    approved_by: str = "admin",
+) -> dict[str, Any]:
+    """candidate 세션을 승인하고 레시피 dict를 반환.
+
+    세션의 approved, recipe_id 필드를 업데이트한다.
+    """
+    if not session.candidate:
+        return {"error": "이 세션은 승인 후보(candidate)가 아닙니다"}
+    if session.approved:
+        return {"error": f"이미 승인된 세션입니다 (recipe_id: {session.recipe_id})"}
+
+    recipe_data = session_to_recipe(session, approved_by=approved_by)
+    session.approved = True
+    session.recipe_id = recipe_data["id"]
+
+    return recipe_data

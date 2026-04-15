@@ -33,6 +33,8 @@ class Recipe(BaseModel):
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)
     success_count: int = 0
+    source_session: str = ""
+    approved_by: str = ""
 
 
 class RecipeStore:

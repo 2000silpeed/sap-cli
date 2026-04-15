@@ -436,12 +436,12 @@ AI가 사용자 요청을 받아 여러 명령을 실행하는 **전체 흐름**
 
 | # | 작업 | 내용 | 상태 |
 |---|------|------|------|
-| 1 | 스키마 정의 | WorkflowRecipe, RecipeStep 모델 (schema.py) | |
-| 2 | Recipe Store | knowledge/recipes/ CRUD (store.py 확장) | |
-| 3 | 세션→레시피 변환 | 정제된 세션을 RecipeStep으로 변환 + 변수 치환 | |
-| 4 | 승인 도구 | sap_session_candidates, sap_session_approve | |
-| 5 | 온톨로지 연결 | TransactionOntology.recipes에 recipe_id 추가 | |
-| 6 | 테스트 | 변환 + 승인 흐름 + 온톨로지 반영 | |
+| 1 | 스키마 정의 | Recipe 모델에 source_session, approved_by 필드 추가 (recipe.py) | ✅ |
+| 2 | Recipe Store | 기존 RecipeStore 활용 (recipe.py) | ✅ |
+| 3 | 세션→레시피 변환 | session_to_recipe + _generalize_args 변수 치환 (session_analyzer.py) | ✅ |
+| 4 | 승인 도구 | sap_session_candidates, sap_session_approve MCP 도구 + dispatcher | ✅ |
+| 5 | 온톨로지 연결 | approve 시 _link_recipe_to_ontology로 자동 연결 | ✅ |
+| 6 | 테스트 | 변환 + 승인 흐름 + 온톨로지 반영 (26건 pass) | ✅ |
 
 ### Phase 14-4: Recipe 활용 (AI 자동 참조)
 

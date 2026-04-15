@@ -775,6 +775,36 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "required": ["session_id"],
         },
     },
+    {
+        "name": "sap_session_candidates",
+        "description": (
+            "온톨로지 학습 후보(candidate) 세션 목록을 조회합니다. "
+            "성공한 세션 중 3단계 이상의 핵심 흐름과 tcode를 포함하는 세션만 표시됩니다. "
+            "관리자가 후보를 확인한 후 sap_session_approve로 승인하면 레시피로 변환됩니다."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "최대 결과 수 (기본 50)"},
+            },
+        },
+    },
+    {
+        "name": "sap_session_approve",
+        "description": (
+            "후보(candidate) 세션을 승인하여 워크플로우 레시피로 변환합니다. "
+            "정제된 세션 흐름이 레시피로 저장되고, 해당 tcode의 온톨로지에 자동 연결됩니다. "
+            "승인된 레시피는 이후 sap_recipe_search로 검색하여 AI가 참고할 수 있습니다."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "승인할 세션 ID"},
+                "approved_by": {"type": "string", "description": "승인자 이름 (기본: admin)"},
+            },
+            "required": ["session_id"],
+        },
+    },
 ]
 
 TOOLS: list = []

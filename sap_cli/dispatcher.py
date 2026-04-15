@@ -97,10 +97,12 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "recipe_list":    CommandDef("sap_recipe_list",       Permission.READ),
     "recipe_delete":  CommandDef("sap_recipe_delete",     Permission.ADMIN),
     "recipe_success": CommandDef("sap_recipe_success",    Permission.WRITE),
-    "session_start":  CommandDef("sap_session_start",     Permission.WRITE),
-    "session_end":    CommandDef("sap_session_end",       Permission.WRITE),
-    "session_list":   CommandDef("sap_session_list",      Permission.READ),
-    "session_show":   CommandDef("sap_session_show",      Permission.READ),
+    "session_start":      CommandDef("sap_session_start",      Permission.WRITE),
+    "session_end":        CommandDef("sap_session_end",        Permission.WRITE),
+    "session_list":       CommandDef("sap_session_list",       Permission.READ),
+    "session_show":       CommandDef("sap_session_show",       Permission.READ),
+    "session_candidates": CommandDef("sap_session_candidates", Permission.READ),
+    "session_approve":    CommandDef("sap_session_approve",    Permission.ADMIN),
 }
 
 COMMAND_TOOL_MAP: dict[str, str] = {cmd: d.tool_name for cmd, d in COMMAND_REGISTRY.items()}
@@ -126,6 +128,8 @@ TRANSCRIPT_OMIT_COMMANDS = {
     "session_end",
     "session_list",
     "session_show",
+    "session_candidates",
+    "session_approve",
 }
 
 
@@ -512,6 +516,10 @@ def _execute_command(
         return _dispatch_session_list(args)
     if command == "session_show":
         return _dispatch_session_show(args)
+    if command == "session_candidates":
+        return _dispatch_session_candidates(args)
+    if command == "session_approve":
+        return _dispatch_session_approve(args)
     raise ValueError(f"미구현 명령: {command}")
 
 
@@ -1824,6 +1832,78 @@ def _dispatch_session_show(args: dict[str, Any]) -> dict[str, Any]:
     return session.model_dump(mode="json", exclude_none=True)
 
 
+def _dispatch_session_candidates(args: dict[str, Any]) -> dict[str, Any]:
+    from .session_analyzer import analyze
+
+    store = _get_session_store()
+    sessions = store.list_sessions(
+        status="completed",
+        limit=int(args.get("limit", 50)),
+    )
+    candidates = []
+    for s_summary in sessions:
+        session = store.load(s_summary["id"])
+        if session is None:
+            continue
+        analyze(session)
+        if not session.candidate or session.approved:
+            continue
+        candidates.append({
+            "id": session.id,
+            "user_request": session.user_request,
+            "outcome": session.outcome,
+            "step_count": len(session.steps),
+            "started_at": session.started_at,
+            "sap_user": session.sap_user,
+        })
+    return {"candidates": candidates, "count": len(candidates)}
+
+
+def _dispatch_session_approve(args: dict[str, Any]) -> dict[str, Any]:
+    from .recipe import Recipe, RecipeStep as RStep
+    from .session_analyzer import analyze, approve_session
+
+    store = _get_session_store()
+    session_id = str(args["session_id"])
+    approved_by = str(args.get("approved_by", "admin"))
+
+    session = store.load(session_id)
+    if session is None:
+        return {"error": f"세션을 찾을 수 없습니다: {session_id}"}
+
+    analyze(session)
+    if not session.candidate:
+        return {"error": "이 세션은 승인 후보(candidate)가 아닙니다"}
+    if session.approved:
+        return {"error": f"이미 승인된 세션입니다 (recipe_id: {session.recipe_id})"}
+
+    recipe_data = approve_session(session, approved_by=approved_by)
+    if "error" in recipe_data:
+        return recipe_data
+
+    recipe_store = _get_recipe_store()
+    steps = [RStep(**s) if isinstance(s, dict) else s for s in recipe_data.pop("steps", [])]
+    recipe = Recipe(**recipe_data, steps=steps)
+    recipe_store.save(recipe)
+
+    store._save(session)
+
+    linked_tcodes = _link_recipe_to_ontology(
+        recipe.id, recipe.steps,
+        description=recipe.description,
+        context=recipe.context,
+        keywords=recipe.keywords,
+    )
+
+    return {
+        "approved": True,
+        "session_id": session_id,
+        "recipe_id": recipe.id,
+        "step_count": len(recipe.steps),
+        "linked_tcodes": linked_tcodes,
+    }
+
+
 def _evaluate_authorization(
     tool_name: str,
     args: dict[str, Any],
@@ -1994,6 +2074,7 @@ def _log_transcript(
 
 SESSION_SKIP_COMMANDS = {
     "session_start", "session_end", "session_list", "session_show",
+    "session_candidates", "session_approve",
     "transcript_query", "transcript_plan",
     "ontology_query", "macro_list", "macro_show", "macro_delete",
     "capture", "capture_list",
