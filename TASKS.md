@@ -734,7 +734,68 @@ e494fad feat: AI 네비게이션 레시피 시스템 구현
 | 설계 방향 | Connections 순회하며 Description/SystemName 매칭, sap connect --system SID 지원 | ✅ |
 | 세션 복구 | COM 연결 끊김 시 자동 재연결 + 상태 복원 | ✅ |
 
-### Phase 17: AI 학습 루프
+### Phase 17: 병렬 멀티 세션 — 여러 에이전트가 각각의 SAP 세션 운영
+
+> 상세 설계: [DESIGN_MULTI_SESSION.md](DESIGN_MULTI_SESSION.md)
+
+SAP GUI 세션을 여러 개 띄우고, 각 에이전트가 고유 슬롯(slot)에 바인딩되어 독립적으로 작업.
+현재 싱글턴 구조를 SessionPool로 전환하여 slot_id 기반 다중 세션 관리.
+
+#### Phase 17-1: SessionPool 코어 + service 레이어 (2026-04-16 ✅)
+
+| # | 작업 | 내용 | 상태 |
+|---|------|------|------|
+| 1 | SessionSlot 모델 | slot_id, connection/session 인덱스, wrapper, 에이전트명 | ✅ |
+| 2 | SessionPool 클래스 | slot CRUD + threading.Lock + max_sessions 제한 | ✅ |
+| 3 | SapGuiWrapper.create_session | 새 SAP 세션 생성 COM API (CreateSession) | ✅ |
+| 4 | service.py 전환 | 싱글턴(_sap) → get_sap(slot_id="ses0") 풀 방식 | ✅ |
+| 5 | 테스트 29건 | pool CRUD/최대세션/에이전트/스레드안전/service 하위호환 | ✅ |
+
+#### Phase 17-2: Dispatcher + Daemon 연동 (2026-04-16 ✅)
+
+| # | 작업 | 내용 | 상태 |
+|---|------|------|------|
+| 1 | DispatchContext.slot_id | slot_id 필드 추가 (기본 "ses0") | ✅ |
+| 2 | dispatcher slot 라우팅 | _get_sap() → _get_sap(ctx.slot_id) 전 24개소 변경 | ✅ |
+| 3 | daemon context.slot_id | TCP 프로토콜에 slot_id 전달 + 풀 기반 전환 | ✅ |
+| 4 | MCP slot_id 전달 | handle_tool에서 slot_id 추출 → daemon/dispatcher 전달 | ✅ |
+| 5 | 기존 테스트 호환 | 355개 전체 통과 | ✅ |
+
+#### Phase 17-3: MCP + CLI 표면 (2026-04-16 ✅)
+
+| # | 작업 | 내용 | 상태 |
+|---|------|------|------|
+| 1 | MCP 도구 slot_id | 모든 SAP 도구에 선택적 slot_id 파라미터 추가 | 완료 |
+| 2 | sap_session_pool 도구 | 활성 슬롯 목록 조회 | 완료 |
+| 3 | sap_session_allocate 도구 | 새 슬롯 할당 (자동 세션 생성) | 완료 |
+| 4 | sap_session_release 도구 | 슬롯 해제 (세션 유지/종료 선택) | 완료 |
+| 5 | CLI --slot 옵션 | sap slots, sap connect --slot, sap run --slot | 완료 |
+| 6 | 테스트 | MCP + CLI 슬롯 라우팅 (디스패처 통합 9개) | 완료 |
+
+#### Phase 17-4: COM 스레딩 안정화 + 문서 (2026-04-16 ✅)
+
+| # | 작업 | 내용 | 상태 |
+|---|------|------|------|
+| 1 | CoInitialize 가드 | com_wrapper에 _ensure_com_initialized() 추가 (pythoncom.CoInitialize) | 완료 |
+| 2 | TTL 자동 해제 | SessionPool.sweep_expired() + max_sessions 도달 시 자동 sweep | 완료 |
+| 3 | 문서 갱신 | README 아키텍처 다이어그램, DESIGN_MULTI_SESSION 구현 기록, TASKS.md | 완료 |
+| 4 | Windows 실기 검증 | COM STA/MTA, CreateSession 실제 동작 | 사내 검증 대기 |
+
+#### Phase 17-5: Codex 리뷰 대응 (2026-04-16 ✅)
+
+| # | 이슈 | 심각도 | 조치 | 상태 |
+|---|------|--------|------|------|
+| 1 | 트랜스크립트/세션 로깅 ses0 하드코딩 | P1 | ctx.slot_id 전달 | 완료 |
+| 2 | daemon session_id 유실 | P1 | daemon에 session_id 복사 추가 | 완료 |
+| 3 | 슬롯 할당 시 독립 세션 미생성 | P1 | create_new_session 옵션 추가 | 완료 |
+| 4 | 재연결 시 슬롯 메타데이터 무시 | P1 | get_sap()가 저장된 인덱스로 재연결 | 완료 |
+| 5 | TTL sweep 수동 전용 | P1 | list_slots()에서도 자동 sweep | 완료 |
+| 6 | get_pool() 스레드 비안전 | P1 | double-checked locking 적용 | 완료 |
+| 7 | CLI connect만 --slot 지원 | P1 | 글로벌 --slot 옵션 | 완료 |
+| 8 | COM STA 가드 불완전 | P2 | Windows 실기 검증 필요 | 사내 대기 |
+| 9 | slot_id 검증 부족 | P2 | 정규식 검증 + 테스트 6개 | 완료 |
+
+### Phase 18: AI 학습 루프 (구 Phase 17)
 
 | 작업 | 내용 | 상태 |
 |------|------|------|
@@ -743,11 +804,9 @@ e494fad feat: AI 네비게이션 레시피 시스템 구현
 | 레시피 버전닝 | SAP 업그레이드/패치 후 경로 변경 대응, 이전 버전 보존 | 대기 |
 | 크로스 트랜잭션 레시피 | SPRO → MM03 → VA01 등 여러 tcode를 걸치는 복합 레시피 | 대기 |
 
-### Phase 18: ~~온톨로지 Q&A — SAP 문의 자동 응답~~ (Phase 15에서 완료)
+### ~~Phase 19: 온톨로지 Q&A~~ (Phase 15에서 완료, 폐기)
 
-> Phase 15-1~15-3에서 모두 구현 완료. 이 Phase는 폐기.
-
-### Phase 19: ADT 온톨로지 통합 — ABAP 코드 메타데이터 연동
+### Phase 20: ADT 온톨로지 통합 — ABAP 코드 메타데이터 연동
 
 > 참고 레포: [mcp-abap-adt](https://github.com/mario-andreschak/mcp-abap-adt), [mcp-abap-abap-adt-api](https://github.com/mario-andreschak/mcp-abap-abap-adt-api)
 
@@ -759,7 +818,7 @@ SAP ADT(ABAP Development Tools) REST API를 활용하여 온톨로지에 **코�
 - ADT 접근 권한이 있는 SAP 계정 (개발자 키 불필요, 읽기 전용)
 - 레시피 50개+ 축적 후 착수 권장
 
-#### Phase 19-1: ADT 클라이언트 기반 구축
+#### Phase 20-1: ADT 클라이언트 기반 구축
 
 | # | 작업 | 내용 | 상태 |
 |---|------|------|------|
@@ -768,7 +827,7 @@ SAP ADT(ABAP Development Tools) REST API를 활용하여 온톨로지에 **코�
 | 3 | CLI 커맨드 | `sap adt connect` / `sap adt status` — ADT 연결 테스트 | 대기 |
 | 4 | 테스트 | CSRF 토큰 흐름 mock 테스트, 연결 실패 핸들링 | 대기 |
 
-#### Phase 19-2: 읽기 전용 ADT 도구 (온톨로지 보강용)
+#### Phase 20-2: 읽기 전용 ADT 도구 (온톨로지 보강용)
 
 | # | 작업 | 내용 | 상태 |
 |---|------|------|------|
@@ -778,7 +837,7 @@ SAP ADT(ABAP Development Tools) REST API를 활용하여 온톨로지에 **코�
 | 4 | 소스 코드 조회 | `sap adt source <object>` — 프로그램/클래스/함수모듈 소스 읽기 전용 | 대기 |
 | 5 | 패키지 구조 조회 | `sap adt package <package>` — 패키지 하위 오브젝트 트리 | 대기 |
 
-#### Phase 19-3: 온톨로지 스키마 확장
+#### Phase 20-3: 온톨로지 스키마 확장
 
 | # | 작업 | 내용 | 상태 |
 |---|------|------|------|
@@ -788,7 +847,7 @@ SAP ADT(ABAP Development Tools) REST API를 활용하여 온톨로지에 **코�
 | 4 | field→data_element 매핑 | 화면 필드의 DDic 바인딩 → `uses_data_element` 엣지 생성 | 대기 |
 | 5 | 테스트 | 확장 스키마 검증, 기존 온톨로지 호환성 테스트 | 대기 |
 
-#### Phase 19-4: MCP 도구 확장
+#### Phase 20-4: MCP 도구 확장
 
 | # | 작업 | 내용 | 상태 |
 |---|------|------|------|

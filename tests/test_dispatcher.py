@@ -158,7 +158,7 @@ def _make_policy(tmp_path, relation: str = "operator") -> Policy:
 
 def test_dispatch_run_includes_post_action_context(monkeypatch, tmp_path):
     fake_sap = _FakeSap()
-    monkeypatch.setattr("sap_cli.dispatcher._get_sap", lambda: fake_sap)
+    monkeypatch.setattr("sap_cli.dispatcher._get_sap", lambda slot_id="ses0": fake_sap)
     monkeypatch.setattr(
         "sap_cli.dispatcher.load_policy",
         lambda: _make_policy(tmp_path),
@@ -180,7 +180,7 @@ def test_dispatch_run_includes_post_action_context(monkeypatch, tmp_path):
 
 def test_dispatch_run_can_include_screen_summary(monkeypatch, tmp_path):
     fake_sap = _FakeSap()
-    monkeypatch.setattr("sap_cli.dispatcher._get_sap", lambda: fake_sap)
+    monkeypatch.setattr("sap_cli.dispatcher._get_sap", lambda slot_id="ses0": fake_sap)
     monkeypatch.setattr(
         "sap_cli.dispatcher.load_policy",
         lambda: _make_policy(tmp_path),
@@ -211,7 +211,7 @@ def test_dispatch_command_requires_approval_for_dangerous_transaction(
         DangerousTransaction(tcode="SM30", reason="테이블 직접 수정")
     ]
 
-    monkeypatch.setattr("sap_cli.dispatcher._get_sap", lambda: fake_sap)
+    monkeypatch.setattr("sap_cli.dispatcher._get_sap", lambda slot_id="ses0": fake_sap)
     monkeypatch.setattr("sap_cli.dispatcher.load_policy", lambda: Policy.model_validate(policy.model_dump()))
 
     with pytest.raises(ApprovalRequiredError):
@@ -226,7 +226,7 @@ def test_dispatch_command_requires_approval_for_dangerous_transaction(
 def test_dispatch_set_denied_for_readonly(monkeypatch, tmp_path):
     fake_sap = _FakeSap()
     readonly_policy = _make_policy(tmp_path, relation="viewer")
-    monkeypatch.setattr("sap_cli.dispatcher._get_sap", lambda: fake_sap)
+    monkeypatch.setattr("sap_cli.dispatcher._get_sap", lambda slot_id="ses0": fake_sap)
     monkeypatch.setattr("sap_cli.dispatcher.load_policy", lambda: readonly_policy)
 
     with pytest.raises(PermissionDeniedError):
@@ -239,8 +239,9 @@ def test_dispatch_set_denied_for_readonly(monkeypatch, tmp_path):
 
 def test_dispatch_run_writes_transcript_with_before_after(monkeypatch, tmp_path):
     fake_sap = _FakeSap()
-    monkeypatch.setattr("sap_cli.dispatcher._get_sap", lambda: fake_sap)
-    monkeypatch.setattr("sap_cli.service._sap", fake_sap)
+    monkeypatch.setattr("sap_cli.dispatcher._get_sap", lambda slot_id="ses0": fake_sap)
+    monkeypatch.setattr("sap_cli.service.get_sap", lambda slot_id="ses0": fake_sap)
+    monkeypatch.setattr("sap_cli.dispatcher._get_existing_sap", lambda slot_id="ses0": fake_sap)
     monkeypatch.setattr(
         "sap_cli.dispatcher.load_policy",
         lambda: _make_policy(tmp_path),
@@ -270,8 +271,9 @@ def test_dispatch_approval_required_writes_transcript(monkeypatch, tmp_path):
         DangerousTransaction(tcode="SM30", reason="테이블 직접 수정")
     ]
 
-    monkeypatch.setattr("sap_cli.dispatcher._get_sap", lambda: fake_sap)
-    monkeypatch.setattr("sap_cli.service._sap", fake_sap)
+    monkeypatch.setattr("sap_cli.dispatcher._get_sap", lambda slot_id="ses0": fake_sap)
+    monkeypatch.setattr("sap_cli.service.get_sap", lambda slot_id="ses0": fake_sap)
+    monkeypatch.setattr("sap_cli.dispatcher._get_existing_sap", lambda slot_id="ses0": fake_sap)
     monkeypatch.setattr(
         "sap_cli.dispatcher.load_policy",
         lambda: Policy.model_validate(policy.model_dump()),

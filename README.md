@@ -945,6 +945,23 @@ Windows의 Claude Code `settings.json`에 추가:
 | `sap_session_start` | AI 실행 세션 시작 (의도/맥락 기록) |
 | `sap_session_end` | AI 실행 세션 종료 (결과 기록) |
 
+#### 병렬 멀티 세션 (3개)
+
+여러 AI 에이전트가 각각 독립된 SAP 세션에서 동시에 작업할 수 있습니다.
+
+| 도구 | 설명 |
+|------|------|
+| `sap_session_pool` | 활성 세션 슬롯 목록 조회 (연결 상태, 에이전트, 트랜잭션) |
+| `sap_session_allocate` | 새 슬롯 할당 (slot_id, agent_name, system, create_new_session) |
+| `sap_session_release` | 슬롯 해제 (close=true이면 SAP 세션도 종료) |
+
+모든 SAP 도구에 선택적 `slot_id` 파라미터가 추가되어, 특정 슬롯의 SAP 세션에서 작업을 수행할 수 있습니다. 미지정 시 기본 슬롯(`ses0`)을 사용합니다.
+
+```
+Agent A: sap_run(tcode="MM03", slot_id="ses0")  → ses0에서 MM03 실행
+Agent B: sap_run(tcode="VA01", slot_id="ses1")  → ses1에서 VA01 실행
+```
+
 #### 학습
 
 | 도구 | 설명 |
@@ -995,7 +1012,50 @@ MCP 서버가 데몬 모드를 사용하도록 설정:
 
 `SAP_CLI_USE_DAEMON=1`이면 MCP → 데몬(TCP 18471)으로 명령을 위임하고, 데몬이 없으면 자동으로 직접 실행으로 폴백합니다.
 
-### 7.4 AI 실행 세션 관리
+### 7.4 병렬 멀티 세션 운영
+
+여러 AI 에이전트가 각각 독립된 SAP 세션에서 동시에 작업할 수 있습니다. 각 에이전트는 고유한 `slot_id`를 사용하여 자신만의 SAP 세션을 운영합니다.
+
+#### CLI에서 슬롯 사용
+
+```powershell
+# 기본 슬롯(ses0)으로 연결
+sap connect --system PR1
+
+# ses1 슬롯으로 연결 (--slot은 모든 명령에 적용)
+sap --slot ses1 connect --system PR1
+
+# 슬롯별 트랜잭션 실행
+sap --slot ses0 run MM03
+sap --slot ses1 run VA01
+
+# 활성 슬롯 목록 조회
+sap slots
+```
+
+#### MCP에서 슬롯 사용
+
+```python
+# 에이전트 A: ses0 슬롯에서 자재 조회
+sap_session_allocate(slot_id="ses0", agent_name="agent_a", system="PR1")
+sap_run(tcode="MM03", slot_id="ses0")
+
+# 에이전트 B: 새 SAP 세션을 생성하여 ses1에 할당
+sap_session_allocate(slot_id="ses1", agent_name="agent_b", create_new_session=true)
+sap_run(tcode="VA01", slot_id="ses1")
+
+# 작업 완료 후 슬롯 해제
+sap_session_release(slot_id="ses1", close=true)
+```
+
+#### 슬롯 관리 규칙
+
+- SAP GUI는 연결당 최대 6세션을 지원하며, `SessionPool.max_sessions`(기본 6)으로 제한
+- 1시간 미사용 슬롯은 TTL 정책에 의해 자동 해제
+- `slot_id`는 영문/숫자/언더스코어/하이픈만 허용 (1-32자)
+- 슬롯을 지정하지 않으면 기본 `ses0`으로 동작 (하위 호환)
+
+### 7.5 AI 실행 세션 관리
 
 AI 에이전트의 실행 단위를 "세션"으로 관리합니다. 하나의 사용자 요청 → 여러 도구 호출 → 결과를 하나의 세션으로 묶어 추적합니다.
 
@@ -1015,7 +1075,7 @@ AI Agent:
 
 ---
 
-## 7.5 ReBAC 권한관리
+## 7.6 ReBAC 권한관리
 
 에이전트 유형에 따라 허용하는 MCP 도구를 제한하는 정책 기반 접근 제어(ReBAC)를 지원합니다.
 
@@ -1083,7 +1143,7 @@ transcript:
 
 `active_agent` 값을 변경하면 다음 MCP 서버 재시작 시 적용됩니다. 권한 모델 상세는 `DESIGN_REBAC.md`를 참조하세요.
 
-### 7.6 Transcript와 Verifier 루프
+### 7.7 Transcript와 Verifier 루프
 
 AI 운영에서 중요한 건 "실행"보다 "실행 후 검토"입니다.
 
@@ -1292,32 +1352,35 @@ sap transcript-plan --command set --index 0
 ## 10. 아키텍처
 
 ```
-┌─────────────────────────────────────────────┐
-│  AI Agent (Claude Code / MCP Client)        │
-│  - 자연어 → MCP 도구 호출                     │
-│  - JSON 결과 해석 → 다음 액션 결정             │
-└──────────────┬──────────────────────────────┘
-               │ MCP (stdio)
-┌──────────────▼──────────────────────────────┐
-│  sap-cli (Python)                           │
-│  ┌────────────────────────────────────┐     │
-│  │ CLI (typer)  │  MCP Server (mcp)   │     │
-│  └──────┬───────┴──────┬──────────────┘     │
-│         │              │                     │
-│         │    ┌─────────▼──────────────┐     │
-│         │    │ Daemon (TCP 18471)     │     │
-│         │    │ 단일 COM 연결 유지      │     │
-│         │    │ + 세션 자동 복구        │     │
-│         │    └─────────┬──────────────┘     │
-│  ┌──────▼──────────────▼──────────────┐     │
-│  │ Central Dispatcher                  │     │
-│  │ ├── Auth (ReBAC 정책/감사)          │     │
-│  │ ├── Session Store (AI 실행 세션)    │     │
-│  │ └── Transcript (실행 기록)          │     │
-│  └──────┬─────────────────────────────┘     │
-│  ┌──────▼──────────────────────────────┐    │
-│  │ Service Layer (공통 비즈니스 로직)   │    │
-│  └──────┬─────────────────────────────┘     │
+┌──────────────────────┐  ┌──────────────────────┐
+│  Agent A (slot=ses0) │  │  Agent B (slot=ses1) │
+│  MCP Client          │  │  MCP Client          │
+└──────────┬───────────┘  └──────────┬───────────┘
+           │ MCP (stdio)             │ MCP (stdio)
+┌──────────▼─────────────────────────▼───────────┐
+│  sap-cli (Python)                              │
+│  ┌────────────────────────────────────┐        │
+│  │ CLI (typer)  │  MCP Server (mcp)   │        │
+│  └──────┬───────┴──────┬──────────────┘        │
+│         │              │                        │
+│         │    ┌─────────▼──────────────┐        │
+│         │    │ Daemon (TCP 18471)     │        │
+│         │    │ + slot_id 라우팅        │        │
+│         │    │ + 세션 자동 복구        │        │
+│         │    └─────────┬──────────────┘        │
+│  ┌──────▼──────────────▼──────────────┐        │
+│  │ Central Dispatcher                  │        │
+│  │ ├── Auth (ReBAC 정책/감사)          │        │
+│  │ ├── Session Store (AI 실행 세션)    │        │
+│  │ └── Transcript (실행 기록)          │        │
+│  └──────┬─────────────────────────────┘        │
+│  ┌──────▼──────────────────────────────┐       │
+│  │ Service Layer                       │       │
+│  │ └── SessionPool (slot별 래퍼 관리)  │       │
+│  │     ├── ses0 → SapGuiWrapper → ses[0]│      │
+│  │     ├── ses1 → SapGuiWrapper → ses[1]│      │
+│  │     └── TTL 자동 해제 (1시간)       │       │
+│  └──────┬─────────────────────────────┘        │
 │  ┌──────▼──────────────────────────────┐    │
 │  │ Macro System                        │    │
 │  │ ├── Recorder (녹화)                 │    │
@@ -1363,6 +1426,7 @@ sap_cli/
 │   ├── mcp_server.py           # MCP 서버
 │   ├── daemon.py               # 데몬 서버 (TCP 18471, 단일 COM 연결)
 │   ├── service.py              # CLI/MCP 공통 서비스 레이어
+│   ├── session_pool.py         # 병렬 멀티 세션 풀 (slot_id 기반)
 │   ├── learner.py              # 온톨로지 학습 엔진
 │   ├── recipe.py               # AI 네비게이션 레시피 저장/검색
 │   ├── session_store.py        # AI 실행 세션 기록
@@ -1434,8 +1498,8 @@ pytest tests/ -v
 
 | 항목 | 값 |
 |------|---|
-| 총 테스트 수 | 326개 |
-| 실행 시간 | 약 0.44초 |
+| 총 테스트 수 | 389개 |
+| 실행 시간 | 약 0.5초 |
 | SAP/Windows 필요 여부 | 불필요 |
 
-매크로 변수 치환, 온톨로지 스키마 검증, ReBAC 정책 판단, 디스패처 통합, MCP 서버 라우팅, 데몬 위임, 세션 스토어, 레시피 검색, 온톨로지 Q&A, 연결 안정성(멀티 시스템/세션 복구) 등을 포함합니다.
+매크로 변수 치환, 온톨로지 스키마 검증, ReBAC 정책 판단, 디스패처 통합, MCP 서버 라우팅, 데몬 위임, 세션 스토어, 레시피 검색, 온톨로지 Q&A, 연결 안정성(멀티 시스템/세션 복구), 병렬 멀티 세션(풀 CRUD/TTL/슬롯 검증/디스패처 통합/스레드 안전) 등을 포함합니다.

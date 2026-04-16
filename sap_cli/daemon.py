@@ -139,13 +139,11 @@ class _DaemonServer(socketserver.TCPServer):
         super().__init__(("127.0.0.1", PORT), _Handler)
         self._sap = None
 
-    def _get_sap(self):
-        from .com_wrapper import SapGuiWrapper
-        if self._sap is None:
-            self._sap = SapGuiWrapper()
-        if not self._sap.is_connected:
-            self._sap.connect()
-        return self._sap
+    def _get_sap(self, slot_id: str = "ses0"):
+        from .service import get_sap
+        wrapper = get_sap(slot_id)
+        self._sap = wrapper
+        return wrapper
 
     def dispatch(self, cmd: str, args: dict, ctx_dict: dict | None = None) -> dict:
         if cmd == "ping":
@@ -170,6 +168,10 @@ class _DaemonServer(socketserver.TCPServer):
                     setattr(ctx, field, ctx_dict[field])
             if "include_screen_summary" in ctx_dict:
                 ctx.include_screen_summary = bool(ctx_dict["include_screen_summary"])
+            if "slot_id" in ctx_dict:
+                ctx.slot_id = str(ctx_dict["slot_id"])
+            if "session_id" in ctx_dict:
+                ctx.session_id = str(ctx_dict["session_id"])
 
         try:
             data = dispatch_command(
@@ -178,8 +180,11 @@ class _DaemonServer(socketserver.TCPServer):
                 ctx,
             )
             if cmd == "connect":
-                import sap_cli.service as _svc
-                self._sap = _svc._sap
+                from .service import get_pool
+                slot_id = ctx.slot_id
+                wrapper = get_pool().get(slot_id)
+                if wrapper:
+                    self._sap = wrapper
             return {"ok": True, "data": data}
         except ApprovalRequiredError as e:
             return {

@@ -41,6 +41,17 @@ app = typer.Typer(
 )
 console = Console()
 
+# 글로벌 슬롯 ID — @app.callback()에서 설정
+_global_slot_id: str = "ses0"
+
+
+@app.callback()
+def _main_callback(
+    slot: str = typer.Option("ses0", "--slot", help="세션 슬롯 ID (병렬 작업용, 모든 명령에 적용)"),
+) -> None:
+    global _global_slot_id
+    _global_slot_id = slot
+
 
 def _parse_vars(raw: str) -> dict[str, Any]:
     """다양한 형식의 --vars 값을 dict로 파싱.
@@ -88,9 +99,9 @@ def _handle_approval_required(e: ApprovalRequiredError) -> None:
     raise typer.Exit(1)
 
 
-def _dispatch_local(cmd: str, args: dict) -> dict:
+def _dispatch_local(cmd: str, args: dict, slot_id: str = "ses0") -> dict:
     try:
-        return dispatch_command(cmd, args, DispatchContext(source="cli"))
+        return dispatch_command(cmd, args, DispatchContext(source="cli", slot_id=slot_id))
     except ApprovalRequiredError as e:
         _handle_approval_required(e)
     except (PermissionDeniedError, ValueError, RuntimeError) as e:
@@ -100,16 +111,17 @@ def _dispatch_local(cmd: str, args: dict) -> dict:
     raise typer.Exit(1)
 
 
-def _run_command(cmd: str, args: dict, *, allow_daemon: bool = False) -> None:
-    if allow_daemon and _try_daemon(cmd, args):
+def _run_command(cmd: str, args: dict, *, allow_daemon: bool = False, slot_id: str | None = None) -> None:
+    effective_slot = slot_id or _global_slot_id
+    if allow_daemon and _try_daemon(cmd, args, slot_id=effective_slot):
         return
-    _output_json(_dispatch_local(cmd, args))
+    _output_json(_dispatch_local(cmd, args, slot_id=effective_slot))
 
 
-def _try_daemon(cmd: str, args: dict) -> bool:
+def _try_daemon(cmd: str, args: dict, slot_id: str = "ses0") -> bool:
     """데몬으로 명령 전송 시도. 성공하면 결과 출력 후 True 반환."""
     from . import daemon
-    result = daemon.send_command(cmd, args)
+    result = daemon.send_command(cmd, args, context={"slot_id": slot_id})
     if result is None:
         return False
     if result["ok"]:
@@ -148,6 +160,12 @@ def connect(
 def list_connections() -> None:
     """모든 활성 SAP 연결 목록 조회."""
     _run_command("connections", {}, allow_daemon=True)
+
+
+@app.command("slots")
+def list_slots() -> None:
+    """활성 세션 슬롯 목록 조회."""
+    _run_command("slots", {}, allow_daemon=True)
 
 
 @app.command("session")

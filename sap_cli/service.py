@@ -8,28 +8,60 @@ from .macro.recorder import MacroRecorder
 from .macro.store import MacroStore
 from .ontology.schema import ActionType
 from .ontology.store import OntologyStore
+import threading
+
+from .session_pool import DEFAULT_SLOT, SessionPool
 from .session_store import SessionStore
 
 
 # ---------------------------------------------------------------------------
-# 싱글턴 인스턴스 관리
+# 세션 풀 (싱글턴 → 풀 전환)
 # ---------------------------------------------------------------------------
 
-_sap: SapGuiWrapper | None = None
+_pool: SessionPool | None = None
+_pool_lock = threading.Lock()
+
+
+def get_pool() -> SessionPool:
+    """글로벌 SessionPool 인스턴스 반환 (스레드 안전)."""
+    global _pool
+    if _pool is None:
+        with _pool_lock:
+            if _pool is None:
+                _pool = SessionPool()
+    return _pool
+
+
+def get_sap(slot_id: str = DEFAULT_SLOT) -> SapGuiWrapper:
+    """slot_id에 해당하는 SapGuiWrapper 반환.
+
+    슬롯이 없으면 자동 생성. 하위 호환: slot_id 미지정 시 "ses0".
+    재연결 시 슬롯에 저장된 connection/session 인덱스를 사용.
+    """
+    pool = get_pool()
+    wrapper = pool.get_or_create(slot_id)
+    if not wrapper.is_connected:
+        slot = pool._slots.get(slot_id)
+        if slot and (slot.connection_index or slot.session_index or slot.system_id):
+            wrapper.connect(
+                connection_index=slot.connection_index,
+                session_index=slot.session_index,
+                system=slot.system_id,
+            )
+        else:
+            wrapper.connect()
+    return wrapper
+
+
+# ---------------------------------------------------------------------------
+# 온톨로지/매크로/세션 스토어 (슬롯과 무관 — 전역 공유)
+# ---------------------------------------------------------------------------
+
 _store: OntologyStore | None = None
 _learner: OntologyLearner | None = None
 _recorder: MacroRecorder | None = None
 _macro_store: MacroStore | None = None
 _session_store: SessionStore | None = None
-
-
-def get_sap() -> SapGuiWrapper:
-    global _sap
-    if _sap is None:
-        _sap = SapGuiWrapper()
-    if not _sap.is_connected:
-        _sap.connect()
-    return _sap
 
 
 def get_store() -> OntologyStore:
@@ -39,10 +71,12 @@ def get_store() -> OntologyStore:
     return _store
 
 
-def get_learner() -> OntologyLearner:
+def get_learner(slot_id: str = DEFAULT_SLOT) -> OntologyLearner:
+    """slot_id의 SAP wrapper를 사용하는 learner 반환."""
     global _learner
-    if _learner is None:
-        _learner = OntologyLearner(get_sap(), get_store())
+    sap = get_sap(slot_id)
+    if _learner is None or _learner._sap is not sap:
+        _learner = OntologyLearner(sap, get_store())
     return _learner
 
 

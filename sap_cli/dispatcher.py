@@ -106,6 +106,9 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "session_show":       CommandDef("sap_session_show",       Permission.READ),
     "session_candidates": CommandDef("sap_session_candidates", Permission.READ),
     "session_approve":    CommandDef("sap_session_approve",    Permission.ADMIN),
+    "slots":              CommandDef("sap_session_pool",       Permission.READ),
+    "slot_allocate":      CommandDef("sap_session_allocate",   Permission.ADMIN),
+    "slot_release":       CommandDef("sap_session_release",    Permission.ADMIN),
 }
 
 COMMAND_TOOL_MAP: dict[str, str] = {cmd: d.tool_name for cmd, d in COMMAND_REGISTRY.items()}
@@ -176,6 +179,7 @@ class DispatchContext:
     include_post_action_context: bool = True
     include_screen_summary: bool = False
     session_id: str | None = None
+    slot_id: str = "ses0"
 
 
 def dispatch_command(
@@ -204,6 +208,7 @@ def dispatch_command(
         before_state = _capture_transcript_state(
             command,
             include_screen_summary=transcript_with_screen_summary,
+            slot_id=ctx.slot_id,
         )
 
     if not authz.allowed:
@@ -242,6 +247,7 @@ def dispatch_command(
             after_state = _capture_transcript_state(
                 command,
                 include_screen_summary=transcript_with_screen_summary,
+                slot_id=ctx.slot_id,
             )
         _log_transcript(
             transcript,
@@ -273,6 +279,7 @@ def dispatch_command(
         after_state = _capture_transcript_state(
             command,
             include_screen_summary=transcript_with_screen_summary,
+            slot_id=ctx.slot_id,
         )
     _log_transcript(
         transcript,
@@ -310,11 +317,11 @@ def _execute_command(
     if command == "connections":
         return _dispatch_connections(args, ctx)
     if command == "session":
-        return _get_sap().get_session_info().model_dump(mode="json")
+        return _get_sap(ctx.slot_id).get_session_info().model_dump(mode="json")
     if command == "screen":
-        return _dispatch_screen(args)
+        return _dispatch_screen(args, ctx)
     if command == "run":
-        sap = _get_sap()
+        sap = _get_sap(ctx.slot_id)
         tcode = str(args["tcode"])
         sap.run_transaction(tcode)
         info = sap.get_session_info()
@@ -325,7 +332,7 @@ def _execute_command(
         }
         return _with_post_action(payload, sap, command, ctx)
     if command == "set":
-        sap = _get_sap()
+        sap = _get_sap(ctx.slot_id)
         element_id = str(args["element_id"])
         value = str(args["value"])
         if "/chk" in element_id:
@@ -342,37 +349,37 @@ def _execute_command(
         }
         return _with_post_action(payload, sap, command, ctx)
     if command == "get":
-        sap = _get_sap()
+        sap = _get_sap(ctx.slot_id)
         element_ids = args.get("element_ids") or [str(args["element_id"])]
         if len(element_ids) == 1:
             return sap.get_field_info(element_ids[0])
         return [sap.get_field_info(eid) for eid in element_ids]
     if command == "press":
-        sap = _get_sap()
+        sap = _get_sap(ctx.slot_id)
         element_id = str(args["element_id"])
         sap.press(element_id)
         payload = {"pressed": element_id}
         return _with_post_action(payload, sap, command, ctx)
     if command == "vkey":
-        sap = _get_sap()
+        sap = _get_sap(ctx.slot_id)
         key = int(args["key"])
         sap.send_vkey(key)
         payload = {"vkey_sent": key}
         return _with_post_action(payload, sap, command, ctx)
     if command == "status":
-        return _get_sap().get_status().model_dump(mode="json")
+        return _get_sap(ctx.slot_id).get_status().model_dump(mode="json")
     if command == "table":
         element_id = str(args["element_id"])
         max_rows = int(args.get("max_rows", 50))
         col_filter = args.get("columns")
         if isinstance(col_filter, str):
             col_filter = [c.strip() for c in col_filter.split(",")]
-        return _get_sap().read_table(element_id, max_rows=max_rows, columns=col_filter).model_dump(mode="json")
+        return _get_sap(ctx.slot_id).read_table(element_id, max_rows=max_rows, columns=col_filter).model_dump(mode="json")
     if command == "tree":
         element_id = str(args["element_id"])
         node_key = str(args.get("node_key", "")).strip()
         depth = int(args.get("depth", -1))
-        sap = _get_sap()
+        sap = _get_sap(ctx.slot_id)
         nodes = sap.read_tree(element_id)
         # node_key가 지정되면 해당 노드의 자식만 반환
         if node_key:
@@ -393,25 +400,25 @@ def _execute_command(
             "nodes": [n.model_dump(mode="json", exclude_none=True) for n in nodes],
         }
     if command == "tree_select":
-        sap = _get_sap()
+        sap = _get_sap(ctx.slot_id)
         sap.tree_select_node(str(args["element_id"]), str(args["node_key"]))
         payload = {"action": "select", "element_id": args["element_id"], "node_key": args["node_key"]}
         return _with_post_action(payload, sap, command, ctx)
     if command == "tree_doubleclick":
-        sap = _get_sap()
+        sap = _get_sap(ctx.slot_id)
         sap.tree_double_click_node(str(args["element_id"]), str(args["node_key"]))
         payload = {"action": "doubleclick", "element_id": args["element_id"], "node_key": args["node_key"]}
         return _with_post_action(payload, sap, command, ctx)
     if command == "tree_expand":
-        sap = _get_sap()
+        sap = _get_sap(ctx.slot_id)
         sap.tree_expand_node(str(args["element_id"]), str(args["node_key"]))
         return {"action": "expand", "element_id": args["element_id"], "node_key": args["node_key"]}
     if command == "tree_collapse":
-        sap = _get_sap()
+        sap = _get_sap(ctx.slot_id)
         sap.tree_collapse_node(str(args["element_id"]), str(args["node_key"]))
         return {"action": "collapse", "element_id": args["element_id"], "node_key": args["node_key"]}
     if command == "tree_press":
-        sap = _get_sap()
+        sap = _get_sap(ctx.slot_id)
         used_col = sap.tree_press_button(
             str(args["element_id"]), str(args["node_key"]), str(args.get("column", "")))
         cached = sap._tree_action_cache.get(str(args["element_id"]), {})
@@ -425,13 +432,13 @@ def _execute_command(
             payload["discovered_columns"] = cached
         return _with_post_action(payload, sap, command, ctx)
     if command == "command":
-        sap = _get_sap()
+        sap = _get_sap(ctx.slot_id)
         command_text = str(args["cmd"])
         sap.send_command(command_text)
         payload = {"command": command_text}
         return _with_post_action(payload, sap, command, ctx)
     if command == "modal":
-        return _collect_modal(_get_sap())
+        return _collect_modal(_get_sap(ctx.slot_id))
     if command == "record_step":
         return _dispatch_record_step(args, ctx)
     if command == "macro_control":
@@ -445,14 +452,14 @@ def _execute_command(
     if command == "macro_delete":
         return _dispatch_macro_delete(args)
     if command == "table_select":
-        sap = _get_sap()
+        sap = _get_sap(ctx.slot_id)
         element_id = str(args["element_id"])
         row = int(args["row"])
         sap.select_table_row(element_id, row)
         payload = {"selected": True, "table": element_id, "row": row}
         return _with_post_action(payload, sap, command, ctx)
     if command == "table_doubleclick":
-        sap = _get_sap()
+        sap = _get_sap(ctx.slot_id)
         element_id = str(args["element_id"])
         row = int(args["row"])
         col = str(args.get("column", ""))
@@ -466,7 +473,7 @@ def _execute_command(
     if command == "transcript_plan":
         return _dispatch_transcript_plan(args, policy)
     if command == "learn":
-        return _dispatch_learn()
+        return _dispatch_learn(ctx)
     if command == "process_list":
         return _dispatch_process_list()
     if command == "process_show":
@@ -500,7 +507,7 @@ def _execute_command(
     if command == "ontology_rebuild":
         return _dispatch_ontology_rebuild()
     if command == "capture":
-        return _dispatch_capture(args)
+        return _dispatch_capture(args, ctx)
     if command == "capture_list":
         return _dispatch_capture_list(args)
     if command == "recipe_save":
@@ -529,6 +536,12 @@ def _execute_command(
         return _dispatch_session_candidates(args)
     if command == "session_approve":
         return _dispatch_session_approve(args)
+    if command == "slots":
+        return _dispatch_slots()
+    if command == "slot_allocate":
+        return _dispatch_slot_allocate(args, ctx)
+    if command == "slot_release":
+        return _dispatch_slot_release(args)
     raise ValueError(f"미구현 명령: {command}")
 
 
@@ -549,17 +562,22 @@ def resolve_mcp_call(
 
 
 def _dispatch_connect(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
-    import sap_cli.service as _svc
+    from .service import get_pool
 
-    sap = SapGuiWrapper()
+    pool = get_pool()
+    sap = pool.get_or_create(ctx.slot_id, agent_name=ctx.agent_name)
+    conn_idx = int(args.get("connection", args.get("connection_index", 0)))
+    sess_idx = int(args.get("session", args.get("session_index", 0)))
+    system = args.get("system")
     info = sap.connect(
-        connection_index=int(args.get("connection", args.get("connection_index", 0))),
-        session_index=int(args.get("session", args.get("session_index", 0))),
-        system=args.get("system"),
+        connection_index=conn_idx,
+        session_index=sess_idx,
+        system=system,
     )
-    _svc._sap = sap
+    pool.update_slot_connection(ctx.slot_id, conn_idx, sess_idx, system_id=system)
     payload = {
         "connected": True,
+        "slot_id": ctx.slot_id,
         "session": info.model_dump(mode="json"),
     }
     return _with_post_action(payload, sap, "connect", ctx)
@@ -570,8 +588,9 @@ def _dispatch_connections(args: dict[str, Any], ctx: DispatchContext) -> dict[st
     return sap.list_connections()
 
 
-def _dispatch_screen(args: dict[str, Any]) -> dict[str, Any]:
-    sap = _get_sap()
+def _dispatch_screen(args: dict[str, Any], ctx: DispatchContext | None = None) -> dict[str, Any]:
+    slot_id = ctx.slot_id if ctx else "ses0"
+    sap = _get_sap(slot_id)
     screen = sap.get_screen()
     search = args.get("search")
     if search:
@@ -649,7 +668,7 @@ def _dispatch_record_step(
     args: dict[str, Any],
     ctx: DispatchContext,
 ) -> dict[str, Any]:
-    sap = _get_sap()
+    sap = _get_sap(ctx.slot_id)
     recorder = _get_recorder()
     action = str(args["action"])
     target = str(args["target"])
@@ -757,7 +776,7 @@ def _dispatch_macro_play(
         raise ValueError(f"매크로 '{macro_id}'를 찾을 수 없습니다.")
 
     variables = args.get("variables", {}) or {}
-    sap = _get_sap()
+    sap = _get_sap(ctx.slot_id)
     player = MacroPlayer(sap)
 
     if args.get("dry_run"):
@@ -1127,8 +1146,9 @@ def _make_ontology_store(policy: Policy | None) -> OntologyStore:
     return OntologyStore(knowledge_dir=knowledge_dir)
 
 
-def _dispatch_learn() -> dict[str, Any]:
-    screen = _get_learner().learn_current_screen()
+def _dispatch_learn(ctx: DispatchContext | None = None) -> dict[str, Any]:
+    slot_id = ctx.slot_id if ctx else "ses0"
+    screen = _get_learner(slot_id).learn_current_screen()
     return {
         "learned": True,
         "transaction": screen.transaction,
@@ -1375,7 +1395,7 @@ def _dispatch_fill(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]
     필드명(MATNR) 또는 element_id 모두 지원.
     필드명인 경우 현재 화면을 스캔하여 element_id를 자동 매핑.
     """
-    sap = _get_sap()
+    sap = _get_sap(ctx.slot_id)
     fields: dict[str, str] = args["fields"]
     do_enter = args.get("enter", True)
 
@@ -1699,11 +1719,12 @@ def _truncate_tree_depth(node, remaining_depth: int):
     )
 
 
-def _dispatch_capture(args: dict[str, Any]) -> dict[str, Any]:
+def _dispatch_capture(args: dict[str, Any], ctx: DispatchContext | None = None) -> dict[str, Any]:
     """현재 SAP GUI 화면 스크린샷 캡처."""
     from .screenshot import capture_sap_window, capture_for_step
 
-    sap = _get_sap()
+    slot_id = ctx.slot_id if ctx else "ses0"
+    sap = _get_sap(slot_id)
     info = sap.get_session_info()
     label = args.get("label") or ""
     output = args.get("output")
@@ -2033,7 +2054,7 @@ def _dispatch_session_start(args: dict[str, Any], ctx: DispatchContext) -> dict[
     store = _get_session_store(config)
 
     sap_user, sap_system = "", ""
-    sap = _get_existing_sap()
+    sap = _get_existing_sap(ctx.slot_id)
     if sap is not None:
         try:
             info = sap.get_session_info()
@@ -2302,7 +2323,7 @@ def _log_transcript(
         return bool(state and isinstance(state.get("session"), dict))
 
     if not _has_session(before_state) and not _has_session(after_state):
-        sap = _get_existing_sap()
+        sap = _get_existing_sap(ctx.slot_id)
         if sap is not None:
             try:
                 session = sap.get_session_info().model_dump(mode="json")
@@ -2381,13 +2402,14 @@ def _capture_transcript_state(
     command: str,
     *,
     include_screen_summary: bool,
+    slot_id: str = "ses0",
 ) -> dict[str, Any] | None:
     if command not in COMMAND_REGISTRY:
         return None
     if command in {"ontology_query", "ontology_ask", "macro_control", "macro_list", "macro_show", "macro_delete", "transcript_query", "transcript_plan"}:
         return None
 
-    sap = _get_existing_sap()
+    sap = _get_existing_sap(slot_id)
     if sap is None:
         return None
 
@@ -2417,17 +2439,17 @@ def _extract_transcript_state_from_result(result: dict[str, Any]) -> dict[str, A
     return state or None
 
 
-def _get_existing_sap() -> SapGuiWrapper | None:
-    import sap_cli.service as _svc
+def _get_existing_sap(slot_id: str = "ses0") -> SapGuiWrapper | None:
+    from .service import get_pool
 
-    sap = getattr(_svc, "_sap", None)
-    if sap is None:
+    pool = get_pool()
+    wrapper = pool.get(slot_id)
+    if wrapper is None:
         return None
     try:
-        is_connected = getattr(sap, "is_connected")
-    except Exception:  # pragma: no cover - defensive path
-        return sap
-    return sap if is_connected else None
+        return wrapper if wrapper.is_connected else None
+    except Exception:
+        return wrapper
 
 
 def _with_post_action(
@@ -2529,3 +2551,77 @@ def _collect_modal(sap: SapGuiWrapper) -> dict[str, Any]:
     if has_modal:
         payload["text"] = sap.get_modal_text()
     return payload
+
+
+# ---------------------------------------------------------------------------
+# Session Pool dispatch
+# ---------------------------------------------------------------------------
+
+def _dispatch_slots() -> dict[str, Any]:
+    from .service import get_pool
+    pool = get_pool()
+    return {
+        "slot_count": pool.slot_count(),
+        "max_sessions": pool.max_sessions,
+        "slots": pool.list_slots(),
+    }
+
+
+def _dispatch_slot_allocate(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    from .service import get_pool
+    slot_id = str(args.get("slot_id", ""))
+    if not slot_id:
+        raise ValueError("slot_id가 필요합니다.")
+    agent_name = args.get("agent_name") or ctx.agent_name
+    system = args.get("system")
+    session_index = int(args.get("session_index", -1))
+    create_new = bool(args.get("create_new_session", False))
+
+    pool = get_pool()
+    wrapper = pool.get_or_create(slot_id, agent_name=agent_name)
+
+    result: dict[str, Any] = {
+        "allocated": True,
+        "slot_id": slot_id,
+        "agent_name": agent_name,
+    }
+
+    # create_new_session: 기존 연결에서 새 SAP 세션을 생성하여 할당
+    if create_new:
+        from .service import get_sap
+        base_wrapper = get_sap("ses0")
+        new_idx = base_wrapper.create_session()
+        session_index = new_idx
+        result["created_session_index"] = new_idx
+
+    # 시스템이나 세션 인덱스가 지정되면 바로 연결
+    if system or session_index >= 0:
+        info = wrapper.connect(
+            session_index=max(session_index, 0),
+            system=system,
+        )
+        pool.update_slot_connection(
+            slot_id,
+            wrapper._last_connection_index,
+            wrapper._last_session_index,
+            system_id=system,
+        )
+        result["connected"] = True
+        result["session"] = info.model_dump(mode="json")
+
+    return result
+
+
+def _dispatch_slot_release(args: dict[str, Any]) -> dict[str, Any]:
+    from .service import get_pool
+    slot_id = str(args.get("slot_id", ""))
+    if not slot_id:
+        raise ValueError("slot_id가 필요합니다.")
+    close = args.get("close", False)
+
+    pool = get_pool()
+    if close:
+        ok = pool.close(slot_id)
+    else:
+        ok = pool.release(slot_id)
+    return {"released": ok, "slot_id": slot_id, "closed": close}

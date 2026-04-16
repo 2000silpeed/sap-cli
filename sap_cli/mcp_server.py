@@ -840,6 +840,38 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "required": ["session_id"],
         },
     },
+    {
+        "name": "sap_session_pool",
+        "description": "활성 SAP 세션 슬롯 목록을 조회합니다. 각 슬롯의 연결 상태, 할당된 에이전트, 현재 트랜잭션 등을 반환합니다.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "sap_session_allocate",
+        "description": "새 SAP 세션 슬롯을 할당합니다. 병렬 작업 시 각 에이전트가 고유 슬롯(ses0, ses1 등)을 사용하여 독립적으로 SAP 작업을 수행할 수 있습니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "slot_id": {"type": "string", "description": "슬롯 ID (예: 'ses0', 'ses1'). 고유해야 함."},
+                "agent_name": {"type": "string", "description": "이 슬롯에 할당할 에이전트 이름"},
+                "system": {"type": "string", "description": "연결할 시스템 ID(SID). 지정 시 자동 연결"},
+                "session_index": {"type": "integer", "description": "세션 인덱스. 지정 시 해당 세션에 연결"},
+                "create_new_session": {"type": "boolean", "default": False, "description": "true이면 ses0의 연결에서 새 SAP 세션을 생성하여 이 슬롯에 할당"},
+            },
+            "required": ["slot_id"],
+        },
+    },
+    {
+        "name": "sap_session_release",
+        "description": "SAP 세션 슬롯을 해제합니다. close=true이면 SAP 세션도 함께 종료합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "slot_id": {"type": "string", "description": "해제할 슬롯 ID"},
+                "close": {"type": "boolean", "default": False, "description": "true이면 SAP 세션도 종료"},
+            },
+            "required": ["slot_id"],
+        },
+    },
 ]
 
 TOOLS: list = []
@@ -903,6 +935,7 @@ def _dispatch_via_daemon(
     tool_name: str,
     agent_name: str | None,
     session_id: str | None = None,
+    slot_id: str = "ses0",
 ) -> dict[str, Any] | None:
     """daemon 경유 실행. 성공하면 결과 dict, 실패/미실행이면 None."""
     from . import daemon
@@ -916,6 +949,7 @@ def _dispatch_via_daemon(
         "tool_name": tool_name,
         "agent_name": agent_name,
         "include_screen_summary": _screen_summary_enabled(),
+        "slot_id": slot_id,
     }
     if session_id:
         ctx["session_id"] = session_id
@@ -944,12 +978,14 @@ def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
     try:
         command, normalized_args = resolve_mcp_call(name, arguments)
+        slot_id = str(normalized_args.pop("slot_id", "ses0"))
 
         # daemon 위임 모드
         if _use_daemon():
             daemon_result = _dispatch_via_daemon(
                 command, normalized_args, name, effective_agent,
                 session_id=_active_session_id,
+                slot_id=slot_id,
             )
             if daemon_result is not None:
                 if daemon_result.get("ok"):
@@ -974,6 +1010,7 @@ def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             agent_name=effective_agent,
             include_screen_summary=_screen_summary_enabled(),
             session_id=_active_session_id,
+            slot_id=slot_id,
         )
         result = dispatch_command(command, normalized_args, ctx)
 

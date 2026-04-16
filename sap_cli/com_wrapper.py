@@ -41,6 +41,7 @@ from .ontology.schema import (
 _WIN32 = platform.system() == "Windows"
 
 if _WIN32:
+    import pythoncom  # type: ignore[import-untyped]
     import win32com.client  # type: ignore[import-untyped]
 
 
@@ -75,10 +76,20 @@ class SapGuiWrapper:
     # Connection Management
     # -------------------------------------------------------------------
 
+    def _ensure_com_initialized(self) -> None:
+        """현재 스레드에서 COM STA가 초기화되었는지 확인."""
+        if not _WIN32:
+            return
+        try:
+            pythoncom.CoInitialize()
+        except Exception:
+            pass
+
     def _get_application(self) -> Any:
         """ROT에서 SAP GUI Application 객체를 가져온다."""
         if not _WIN32:
             raise SapGuiError("SAP GUI COM is only available on Windows")
+        self._ensure_com_initialized()
         try:
             rot_entry = win32com.client.GetObject("SAPGUI")
             self._application = rot_entry.GetScriptingEngine
@@ -283,6 +294,31 @@ class SapGuiWrapper:
                 continue
         logger.warning("세션 복구 실패 — %d회 시도 후 포기", self._max_reconnect_attempts)
         return False
+
+    def create_session(self) -> int:
+        """현재 연결에 새 SAP 세션을 생성하고 세션 인덱스를 반환한다.
+
+        SAP GUI에서 /o 명령과 동일. 연결당 최대 6세션(기본값).
+        """
+        if self._connection is None:
+            raise SapGuiError("연결되지 않았습니다. connect()를 먼저 호출하세요.")
+        before = self._connection.Sessions.Count
+        try:
+            self._connection.Sessions(0).CreateSession()
+        except Exception as e:
+            raise SapGuiError(f"새 세션 생성 실패: {e}") from e
+        import time
+        for _ in range(20):
+            time.sleep(0.3)
+            try:
+                if self._connection.Sessions.Count > before:
+                    return self._connection.Sessions.Count - 1
+            except Exception:
+                break
+        raise SapGuiError(
+            "새 세션 생성 시간 초과 (최대 세션 수 초과 가능). "
+            f"현재 세션 수: {before}"
+        )
 
     def disconnect(self) -> None:
         self._session = None

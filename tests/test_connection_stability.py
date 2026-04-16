@@ -346,9 +346,9 @@ class TestDispatcherConnections:
         assert result["connection_count"] == 1
         mock_sap.connect.assert_not_called()
 
-    @patch("sap_cli.dispatcher.SapGuiWrapper")
-    def test_dispatch_connect_with_system(self, MockWrapper):
+    def test_dispatch_connect_with_system(self):
         from sap_cli.dispatcher import DispatchContext, dispatch_command
+        from sap_cli.session_pool import SessionPool
 
         mock_sap = MagicMock()
         mock_sap.connect.return_value = MagicMock(
@@ -357,13 +357,15 @@ class TestDispatcherConnections:
                 "user": "TEST",
             }
         )
-        MockWrapper.return_value = mock_sap
 
-        result = dispatch_command(
-            "connect",
-            {"system": "ERP"},
-            DispatchContext(source="test"),
-        )
+        mock_pool = SessionPool()
+        with patch("sap_cli.service.get_pool", return_value=mock_pool), \
+             patch.object(mock_pool, "get_or_create", return_value=mock_sap):
+            result = dispatch_command(
+                "connect",
+                {"system": "ERP"},
+                DispatchContext(source="test"),
+            )
         mock_sap.connect.assert_called_once_with(
             connection_index=0, session_index=0, system="ERP"
         )
