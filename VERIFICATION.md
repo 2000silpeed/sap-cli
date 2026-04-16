@@ -1645,3 +1645,491 @@ sap macro-list
 - [ ] Phase F: 데몬 start/status/stop + 데몬 경유 명령 성공
 - [ ] Phase G: 정리(삭제) 성공
 - [ ] 전체 흐름에서 에러/크래시 없이 완주
+
+---
+
+## 시나리오 16: 필드 레지스트리 / 종속성 / 문서 흐름 (Phase 11)
+
+### 목표
+
+크로스 트랜잭션 필드 연결, 필드 간 종속 관계, 문서 흐름 온톨로지를 조회하고 어노테이션하는 기능 검증.
+
+### 사전 조건
+
+- 시나리오 4(온톨로지 학습)가 완료되어 최소 1개 트랜잭션 온톨로지 존재
+- 시드 데이터가 있으면 더 풍부한 결과 확인 가능
+
+### 실행 단계
+
+```powershell
+# ── Phase A: 필드 레지스트리 ──
+
+# A1. 전체 필드 레지스트리 조회
+sap relationships
+# → 기대: 등록된 필드 목록 (sap_field_name, occurrences 등)
+
+# A2. 특정 필드의 크로스 트랜잭션 사용처 조회
+sap relationships MATNR
+# → 기대: MATNR이 사용되는 모든 트랜잭션/화면 목록
+
+# A3. 필드 레지스트리 재구축
+sap relationships --rebuild
+# → 기대: 전체 트랜잭션 스캔 후 필드 인덱스 재구축
+```
+
+```powershell
+# ── Phase B: 필드 종속성 ──
+
+# B1. 전체 종속 관계 조회
+sap depends
+# → 기대: 등록된 필드 종속 관계 목록
+
+# B2. 특정 필드의 종속 관계 조회
+sap depends WERKS
+# → 기대: WERKS에 종속된 필드 (예: LGORT) 또는 WERKS가 종속하는 필드
+
+# B3. 종속 관계 재구축
+sap depends --rebuild
+# → 기대: 기존 시드 field_dependencies를 글로벌 관계로 승격
+
+# B4. 수동으로 종속 관계 추가
+sap annotate-dependency BUKRS GSBER --type value_determines --desc "회사코드가 사업영역을 결정" --observed-in MM03
+# → 기대: 종속 관계 저장 성공
+```
+
+```powershell
+# ── Phase C: 문서 흐름 ──
+
+# C1. 전체 문서 흐름 조회
+sap flow
+# → 기대: 트랜잭션 간 문서 흐름 엣지 목록
+
+# C2. 특정 트랜잭션의 문서 흐름 조회
+sap flow VA01
+# → 기대: VA01에서 시작하는 흐름 (VA01 → VL01N → VF01 등)
+
+# C3. 문서 흐름 재구축
+sap flow --rebuild
+# → 기대: 프로세스/트랜잭션 데이터에서 문서 흐름 엣지 재구축
+```
+
+```powershell
+# ── Phase D: 필드 어노테이션 ──
+
+# D1. 필드에 설명/동의어 추가
+sap annotate MM03 MATNR --desc "Material Number" --desc-ko "자재번호" --synonyms "material_number,mat_no" --synonyms-ko "자재코드,품번"
+# → 기대: 어노테이션 저장 성공
+
+# D2. 온톨로지에서 어노테이션 확인
+sap ontology MM03 --field MATNR
+# → 기대: 추가한 설명/동의어가 포함됨
+```
+
+```powershell
+# ── Phase E: 일괄 재구축 ──
+
+# E1. 전체 재구축 (필드 레지스트리 + 종속성 + 문서 흐름)
+sap rebuild
+# → 기대: 3개 인덱스 모두 재구축 완료 메시지
+```
+
+### 검증 포인트
+
+- [ ] `sap relationships MATNR` — MATNR 사용 트랜잭션 목록 반환
+- [ ] `sap depends WERKS` — 종속 필드 정보 반환
+- [ ] `sap flow VA01` — 문서 흐름 경로 반환
+- [ ] `sap annotate-dependency` — 수동 종속 관계 추가 성공
+- [ ] `sap annotate` — 필드 설명/동의어 추가 성공
+- [ ] `sap rebuild` — 전체 재구축 에러 없음
+- [ ] `--rebuild` 플래그로 개별 재구축 정상
+
+### 실패 시 확인사항
+
+- 필드가 없다고 나옴 → `sap ontology --list`로 학습된 트랜잭션 확인
+- rebuild가 0건 → `~/.sap_cli/knowledge/transactions/` 에 JSON 파일이 있는지 확인
+- annotate-dependency type 에러 → 유효 타입: value_determines, input_order, lookup, field_activation
+
+---
+
+## 시나리오 17: MCP 세션 로깅 + 분석 + 레시피 승인 (Phase 14)
+
+### 목표
+
+MCP 세션 라이프사이클(시작 → 단계 기록 → 종료 → 분석 → 레시피 변환 → 승인)을 검증.
+
+### 사전 조건
+
+- SAP 연결 완료
+- MCP 서버 또는 CLI로 세션 기능 사용 가능
+
+### 실행 단계
+
+```powershell
+# ── Phase A: 세션 생성 및 단계 기록 ──
+
+# A1. 세션 시작
+sap session-start "MM03에서 자재 100-100 기본데이터 조회"
+# → 기대: session_id 반환 (UUID 형식)
+# → 메모: session_id를 복사
+
+# A2. SAP 조작 수행 (각 명령이 세션 단계로 자동 기록됨)
+sap run MM03
+sap set "wnd[0]/usr/ctxtRMMG1-MATNR" "100-100"
+sap vkey 0
+sap vkey 0
+sap screen --fields-only
+
+# A3. 세션 종료
+sap session-end SESSION_ID --outcome success --summary "MM03 자재 100-100 기본데이터 조회 완료"
+# → 기대: session 종료 성공, status: completed
+```
+
+```powershell
+# ── Phase B: 세션 조회 ──
+
+# B1. 세션 목록 조회
+sap session-list --limit 5
+# → 기대: 방금 만든 세션이 목록에 표시
+
+# B2. 세션 상세 조회
+sap session-show SESSION_ID
+# → 기대: user_request, ai_reasoning, steps(단계별 명령/결과), outcome 포함
+
+# B3. 날짜별 필터
+sap session-list --date 2026-04-16 --status completed
+# → 기대: 해당 날짜의 완료 세션만 표시
+```
+
+```powershell
+# ── Phase C: 승인 후보 + 레시피 변환 ──
+
+# C1. 승인 후보 조회
+sap session-candidates --limit 10
+# → 기대: 3단계 이상 + tcode 포함 + 성공한 세션이 후보로 표시
+
+# C2. 세션 승인 → 레시피 자동 생성
+sap session-approve SESSION_ID --approved-by "검증자"
+# → 기대: recipe_id 반환, 온톨로지에 자동 연결
+
+# C3. 생성된 레시피 확인
+sap recipe-list
+# → 기대: 승인으로 생성된 레시피가 목록에 표시
+
+sap recipe-search "MM03"
+# → 기대: 방금 생성된 레시피가 검색됨
+```
+
+```powershell
+# ── Phase D: 정리 ──
+
+# D1. 뒤로가기
+sap vkey 3
+sap vkey 3
+```
+
+### 검증 포인트
+
+- [ ] session-start — session_id 반환
+- [ ] SAP 조작이 세션 단계로 자동 기록됨
+- [ ] session-end — outcome/summary 기록 성공
+- [ ] session-list — 목록 조회 + 필터 정상
+- [ ] session-show — 단계별 명령/결과 포함
+- [ ] session-candidates — 후보 세션 표시
+- [ ] session-approve — 레시피 자동 생성 + 온톨로지 연결
+- [ ] 생성된 레시피가 recipe-list/recipe-search에서 확인됨
+
+### 실패 시 확인사항
+
+- session-start 실패 → SessionConfig.enabled 확인 (policy.yaml)
+- 단계가 기록 안 됨 → dispatcher에서 SESSION_SKIP_COMMANDS에 포함된 명령인지 확인 (screen, status 등은 스킵)
+- candidates에 안 나옴 → 3단계 미만이거나 tcode가 없으면 후보에서 제외됨
+- approve 실패 → session이 success가 아니거나 이미 승인된 경우
+- 세션 파일 위치: `~/.sap_cli/sessions/`
+
+---
+
+## 시나리오 18: 온톨로지 Q&A — 자연어 질문 (Phase 15)
+
+### 목표
+
+`sap ontology-ask`로 온톨로지에 자연어 질문을 하여 구조화된 답변을 받는 기능 검증.
+
+### 사전 조건
+
+- 시드 데이터 또는 `sap learn`으로 최소 2~3개 트랜잭션 온톨로지 존재
+- 프로세스 시드 데이터 존재 (procurement_basic, sales_to_billing)
+
+### 실행 단계
+
+```powershell
+# ── 질문 유형 1: 트랜잭션 요약 ──
+
+sap ontology-ask "VA01이 뭐야?"
+# → 기대: VA01 트랜잭션 요약 (모듈, 화면, 주요 필드 등)
+
+sap ontology-ask "MM03은 어떤 트랜잭션이야?"
+# → 기대: MM03 상세 정보 반환
+```
+
+```powershell
+# ── 질문 유형 2: 필드 의미 ──
+
+sap ontology-ask "MATNR이 뭐야?"
+# → 기대: MATNR 필드 설명 + 사용되는 트랜잭션 목록
+
+sap ontology-ask "자재번호 필드 알려줘"
+# → 기대: 한글 키워드로도 MATNR 매핑되어 답변
+```
+
+```powershell
+# ── 질문 유형 3: 크로스 트랜잭션 조회 ──
+
+sap ontology-ask "MATNR이 어디에서 사용돼?"
+# → 기대: MATNR이 사용되는 모든 트랜잭션/화면 목록
+```
+
+```powershell
+# ── 질문 유형 4: 프로세스 가이드 ──
+
+sap ontology-ask "자재 조달 프로세스 알려줘"
+# → 기대: procurement_basic 프로세스 스텝 + 데이터 흐름
+
+sap ontology-ask "판매에서 대금청구까지 어떻게 해?"
+# → 기대: sales_to_billing 프로세스 안내
+```
+
+```powershell
+# ── 질문 유형 5: 종속성 ──
+
+sap ontology-ask "WERKS에 의존하는 필드는?"
+# → 기대: WERKS에 종속된 필드 목록 (예: LGORT)
+```
+
+```powershell
+# ── 질문 유형 6: 문서 흐름 경로 ──
+
+sap ontology-ask "VA01에서 VF01까지 어떻게 가?"
+# → 기대: VA01 → VL01N → VF01 경로 반환
+```
+
+```powershell
+# ── 질문 유형 7: MCP 환경에서 AI 활용 ──
+# Claude Code에서:
+# "MM 모듈에서 사용하는 트랜잭션 알려줘"
+# → 기대: sap_ontology_ask 도구 호출 → 구조화된 답변
+```
+
+### 검증 포인트
+
+- [ ] 트랜잭션 요약 질문 — 트랜잭션 정보 정상 반환
+- [ ] 필드 의미 질문 — 필드 설명 + 사용처 반환
+- [ ] 한글 키워드 매핑 — "자재번호" → MATNR 자동 매핑
+- [ ] 프로세스 가이드 — 스텝 + 데이터 흐름 포함
+- [ ] 종속성 질문 — 종속 필드 목록 반환
+- [ ] 경로 탐색 — BFS 기반 트랜잭션 경로 반환
+- [ ] 존재하지 않는 항목 질문 시 적절한 안내 메시지
+
+### 실패 시 확인사항
+
+- "트랜잭션을 찾을 수 없습니다" → `sap ontology --list`로 학습된 트랜잭션 확인
+- 한글 매핑 안 됨 → `sap_cli/ontology/question_parser.py`의 한글 키워드 테이블 확인
+- 프로세스 질문에 답이 없음 → `sap process-list`로 프로세스 존재 여부 확인
+- 경로 탐색 실패 → `sap flow`로 문서 흐름 엣지 존재 여부 확인
+
+---
+
+## 시나리오 19: 멀티 시스템 연결 + 세션 복구 (Phase 16)
+
+### 목표
+
+여러 SAP 시스템이 연결된 환경에서 시스템 ID(SID) 기반 자동 연결과 세션 복구 기능 검증.
+
+### 사전 조건
+
+- SAP GUI에 2개 이상의 시스템이 로그인되어 있거나, 최소 1개 시스템 로그인 상태
+- 각 시스템의 SID를 알고 있어야 함 (예: PRD, DEV, QAS)
+
+### 실행 단계
+
+```powershell
+# ── Phase A: 기본 연결 (인덱스 방식) ──
+
+# A1. 기본 연결 (첫 번째 연결, 첫 번째 세션)
+sap connect
+# → 기대: connected: true + system_name, client 정보
+
+# A2. 세션 정보 확인
+sap session
+# → 기대: system_name 필드에 SID 표시
+```
+
+```powershell
+# ── Phase B: SID 기반 연결 ──
+
+# B1. 시스템 ID로 연결 (SID 자동 탐색)
+sap connect --system PRD
+# → 기대: PRD 시스템의 연결을 자동으로 찾아서 연결
+# → 기대: system_name이 요청한 SID와 일치
+
+# B2. 다른 시스템으로 전환 (2개 이상 로그인 시)
+sap connect --system DEV
+# → 기대: DEV 시스템으로 전환
+sap session
+# → 기대: system_name이 DEV
+```
+
+```powershell
+# ── Phase C: 인덱스 지정 연결 ──
+
+# C1. 특정 연결/세션 인덱스로 연결
+sap connect --connection 0 --session 0
+# → 기대: 첫 번째 연결의 첫 번째 세션에 연결
+
+# C2. 다른 세션으로 전환
+sap connect --connection 0 --session 1
+# → 기대: 같은 연결의 두 번째 세션에 연결 (세션이 2개 이상인 경우)
+```
+
+```powershell
+# ── Phase D: 세션 복구 ──
+
+# D1. 현재 세션에서 작업
+sap run MM03
+sap screen --fields-only
+# → 정상 동작 확인
+
+# D2. COM 연결 끊김 시뮬레이션 (SAP GUI를 잠시 닫았다 열기, 또는 네트워크 끊김)
+# → 실제 끊김이 어렵다면, 다음 명령으로 재연결 테스트
+
+# D3. 재연결 시도
+sap connect
+# → 기대: 기존 연결 복구 또는 새 연결 자동 수립
+sap session
+# → 기대: 세션 정보 정상 반환
+```
+
+### 검증 포인트
+
+- [ ] `sap connect` — 기본 연결 성공
+- [ ] `sap connect --system SID` — SID로 자동 탐색 + 연결
+- [ ] 잘못된 SID → 적절한 에러 메시지 (해당 시스템을 찾을 수 없음)
+- [ ] `sap connect --connection C --session S` — 인덱스 지정 연결
+- [ ] 세션 복구 — 끊김 후 재연결 시 정상 동작
+
+### 실패 시 확인사항
+
+- SID를 못 찾음 → SAP GUI에 해당 시스템이 실제 로그인되어 있는지 확인
+- 시스템이 1개뿐 → --system 테스트는 해당 SID로만 가능
+- 재연결 실패 → SAP GUI 자체가 완전히 종료된 경우 COM 객체를 다시 생성해야 함
+
+---
+
+## 시나리오 20: 병렬 멀티 세션 — 슬롯 기반 다중 작업 (Phase 17)
+
+### 목표
+
+SessionPool의 슬롯(slot) 기반으로 여러 SAP 세션을 동시에 관리하고, 각 슬롯에서 독립적으로 작업하는 기능 검증.
+
+### 사전 조건
+
+- SAP 연결 완료 (기본 슬롯 ses0 활성)
+- SAP GUI에서 세션 생성 가능한 상태 (최대 세션 수 제한 확인)
+
+### 실행 단계
+
+```powershell
+# ── Phase A: 기본 슬롯 확인 ──
+
+# A1. 활성 슬롯 목록 조회
+sap slots
+# → 기대: ses0 슬롯이 활성 상태로 표시
+# → 확인: slot_id, connected, agent_name, current_tcode 필드
+
+# A2. 기본 슬롯(ses0)에서 작업
+sap run MM03
+sap screen --fields-only
+# → 기대: ses0에서 MM03 실행
+```
+
+```powershell
+# ── Phase B: --slot 옵션으로 슬롯 지정 ──
+
+# B1. ses0에서 명시적으로 명령 실행
+sap --slot ses0 session
+# → 기대: ses0의 세션 정보
+
+# B2. 슬롯 목록 재확인
+sap slots
+# → 기대: ses0 활성, current_tcode: MM03
+```
+
+```powershell
+# ── Phase C: MCP 환경에서 멀티 세션 (MCP 전용 기능) ──
+# Claude Code에서:
+
+# C1. 새 슬롯 할당
+# "새로운 SAP 세션 슬롯을 할당해줘"
+# → 기대: sap_session_allocate 호출 → ses1 슬롯 생성
+
+# C2. ses1에서 독립 작업
+# "ses1 슬롯에서 VA01 실행해줘"
+# → 기대: slot_id=ses1로 sap_run(VA01) 호출
+
+# C3. 두 슬롯 상태 비교
+# "모든 슬롯 상태 보여줘"
+# → 기대: sap_session_pool 호출 → ses0(MM03), ses1(VA01) 각각 표시
+
+# C4. 슬롯 해제
+# "ses1 슬롯 해제해줘"
+# → 기대: sap_session_release 호출 → ses1 해제
+```
+
+```powershell
+# ── Phase D: CLI에서 멀티 슬롯 (SAP 세션 2개 이상 시) ──
+
+# D1. 새 슬롯으로 연결 (기존 세션 인덱스 지정)
+sap connect --slot ses1 --session 1
+# → 기대: ses1 슬롯에 두 번째 세션 연결
+
+# D2. ses1에서 다른 트랜잭션 실행
+sap --slot ses1 run VA01
+sap --slot ses1 screen --fields-only
+# → 기대: VA01 화면 정보 (ses0의 MM03과 무관)
+
+# D3. ses0은 그대로인지 확인
+sap --slot ses0 session
+# → 기대: 여전히 MM03 화면 상태
+
+# D4. 슬롯 목록
+sap slots
+# → 기대: ses0(MM03), ses1(VA01) 모두 표시
+```
+
+```powershell
+# ── Phase E: 정리 ──
+
+# E1. 뒤로가기 (각 슬롯)
+sap --slot ses0 vkey 3
+sap --slot ses1 vkey 3
+
+# E2. 슬롯 확인
+sap slots
+```
+
+### 검증 포인트
+
+- [ ] `sap slots` — 활성 슬롯 목록 정상 반환
+- [ ] `sap --slot ses0` — 기본 슬롯 명시 지정 정상
+- [ ] `sap connect --slot ses1` — 새 슬롯 연결 성공
+- [ ] `sap --slot ses1 run` — 슬롯별 독립 트랜잭션 실행
+- [ ] 두 슬롯이 서로 다른 트랜잭션 화면을 유지
+- [ ] MCP: sap_session_allocate — 슬롯 할당 성공
+- [ ] MCP: sap_session_release — 슬롯 해제 성공
+- [ ] 잘못된 slot_id (형식 위반) → 적절한 에러 메시지
+
+### 실패 시 확인사항
+
+- ses1 연결 실패 → SAP 세션이 1개뿐인 경우 2번째 세션 생성 불가
+- CreateSession 에러 → SAP 시스템의 최대 세션 수 제한 확인 (보통 6개)
+- COM 스레딩 에러 → Windows에서 CoInitialize 가드가 동작하는지 확인
+- slot_id 형식 에러 → 영문소문자+숫자+하이픈+언더스코어, 20자 이내
