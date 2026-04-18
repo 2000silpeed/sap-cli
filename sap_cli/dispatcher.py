@@ -330,6 +330,9 @@ def _execute_command(
             "current_transaction": info.transaction,
             "screen_number": info.screen_number,
         }
+        hints = _collect_recipe_hints(tcode)
+        if hints:
+            payload["recipe_hints"] = hints
         return _with_post_action(payload, sap, command, ctx)
     if command == "set":
         sap = _get_sap(ctx.slot_id)
@@ -1768,6 +1771,105 @@ def _get_recipe_store():
     return RecipeStore()
 
 
+def _collect_recipe_hints(tcode: str, limit: int = 3) -> dict[str, Any] | None:
+    """sap_run 응답에 자동 첨부할 레시피 후보. 해당 tcode 관련 상위 N개.
+
+    민감 정보 노출 방지: context/keywords는 제외, 상세는 sap_recipe_show에서 조회.
+    """
+    if not tcode:
+        return None
+    try:
+        store = _get_recipe_store()
+        recipes = store.find_by_tcode(tcode)
+    except (OSError, PermissionError) as exc:
+        logging.getLogger(__name__).warning("recipe_hints 수집 실패(%s): %s", tcode, exc)
+        return None
+    if not recipes:
+        return None
+    candidates = []
+    for r in recipes[:limit]:
+        candidates.append({
+            "id": r.id,
+            "description": r.description,
+            "step_count": len(r.steps),
+            "success_count": r.success_count,
+        })
+    return {
+        "available": len(recipes),
+        "candidates": candidates,
+        "instruction": (
+            f"'{tcode}' 관련 기존 레시피 {len(recipes)}개가 있습니다. "
+            "목적에 맞는 레시피가 있으면 sap_recipe_show로 상세 context와 steps를 확인 후 그대로 따라 실행하고, "
+            "완료 후 sap_recipe_success를 호출하세요. "
+            "맞는 레시피가 없을 때만 직접 탐색하고 성공 후 sap_recipe_save로 저장하세요."
+        ),
+    }
+
+
+def _extract_recipe_tcodes(recipe) -> set[str]:
+    tcodes: set[str] = set()
+    for step in recipe.steps:
+        if step.tool == "sap_run" and "tcode" in step.args:
+            tcodes.add(str(step.args["tcode"]).upper())
+        elif step.tool == "sap_command" and "cmd" in step.args:
+            cmd = str(step.args["cmd"])
+            if cmd.startswith("/n") or cmd.startswith("/o"):
+                tcodes.add(cmd[2:].upper())
+    return tcodes
+
+
+def _unlink_recipe_from_ontology(recipe) -> list[str]:
+    """특정 레시피가 가진 ontology 링크(recipes 리스트, action_paths)를 제거.
+
+    tcodes 추출 가능 시 해당 tcode만 순회. 추출 불가(빈 tcodes)면 전체 tcode 스캔으로
+    stale 링크를 쓸어냄 (description 변경 후 업데이트된 경우 등 대비).
+    """
+    ont_store = _get_store()
+    path_key = recipe.description or recipe.id
+    recipe_id = recipe.id
+    cleaned: list[str] = []
+
+    tcodes = _extract_recipe_tcodes(recipe)
+    if tcodes:
+        target_tcodes = list(tcodes)
+    else:
+        try:
+            target_tcodes = list(ont_store.list_transactions())
+        except (OSError, PermissionError) as exc:
+            logging.getLogger(__name__).warning(
+                "ontology list_transactions I/O 실패: %s", exc
+            )
+            target_tcodes = []
+
+    for tcode in target_tcodes:
+        ontology = ont_store.load_transaction(tcode)
+        if not ontology:
+            continue
+        changed = False
+        if recipe_id in ontology.recipes:
+            ontology.recipes.remove(recipe_id)
+            changed = True
+        if path_key in ontology.action_paths:
+            del ontology.action_paths[path_key]
+            changed = True
+        if changed:
+            ont_store.save_transaction(ontology)
+            cleaned.append(tcode)
+    return cleaned
+
+
+def _delete_recipe_with_links(recipe_id: str) -> dict[str, Any]:
+    """레시피 JSON + 온톨로지 링크 동시 정리."""
+    store = _get_recipe_store()
+    recipe = store.load(recipe_id)
+    deleted = store.delete(recipe_id)
+
+    cleaned_tcodes: list[str] = []
+    if recipe is not None:
+        cleaned_tcodes = _unlink_recipe_from_ontology(recipe)
+    return {"deleted": deleted, "cleaned_tcodes": cleaned_tcodes}
+
+
 def _link_recipe_to_ontology(
     recipe_id: str,
     steps: list,
@@ -1820,7 +1922,7 @@ def _link_recipe_to_ontology(
 
 
 def _dispatch_recipe_save(args: dict[str, Any]) -> dict[str, Any]:
-    from .recipe import Recipe, RecipeStep
+    from .recipe import Recipe, RecipeStep, efficiency_score
 
     store = _get_recipe_store()
     recipe_id = str(args["recipe_id"])
@@ -1832,8 +1934,34 @@ def _dispatch_recipe_save(args: dict[str, Any]) -> dict[str, Any]:
     steps_raw = args.get("steps", [])
     steps = [RecipeStep(**s) if isinstance(s, dict) else s for s in steps_raw]
 
+    on_duplicate = args.get("on_duplicate")
+    if on_duplicate is not None:
+        on_duplicate = str(on_duplicate).lower().strip()
+        if on_duplicate not in ("keep_existing", "replace", "keep_both"):
+            return {
+                "status": "error",
+                "message": (
+                    "on_duplicate는 keep_existing|replace|keep_both 중 하나여야 합니다. "
+                    f"받은 값: {on_duplicate!r}"
+                ),
+            }
+
+    approved_ids_raw = args.get("approved_ids")
+    if approved_ids_raw is None:
+        approved_ids: set[str] | None = None
+    elif isinstance(approved_ids_raw, str):
+        approved_ids = {s.strip() for s in approved_ids_raw.split(",") if s.strip()}
+    elif isinstance(approved_ids_raw, (list, tuple)):
+        approved_ids = {str(s).strip() for s in approved_ids_raw if str(s).strip()}
+    else:
+        return {
+            "status": "error",
+            "message": "approved_ids는 문자열 배열 또는 쉼표 구분 문자열이어야 합니다.",
+        }
+
     existing = store.load(recipe_id)
     if existing:
+        _unlink_recipe_from_ontology(existing)
         existing.description = description
         existing.context = context
         existing.keywords = keywords
@@ -1842,7 +1970,162 @@ def _dispatch_recipe_save(args: dict[str, Any]) -> dict[str, Any]:
         linked_tcodes = _link_recipe_to_ontology(
             recipe_id, steps, description=description, context=context, keywords=keywords,
         )
-        return {"saved": recipe_id, "updated": True, "step_count": len(steps), "linked_tcodes": linked_tcodes}
+        return {
+            "status": "saved",
+            "saved": recipe_id,
+            "updated": True,
+            "step_count": len(steps),
+            "linked_tcodes": linked_tcodes,
+        }
+
+    if on_duplicate is None:
+        similar = store.find_similar(
+            description=description,
+            context=context,
+            keywords=keywords,
+            steps=steps,
+            exclude_id=recipe_id,
+            threshold=0.6,
+        )
+        if similar:
+            new_recipe_preview = Recipe(
+                id=recipe_id,
+                description=description,
+                context=context,
+                keywords=keywords,
+                steps=steps,
+            )
+            new_eff = efficiency_score(new_recipe_preview)
+            candidates = []
+            best_existing: Recipe | None = None
+            for sim, r in similar:
+                eff = efficiency_score(r)
+                candidates.append({
+                    "id": r.id,
+                    "description": r.description,
+                    "context": r.context,
+                    "keywords": r.keywords,
+                    "step_count": len(r.steps),
+                    "success_count": r.success_count,
+                    "similarity": sim,
+                    "efficiency": eff,
+                })
+                if best_existing is None or eff > efficiency_score(best_existing):
+                    best_existing = r
+
+            if best_existing is None:
+                recommended = "keep_both"
+                reason = "비교 대상을 찾지 못해 안전하게 둘 다 유지 권장."
+            else:
+                best_eff = efficiency_score(best_existing)
+                if new_eff > best_eff + 0.05:
+                    recommended = "replace"
+                    reason = (
+                        f"새 레시피가 더 효율적(new_eff={new_eff} > existing_eff={best_eff}). "
+                        f"기존 '{best_existing.id}'를 대체 권장."
+                    )
+                elif best_eff > new_eff + 0.05:
+                    recommended = "keep_existing"
+                    reason = (
+                        f"기존 '{best_existing.id}'가 더 효율적"
+                        f"(existing_eff={best_eff} > new_eff={new_eff}). 저장 생략 권장."
+                    )
+                else:
+                    recommended = "keep_existing"
+                    reason = (
+                        f"효율성이 비슷함(new_eff={new_eff}, existing_eff={best_eff}). "
+                        "중복 방지 위해 기존 유지 권장."
+                    )
+
+            candidate_ids = [c["id"] for c in candidates]
+            return {
+                "status": "duplicate_candidates",
+                "recipe_id": recipe_id,
+                "new_efficiency": new_eff,
+                "candidates": candidates,
+                "candidate_ids": candidate_ids,
+                "recommended": recommended,
+                "reason": reason,
+                "instruction": (
+                    "유사한 레시피가 이미 있습니다. 사용자에게 후보를 보여주고 확인받은 뒤 "
+                    "on_duplicate 파라미터와 함께 sap_recipe_save를 다시 호출하세요. "
+                    "값: 'keep_existing'(저장 취소) | 'replace'(기존 삭제 후 저장, success_count 승계) | "
+                    "'keep_both'(강제 저장). "
+                    "on_duplicate='replace'일 때는 candidate_ids를 approved_ids 파라미터로 그대로 전달해야 합니다 "
+                    "(사용자가 확인한 후보 집합이 변하지 않았음을 서버가 검증). "
+                    "recommended는 참고용이며 최종 결정은 사용자가 합니다."
+                ),
+            }
+
+    if on_duplicate == "keep_existing":
+        return {
+            "status": "skipped",
+            "recipe_id": recipe_id,
+            "reason": "사용자가 기존 레시피 유지를 선택했습니다.",
+        }
+
+    inherited_success = 0
+    replaced_ids: list[str] = []
+    cleaned_tcodes_all: list[str] = []
+    if on_duplicate == "replace":
+        if approved_ids is None:
+            similar_now = store.find_similar(
+                description=description, context=context, keywords=keywords,
+                steps=steps, exclude_id=recipe_id, threshold=0.6,
+            )
+            return {
+                "status": "error",
+                "message": (
+                    "on_duplicate='replace'는 approved_ids 파라미터가 필수입니다. "
+                    "1차 응답의 candidate_ids를 그대로 전달하세요."
+                ),
+                "current_candidate_ids": sorted({r.id for _, r in similar_now}),
+            }
+
+        # 삭제 직전 2단계 재검증: 승인 시점 → 실행 직전 → 실제 삭제 루프
+        # (동일 프로세스 내 race에도 안전; 다른 프로세스의 변경은 pre-loop 검증으로 차단)
+        similar = store.find_similar(
+            description=description, context=context, keywords=keywords,
+            steps=steps, exclude_id=recipe_id, threshold=0.6,
+        )
+        current_ids = {r.id for _, r in similar}
+        drift = current_ids.symmetric_difference(approved_ids)
+        if drift:
+            return {
+                "status": "candidate_drift",
+                "message": (
+                    "승인한 후보 집합과 현재 유사 후보가 다릅니다. "
+                    "(다른 세션이 레시피를 수정/추가/삭제했을 수 있음) "
+                    "sap_recipe_save를 재호출하여 최신 후보를 다시 확인하세요."
+                ),
+                "approved_ids": sorted(approved_ids),
+                "current_candidate_ids": sorted(current_ids),
+                "drift_ids": sorted(drift),
+            }
+
+        # 최종 재검증 직전에 다시 확인 (find_similar ↔ delete 루프 사이 race 최소화)
+        verify = store.find_similar(
+            description=description, context=context, keywords=keywords,
+            steps=steps, exclude_id=recipe_id, threshold=0.6,
+        )
+        verify_ids = {r.id for _, r in verify}
+        if verify_ids != approved_ids:
+            return {
+                "status": "candidate_drift",
+                "message": "삭제 직전 후보 집합이 변경되었습니다. 재호출하세요.",
+                "approved_ids": sorted(approved_ids),
+                "current_candidate_ids": sorted(verify_ids),
+                "drift_ids": sorted(verify_ids.symmetric_difference(approved_ids)),
+            }
+
+        for _, r in verify:
+            if r.id not in approved_ids:
+                continue
+            inherited_success += r.success_count
+            result = _delete_recipe_with_links(r.id)
+            if result["deleted"]:
+                replaced_ids.append(r.id)
+            cleaned_tcodes_all.extend(result["cleaned_tcodes"])
 
     recipe = Recipe(
         id=recipe_id,
@@ -1850,6 +2133,7 @@ def _dispatch_recipe_save(args: dict[str, Any]) -> dict[str, Any]:
         context=context,
         keywords=keywords,
         steps=steps,
+        success_count=inherited_success,
     )
     store.save(recipe)
 
@@ -1858,10 +2142,15 @@ def _dispatch_recipe_save(args: dict[str, Any]) -> dict[str, Any]:
     )
 
     return {
+        "status": "saved",
         "saved": recipe_id,
         "updated": False,
         "step_count": len(steps),
         "linked_tcodes": linked_tcodes,
+        "on_duplicate": on_duplicate,
+        "replaced_ids": replaced_ids,
+        "cleaned_tcodes": cleaned_tcodes_all,
+        "inherited_success_count": inherited_success,
     }
 
 
@@ -1961,10 +2250,13 @@ def _dispatch_recipe_list() -> dict[str, Any]:
 
 
 def _dispatch_recipe_delete(args: dict[str, Any]) -> dict[str, Any]:
-    store = _get_recipe_store()
     recipe_id = str(args["recipe_id"])
-    deleted = store.delete(recipe_id)
-    return {"deleted": deleted, "recipe_id": recipe_id}
+    result = _delete_recipe_with_links(recipe_id)
+    return {
+        "deleted": result["deleted"],
+        "recipe_id": recipe_id,
+        "cleaned_tcodes": result["cleaned_tcodes"],
+    }
 
 
 def _dispatch_recipe_success(args: dict[str, Any]) -> dict[str, Any]:

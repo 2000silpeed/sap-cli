@@ -87,7 +87,12 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_run",
-        "description": "SAP 트랜잭션을 실행합니다. 예: MM03(자재조회), VA01(수주생성), ME21N(구매오더). 복잡한 네비게이션(SPRO 등)을 시작하기 전에 sap_recipe_search로 기존 레시피를 먼저 확인하세요.",
+        "description": (
+            "SAP 트랜잭션을 실행합니다. 예: MM03(자재조회), VA01(수주생성), ME21N(구매오더). "
+            "응답의 recipe_hints 필드에 해당 tcode의 기존 레시피가 자동 포함됩니다. "
+            "후보가 있으면 먼저 검토하고, 목적에 맞는 레시피가 있으면 sap_recipe_show로 steps를 가져와 따라 실행하세요. "
+            "직접 탐색(sap_tree_read 등)은 recipe_hints에 맞는 레시피가 없을 때만 수행하세요."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -644,7 +649,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "반드시 성공한 경로만 저장하세요. 시행착오는 제외하고 최종 성공 단계만 포함. "
             "[중요] context 필드에 이 레시피가 정확히 무엇을 하는지 상세히 기록하세요. "
             "같은 영역(예: Shipping Point)에도 여러 레시피가 있을 수 있으므로 구체적 목적, "
-            "전제조건, 결과 화면 등을 포함해야 나중에 올바른 레시피를 찾을 수 있습니다."
+            "전제조건, 결과 화면 등을 포함해야 나중에 올바른 레시피를 찾을 수 있습니다. "
+            "[중복 탐지 HITL] 신규 레시피 저장 시 유사 레시피가 자동 탐지됩니다. "
+            "결과 status='duplicate_candidates'가 오면 candidates/recommended/reason을 사용자에게 보여주고 "
+            "확인받은 후 on_duplicate=keep_existing|replace|keep_both로 다시 호출하세요. "
+            "사용자 확인 없이 임의로 on_duplicate를 설정하지 마세요."
         ),
         "inputSchema": {
             "type": "object",
@@ -678,6 +687,24 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                         "required": ["tool"],
                     },
                     "description": "실행 단계 배열 (성공 경로만)",
+                },
+                "on_duplicate": {
+                    "type": "string",
+                    "enum": ["keep_existing", "replace", "keep_both"],
+                    "description": (
+                        "중복 탐지 결과에 대한 사용자 결정. 미지정 시 유사 레시피 자동 탐지 후 status='duplicate_candidates'로 반환. "
+                        "'keep_existing'=저장 취소 / 'replace'=기존 삭제 후 저장(success_count 승계) / 'keep_both'=강제 저장. "
+                        "반드시 사용자 확인을 받은 뒤에만 지정하세요."
+                    ),
+                },
+                "approved_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "on_duplicate='replace'일 때 필수. 1차 응답의 candidate_ids를 그대로 전달하세요. "
+                        "서버가 현재 유사 후보 집합과 비교해 변동이 있으면 status='candidate_drift'로 거부합니다 "
+                        "(사용자가 승인하지 않은 레시피가 삭제되는 것을 방지)."
+                    ),
                 },
             },
             "required": ["recipe_id", "description", "context", "steps"],
