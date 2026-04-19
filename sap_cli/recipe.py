@@ -61,6 +61,7 @@ class Recipe(BaseModel):
     disabled_reason: str = ""
     version: int = 1
     previous_version_archive: str = ""
+    tcode_sequence: list[str] = Field(default_factory=list)
     source_session: str = ""
     approved_by: str = ""
 
@@ -101,6 +102,7 @@ class RecipeStore:
 
     def save(self, recipe: Recipe) -> None:
         recipe.updated_at = time.time()
+        recipe.tcode_sequence = list(_extract_tcode_sequence(recipe.steps))
         final_path = self._path(recipe.id)
         tmp_path = final_path.with_suffix(final_path.suffix + f".tmp-{os.getpid()}-{time.time_ns()}")
         try:
@@ -330,6 +332,43 @@ class RecipeStore:
             recipe.last_failed_at = 0.0
         self.save(recipe)
         return recipe
+
+    def _tcode_seq(self, recipe: Recipe) -> tuple[str, ...]:
+        """레시피의 tcode_sequence 반환. 비어있으면 steps에서 즉석 추출 (레거시 호환)."""
+        if recipe.tcode_sequence:
+            return tuple(recipe.tcode_sequence)
+        return _extract_tcode_sequence(recipe.steps)
+
+    def find_chain(
+        self,
+        tcodes: list[str],
+        match: str = "all",
+        include_disabled: bool = False,
+    ) -> list[Recipe]:
+        """여러 tcode가 모두/하나라도 포함된 레시피 검색. match='all'|'any'."""
+        if match not in ("all", "any"):
+            raise ValueError(f"match는 'all'|'any'여야 합니다: {match!r}")
+        targets = {t.upper().strip() for t in tcodes if t and t.strip()}
+        if not targets:
+            return []
+
+        results: list[Recipe] = []
+        for path in self._dir.glob("*.json"):
+            r = self._safe_read(path)
+            if r is None:
+                continue
+            if r.disabled and not include_disabled:
+                continue
+            seq = set(self._tcode_seq(r))
+            if not seq:
+                continue
+            if match == "all" and targets.issubset(seq):
+                results.append(r)
+            elif match == "any" and (targets & seq):
+                results.append(r)
+        # cross-tcode 우선 (시퀀스가 길수록 위로), 그다음 success
+        results.sort(key=lambda r: (-len(self._tcode_seq(r)), -r.success_count))
+        return results
 
     def find_by_tcode(self, tcode: str, include_disabled: bool = False) -> list[Recipe]:
         """특정 트랜잭션과 연관된 레시피 검색."""

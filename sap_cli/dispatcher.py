@@ -105,6 +105,7 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "recipe_enable":  CommandDef("sap_recipe_enable",    Permission.ADMIN),
     "recipe_version_up": CommandDef("sap_recipe_version_up", Permission.WRITE),
     "recipe_history":    CommandDef("sap_recipe_history",    Permission.READ),
+    "recipe_chain":      CommandDef("sap_recipe_chain_search", Permission.READ),
     "session_start":      CommandDef("sap_session_start",      Permission.WRITE),
     "session_end":        CommandDef("sap_session_end",        Permission.WRITE),
     "session_list":       CommandDef("sap_session_list",       Permission.READ),
@@ -542,6 +543,8 @@ def _execute_command(
         return _dispatch_recipe_version_up(args)
     if command == "recipe_history":
         return _dispatch_recipe_history(args)
+    if command == "recipe_chain":
+        return _dispatch_recipe_chain(args)
     if command == "session_start":
         return _dispatch_session_start(args, ctx)
     if command == "session_end":
@@ -1803,12 +1806,17 @@ def _collect_recipe_hints(tcode: str, limit: int = 3) -> dict[str, Any] | None:
         return None
     candidates = []
     for r in recipes[:limit]:
-        candidates.append({
+        seq = list(store._tcode_seq(r))
+        item: dict[str, Any] = {
             "id": r.id,
             "description": r.description,
             "step_count": len(r.steps),
             "success_count": r.success_count,
-        })
+        }
+        if len(seq) > 1:
+            item["tcode_sequence"] = seq
+            item["cross_tcode"] = True
+        candidates.append(item)
     return {
         "available": len(recipes),
         "candidates": candidates,
@@ -2372,6 +2380,51 @@ def _dispatch_recipe_history(args: dict[str, Any]) -> dict[str, Any]:
         "active": current is not None,
         "archive_count": len(archives),
         "archives": archives,
+    }
+
+
+def _dispatch_recipe_chain(args: dict[str, Any]) -> dict[str, Any]:
+    """여러 tcode를 걸치는 복합 레시피 검색."""
+    store = _get_recipe_store()
+    tcodes_raw = args.get("tcodes", [])
+    if isinstance(tcodes_raw, str):
+        tcodes = [t.strip() for t in tcodes_raw.split(",") if t.strip()]
+    elif isinstance(tcodes_raw, (list, tuple)):
+        tcodes = [str(t).strip() for t in tcodes_raw if str(t).strip()]
+    else:
+        return {"error": True, "message": "tcodes는 배열 또는 쉼표 구분 문자열이어야 합니다."}
+
+    if not tcodes:
+        return {"error": True, "message": "tcodes는 최소 1개 이상이어야 합니다."}
+
+    match = str(args.get("match", "all")).lower()
+    if match not in ("all", "any"):
+        return {"error": True, "message": "match는 'all' 또는 'any'여야 합니다."}
+
+    recipes = store.find_chain(tcodes, match=match)
+
+    summaries = []
+    for r in recipes:
+        seq = list(store._tcode_seq(r))
+        summaries.append({
+            "id": r.id,
+            "description": r.description,
+            "context": r.context,
+            "tcode_sequence": seq,
+            "cross_tcode": len(seq) > 1,
+            "step_count": len(r.steps),
+            "success_count": r.success_count,
+        })
+
+    return {
+        "tcodes": tcodes,
+        "match": match,
+        "count": len(summaries),
+        "recipes": summaries,
+        "hint": (
+            "여러 tcode를 거치는 복합 레시피입니다. "
+            "sap_recipe_show(recipe_id=...)로 상세 단계를 조회하여 그대로 따라 실행하세요."
+        ) if summaries else "조건에 맞는 복합 레시피가 없습니다.",
     }
 
 

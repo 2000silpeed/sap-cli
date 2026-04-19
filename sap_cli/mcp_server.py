@@ -771,6 +771,31 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_recipe_chain_search",
+        "description": (
+            "여러 트랜잭션을 걸치는 복합 레시피를 검색합니다. 예: SPRO에서 설정 후 MM03으로 검증, "
+            "또는 VA01에서 수주 생성 후 VL01N으로 출고 등 멀티-tcode 워크플로우를 찾을 때 사용. "
+            "tcodes에 지정한 트랜잭션이 모두 포함된 레시피(match='all', 기본) 또는 하나라도 포함된 레시피(match='any')를 반환합니다. "
+            "결과의 tcode_sequence로 어떤 순서로 진행되는지 확인 후 sap_recipe_show로 상세 단계를 가져오세요."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tcodes": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "검색할 트랜잭션 코드 목록 (예: [\"SPRO\", \"MM03\"])",
+                },
+                "match": {
+                    "type": "string",
+                    "enum": ["all", "any"],
+                    "description": "'all'(기본): 모든 tcode가 포함된 레시피만. 'any': 하나라도 포함하면 매칭.",
+                },
+            },
+            "required": ["tcodes"],
+        },
+    },
+    {
         "name": "sap_recipe_version_up",
         "description": (
             "기존 레시피의 새 버전을 저장합니다. SAP 패치/업그레이드로 화면이나 버튼이 변경되어 기존 단계가 더 이상 동작하지 않을 때, "
