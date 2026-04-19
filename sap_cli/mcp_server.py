@@ -771,6 +771,51 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_recipe_version_up",
+        "description": (
+            "기존 레시피의 새 버전을 저장합니다. SAP 패치/업그레이드로 화면이나 버튼이 변경되어 기존 단계가 더 이상 동작하지 않을 때, "
+            "수정된 단계를 새 버전으로 저장하고 이전 단계는 _archive 폴더에 보존합니다. "
+            "version 번호가 +1 되며, failure_count/disabled 상태는 초기화됩니다 (success_count·description·keywords는 승계). "
+            "과거 버전 목록은 sap_recipe_history로 조회할 수 있습니다."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "recipe_id": {"type": "string", "description": "버전업 대상 레시피 ID"},
+                "new_steps": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "tool": {"type": "string"},
+                            "args": {"type": "object"},
+                            "hint": {"type": "string"},
+                        },
+                        "required": ["tool"],
+                    },
+                    "description": "새 버전의 실행 단계 (성공 경로만)",
+                },
+                "new_context": {"type": "string", "description": "새 버전의 context (선택; 미지정 시 기존 유지)"},
+                "change_note": {"type": "string", "description": "변경 사유 메모 (예: 'EHP8 패치로 btn[5]→btn[7]')"},
+            },
+            "required": ["recipe_id", "new_steps"],
+        },
+    },
+    {
+        "name": "sap_recipe_history",
+        "description": (
+            "레시피의 과거 버전 목록을 조회합니다. _archive 폴더에 보관된 이전 버전들의 메타(version, step_count, context 등)를 반환합니다. "
+            "현재 활성 버전과 이전 버전들을 비교하여 어떤 단계가 어떻게 바뀌었는지 추적할 때 사용합니다."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "recipe_id": {"type": "string", "description": "조회할 레시피 ID"},
+            },
+            "required": ["recipe_id"],
+        },
+    },
+    {
         "name": "sap_recipe_failure",
         "description": (
             "레시피 실행이 실패했음을 기록합니다. sap_recipe_search/show로 가져온 레시피의 단계를 따라 실행했는데 "

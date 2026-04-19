@@ -103,6 +103,8 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "recipe_pending": CommandDef("sap_recipe_pending",   Permission.READ),
     "recipe_failure": CommandDef("sap_recipe_failure",   Permission.WRITE),
     "recipe_enable":  CommandDef("sap_recipe_enable",    Permission.ADMIN),
+    "recipe_version_up": CommandDef("sap_recipe_version_up", Permission.WRITE),
+    "recipe_history":    CommandDef("sap_recipe_history",    Permission.READ),
     "session_start":      CommandDef("sap_session_start",      Permission.WRITE),
     "session_end":        CommandDef("sap_session_end",        Permission.WRITE),
     "session_list":       CommandDef("sap_session_list",       Permission.READ),
@@ -536,6 +538,10 @@ def _execute_command(
         return _dispatch_recipe_failure(args)
     if command == "recipe_enable":
         return _dispatch_recipe_enable(args)
+    if command == "recipe_version_up":
+        return _dispatch_recipe_version_up(args)
+    if command == "recipe_history":
+        return _dispatch_recipe_history(args)
     if command == "session_start":
         return _dispatch_session_start(args, ctx)
     if command == "session_end":
@@ -2309,6 +2315,63 @@ def _dispatch_recipe_enable(args: dict[str, Any]) -> dict[str, Any]:
         "disabled": recipe.disabled,
         "failure_count": recipe.failure_count,
         "success_count": recipe.success_count,
+    }
+
+
+def _dispatch_recipe_version_up(args: dict[str, Any]) -> dict[str, Any]:
+    """기존 레시피의 새 버전을 저장. 기존 버전은 _archive로 이동."""
+    from .recipe import RecipeStep
+
+    store = _get_recipe_store()
+    recipe_id = str(args["recipe_id"])
+    steps_raw = args.get("new_steps", [])
+    new_steps = [RecipeStep(**s) if isinstance(s, dict) else s for s in steps_raw]
+    new_context = str(args.get("new_context", ""))
+    change_note = str(args.get("change_note", ""))
+
+    if not new_steps:
+        return {"error": True, "message": "new_steps는 비어있을 수 없습니다."}
+
+    existing = store.load(recipe_id)
+    if existing is None:
+        return {"error": True, "message": f"레시피 '{recipe_id}'를 찾을 수 없습니다."}
+
+    _unlink_recipe_from_ontology(existing)
+    new_recipe = store.version_up(
+        recipe_id, new_steps=new_steps, new_context=new_context, change_note=change_note,
+    )
+    if new_recipe is None:
+        return {"error": True, "message": f"version_up 실패: {recipe_id}"}
+
+    linked_tcodes = _link_recipe_to_ontology(
+        recipe_id, new_recipe.steps,
+        description=new_recipe.description,
+        context=new_recipe.context,
+        keywords=new_recipe.keywords,
+    )
+
+    return {
+        "recipe_id": recipe_id,
+        "new_version": new_recipe.version,
+        "previous_version_archive": new_recipe.previous_version_archive,
+        "step_count": len(new_recipe.steps),
+        "linked_tcodes": linked_tcodes,
+    }
+
+
+def _dispatch_recipe_history(args: dict[str, Any]) -> dict[str, Any]:
+    """레시피의 과거 버전 목록 + 현재 활성 버전 메타."""
+    store = _get_recipe_store()
+    recipe_id = str(args["recipe_id"])
+
+    current = store.load(recipe_id)
+    archives = store.history(recipe_id)
+    return {
+        "recipe_id": recipe_id,
+        "current_version": current.version if current else None,
+        "active": current is not None,
+        "archive_count": len(archives),
+        "archives": archives,
     }
 
 

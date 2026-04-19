@@ -59,6 +59,8 @@ class Recipe(BaseModel):
     last_failed_at: float = 0.0
     disabled: bool = False
     disabled_reason: str = ""
+    version: int = 1
+    previous_version_archive: str = ""
     source_session: str = ""
     approved_by: str = ""
 
@@ -87,6 +89,10 @@ class RecipeStore:
         else:
             self._dir = Path(store_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
+        self._archive_dir = self._dir / "_archive"
+
+    def _ensure_archive_dir(self) -> None:
+        self._archive_dir.mkdir(parents=True, exist_ok=True)
 
     def _path(self, recipe_id: str) -> Path:
         if not recipe_id or not _SAFE_ID.match(recipe_id):
@@ -222,6 +228,95 @@ class RecipeStore:
             recipe.disabled_reason = f"{base} | {reason}" if reason else base
         self.save(recipe)
         return recipe
+
+    def _archive_path(self, recipe_id: str, version: int) -> Path:
+        if not _SAFE_ID.match(recipe_id):
+            raise ValueError(f"잘못된 recipe_id: {recipe_id!r}")
+        ts = int(time.time() * 1000)
+        return self._archive_dir / f"{recipe_id}__v{version}__{ts}.json"
+
+    def _archive_current(self, recipe: Recipe) -> str:
+        """현재 활성 레시피를 _archive로 이동(rename). 반환: archive 파일명."""
+        self._ensure_archive_dir()
+        archive = self._archive_path(recipe.id, recipe.version)
+        current = self._path(recipe.id)
+        if current.exists():
+            os.replace(current, archive)
+            _fsync_dir_best_effort(self._dir)
+            _fsync_dir_best_effort(self._archive_dir)
+        return archive.name
+
+    def version_up(
+        self,
+        recipe_id: str,
+        new_steps: list[RecipeStep],
+        new_context: str = "",
+        change_note: str = "",
+    ) -> Recipe | None:
+        """현재 버전을 _archive로 옮기고 version+1로 신규 저장.
+
+        description, keywords, success/failure 등 메타는 승계. context/steps만 갱신.
+        """
+        current = self.load(recipe_id)
+        if current is None:
+            return None
+
+        archive_name = self._archive_current(current)
+
+        new_recipe = current.model_copy(deep=True)
+        new_recipe.steps = list(new_steps)
+        if new_context:
+            new_recipe.context = new_context
+        new_recipe.version = current.version + 1
+        new_recipe.previous_version_archive = archive_name
+        new_recipe.disabled = False
+        new_recipe.disabled_reason = ""
+        new_recipe.failure_count = 0
+        new_recipe.last_failed_at = 0.0
+        if change_note:
+            note_line = f"[v{new_recipe.version} change_note] {change_note}"
+            new_recipe.context = (
+                f"{new_recipe.context}\n{note_line}" if new_recipe.context else note_line
+            )
+        self.save(new_recipe)
+        return new_recipe
+
+    def history(self, recipe_id: str) -> list[dict[str, Any]]:
+        """과거 버전 목록 (archive 메타). 최신 archived 먼저."""
+        if not _SAFE_ID.match(recipe_id):
+            raise ValueError(f"잘못된 recipe_id: {recipe_id!r}")
+        prefix = f"{recipe_id}__v"
+        items: list[dict[str, Any]] = []
+        if not self._archive_dir.exists():
+            return items
+        for path in self._archive_dir.glob(f"{prefix}*.json"):
+            try:
+                text = path.read_text(encoding="utf-8")
+                data = Recipe.model_validate_json(text)
+            except (ValidationError, OSError, ValueError, json.JSONDecodeError):
+                continue
+            items.append({
+                "archive_file": path.name,
+                "version": data.version,
+                "step_count": len(data.steps),
+                "context": data.context,
+                "success_count": data.success_count,
+                "failure_count": data.failure_count,
+                "updated_at": data.updated_at,
+            })
+        items.sort(key=lambda x: (-x["version"], -x["updated_at"]))
+        return items
+
+    def load_archive(self, archive_file: str) -> Recipe | None:
+        """archive 파일명을 받아 Recipe 로드. 디렉토리 탈출 차단."""
+        if "/" in archive_file or "\\" in archive_file or ".." in archive_file:
+            raise ValueError(f"잘못된 archive 파일명: {archive_file!r}")
+        if not self._archive_dir.exists():
+            return None
+        path = self._archive_dir / archive_file
+        if not path.exists():
+            return None
+        return self._safe_read(path)
 
     def enable(self, recipe_id: str, reset_failure_count: bool = True) -> Recipe | None:
         """레시피 수동 재활성화. 기본적으로 failure_count도 0으로 초기화."""
