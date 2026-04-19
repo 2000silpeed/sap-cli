@@ -817,14 +817,45 @@ SAP GUI 세션을 여러 개 띄우고, 각 에이전트가 고유 슬롯(slot)�
 | `_safe_read` | I/O 오류와 JSON/검증 오류 로그 분리 | 완료 |
 | 테스트 25개 | `tests/test_recipe_dedup.py` (전체 399 passed) | 완료 |
 
-#### Phase 18-1 이후: 남은 작업
+#### Phase 18-1: 자동 레시피 제안 (2026-04-19 ✅)
 
 | 작업 | 내용 | 상태 |
 |------|------|------|
-| 자동 레시피 제안 | AI가 성공 경로 감지 시 자동으로 레시피 저장 제안 | 대기 |
-| 레시피 품질 관리 | 실패 카운트 추가, 실패율 높은 레시피 자동 비활성화 | 대기 |
-| 레시피 버전닝 | SAP 업그레이드/패치 후 경로 변경 대응, 이전 버전 보존 | 대기 |
-| 크로스 트랜잭션 레시피 | SPRO → MM03 → VA01 등 여러 tcode를 걸치는 복합 레시피 | 대기 |
+| `sap_session_end` 자동 평가 | candidate 분류 시 응답에 `recipe_suggestion` 자동 첨부 | 완료 |
+| `sap_recipe_pending` MCP 도구 | 누적 미승인 candidate 세션 일괄 조회 | 완료 |
+| 테스트 9개 | `tests/test_recipe_autosuggest.py` | 완료 |
+
+#### Phase 18-2: 레시피 품질 관리 (2026-04-19 ✅)
+
+| 작업 | 내용 | 상태 |
+|------|------|------|
+| Recipe 스키마 확장 | `failure_count`, `last_failed_at`, `disabled`, `disabled_reason` (역호환 default) | 완료 |
+| 자동 비활성화 정책 | total≥3 AND failure_rate≥0.5 → `should_auto_disable()` | 완료 |
+| `report_failure` / `enable` | RecipeStore atomic save + 임계 감지 | 완료 |
+| 검색 disabled 자동 제외 | search/find_by_tcode/query_for_ai/find_similar에 `include_disabled` 옵션 | 완료 |
+| `sap_recipe_failure` / `sap_recipe_enable` MCP 도구 | AI가 실패 보고 / 관리자 재활성화 | 완료 |
+| 테스트 20개 | `tests/test_recipe_quality.py` | 완료 |
+
+#### Phase 18-3: 레시피 버전닝 (2026-04-19 ✅)
+
+| 작업 | 내용 | 상태 |
+|------|------|------|
+| Recipe 스키마 확장 | `version`, `previous_version_archive` (역호환 default) | 완료 |
+| `_archive` 폴더 lazy 생성 | `~/.sap_cli/recipes/_archive/<id>__v<N>__<ts>.json` (atomic save 회귀 보존) | 완료 |
+| `version_up()` | os.replace로 원자 archive + version+1 + 메타 승계 + failure 상태 초기화 | 완료 |
+| `history()` / `load_archive()` | 과거 버전 메타 조회 + 디렉토리 탈출 차단 | 완료 |
+| `sap_recipe_version_up` / `sap_recipe_history` MCP 도구 | 버전업 + 이력 조회 | 완료 |
+| 테스트 16개 | `tests/test_recipe_versioning.py` | 완료 |
+
+#### Phase 18-4: 크로스 트랜잭션 레시피 (2026-04-19 ✅)
+
+| 작업 | 내용 | 상태 |
+|------|------|------|
+| Recipe 스키마 확장 | `tcode_sequence: list[str]` (save 시 자동 채움, 역호환 default) | 완료 |
+| `find_chain(tcodes, match)` | match='all'\|'any', disabled 자동 제외, 시퀀스 길이순 정렬 | 완료 |
+| `_collect_recipe_hints` 강화 | 멀티-tcode 레시피에 `cross_tcode`/`tcode_sequence` 메타 노출 | 완료 |
+| `sap_recipe_chain_search` MCP 도구 | 여러 tcode가 모두/하나라도 포함된 복합 레시피 검색 | 완료 |
+| 테스트 17개 | `tests/test_recipe_cross_tcode.py` (전체 461 passed) | 완료 |
 
 ### ~~Phase 19: 온톨로지 Q&A~~ (Phase 15에서 완료, 폐기)
 
