@@ -100,6 +100,7 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "recipe_delete":  CommandDef("sap_recipe_delete",     Permission.ADMIN),
     "recipe_success": CommandDef("sap_recipe_success",    Permission.WRITE),
     "recipe_query":   CommandDef("sap_recipe_query",     Permission.READ),
+    "recipe_pending": CommandDef("sap_recipe_pending",   Permission.READ),
     "session_start":      CommandDef("sap_session_start",      Permission.WRITE),
     "session_end":        CommandDef("sap_session_end",        Permission.WRITE),
     "session_list":       CommandDef("sap_session_list",       Permission.READ),
@@ -527,6 +528,8 @@ def _execute_command(
         return _dispatch_recipe_success(args)
     if command == "recipe_query":
         return _dispatch_recipe_query(args)
+    if command == "recipe_pending":
+        return _dispatch_recipe_pending(args)
     if command == "session_start":
         return _dispatch_session_start(args, ctx)
     if command == "session_end":
@@ -2338,6 +2341,43 @@ def _dispatch_recipe_query(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _dispatch_recipe_pending(args: dict[str, Any]) -> dict[str, Any]:
+    """미승인 candidate 세션 요약. 자동 제안된 레시피 후보를 한눈에 보여준다."""
+    from .session_analyzer import analyze
+
+    store = _get_session_store()
+    limit = int(args.get("limit", 20))
+    sessions = store.list_sessions(status="completed", limit=max(limit * 4, limit))
+
+    pending = []
+    for s_summary in sessions:
+        session = store.load(s_summary["id"])
+        if session is None:
+            continue
+        analyze(session)
+        if not session.candidate or session.approved:
+            continue
+        pending.append({
+            "session_id": session.id,
+            "user_request": session.user_request[:120],
+            "started_at": session.started_at,
+            "step_count": len(session.steps),
+            "sap_user": session.sap_user,
+            "sap_system": session.sap_system,
+        })
+        if len(pending) >= limit:
+            break
+
+    return {
+        "count": len(pending),
+        "pending_suggestions": pending,
+        "instruction": (
+            "이 세션들은 자동 평가에서 레시피 저장 후보로 분류되었으나 아직 승인되지 않았습니다. "
+            "sap_session_show로 상세 확인 후 sap_session_approve로 승인하면 레시피로 저장됩니다."
+        ) if pending else "현재 미승인 레시피 후보가 없습니다.",
+    }
+
+
 def _dispatch_session_start(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
     policy = load_policy()
     config = policy.session if policy else None
@@ -2371,6 +2411,8 @@ def _dispatch_session_start(args: dict[str, Any], ctx: DispatchContext) -> dict[
 
 
 def _dispatch_session_end(args: dict[str, Any]) -> dict[str, Any]:
+    from .session_analyzer import analyze, session_to_recipe
+
     store = _get_session_store()
     session_id = str(args["session_id"])
     outcome = str(args.get("outcome", "success"))
@@ -2378,13 +2420,41 @@ def _dispatch_session_end(args: dict[str, Any]) -> dict[str, Any]:
     session = store.finish_session(session_id, outcome=outcome, outcome_summary=summary)
     if session is None:
         return {"error": f"세션을 찾을 수 없습니다: {session_id}"}
-    return {
+
+    payload: dict[str, Any] = {
         "session_id": session.id,
         "status": session.status,
         "outcome": session.outcome,
         "step_count": len(session.steps),
         "finished_at": session.finished_at,
     }
+
+    try:
+        analysis = analyze(session)
+        if session.candidate and not session.approved:
+            store._save(session)
+            preview = session_to_recipe(session)
+            steps_preview = preview.get("steps", [])
+            payload["recipe_suggestion"] = {
+                "candidate": True,
+                "suggested_recipe_id": preview.get("id", ""),
+                "description": preview.get("description", ""),
+                "core_step_count": len(steps_preview),
+                "exploration_count": analysis.get("exploration_count", 0),
+                "recovery_count": analysis.get("recovery_count", 0),
+                "keywords": preview.get("keywords", []),
+                "instruction": (
+                    "이 세션은 재사용 가치가 있는 성공 경로로 평가되었습니다. "
+                    "사용자에게 레시피 저장 의사를 확인한 후 sap_session_approve로 승인하세요. "
+                    "approve 시 자동으로 sap_recipe_save가 실행됩니다."
+                ),
+            }
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "recipe_suggestion 생성 실패(session=%s): %s", session_id, exc
+        )
+
+    return payload
 
 
 def _dispatch_session_list(args: dict[str, Any]) -> dict[str, Any]:
@@ -2651,7 +2721,7 @@ SESSION_SKIP_COMMANDS = {
     "session_candidates", "session_approve",
     "transcript_query", "transcript_plan",
     "ontology_query", "ontology_ask", "macro_list", "macro_show", "macro_delete",
-    "capture", "capture_list", "recipe_query",
+    "capture", "capture_list", "recipe_query", "recipe_pending",
 }
 
 

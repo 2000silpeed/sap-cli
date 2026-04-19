@@ -771,6 +771,21 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_recipe_pending",
+        "description": (
+            "자동 평가에서 레시피 후보로 분류되었으나 아직 승인되지 않은 세션 목록을 반환합니다. "
+            "sap_session_end 호출 시 응답의 recipe_suggestion 필드로도 같은 정보가 즉시 노출되지만, "
+            "이 도구는 누적된 모든 미승인 후보를 한 번에 확인할 때 사용합니다. "
+            "각 항목을 sap_session_show로 검토 후 sap_session_approve로 레시피화하세요."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "반환할 후보 최대 개수 (기본 20)"},
+            },
+        },
+    },
+    {
         "name": "sap_recipe_success",
         "description": "[필수] 레시피의 모든 단계를 성공적으로 완료한 후 반드시 호출하세요. sap_recipe_search로 레시피를 찾아 실행했다면, 완료 후 이 도구를 호출해야 성공 카운트가 올라가고 다음 검색에서 우선순위가 높아집니다. 호출하지 않으면 성공이 기록되지 않습니다.",
         "inputSchema": {
