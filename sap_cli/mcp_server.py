@@ -771,6 +771,45 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_recipe_failure",
+        "description": (
+            "레시피 실행이 실패했음을 기록합니다. sap_recipe_search/show로 가져온 레시피의 단계를 따라 실행했는데 "
+            "예상한 결과가 나오지 않았거나 도중에 막혔을 때 호출하세요. "
+            "성공/실패 누적이 3회 이상이고 실패율이 50% 이상이면 해당 레시피는 자동 비활성화되어 "
+            "이후 검색 결과에서 제외됩니다(sap_recipe_enable로 수동 복구 가능). "
+            "실패 보고는 SAP 패치/업그레이드 후 깨진 레시피를 자연스럽게 걸러내기 위한 신호입니다."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "recipe_id": {"type": "string", "description": "실패한 레시피 ID"},
+                "reason": {
+                    "type": "string",
+                    "description": "실패 이유 (선택). 어느 단계에서 무엇이 다르게 동작했는지 간단히.",
+                },
+            },
+            "required": ["recipe_id"],
+        },
+    },
+    {
+        "name": "sap_recipe_enable",
+        "description": (
+            "비활성화된 레시피를 수동 재활성화합니다. SAP 환경 복구나 레시피 수정(sap_recipe_save로 동일 ID 업데이트) 후 "
+            "사용할 수 있도록 되돌릴 때 호출하세요. 기본적으로 failure_count도 0으로 초기화됩니다."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "recipe_id": {"type": "string", "description": "재활성화할 레시피 ID"},
+                "reset_failure_count": {
+                    "type": "boolean",
+                    "description": "true(기본) 시 failure_count도 0으로 초기화. false면 누적값 유지.",
+                },
+            },
+            "required": ["recipe_id"],
+        },
+    },
+    {
         "name": "sap_recipe_pending",
         "description": (
             "자동 평가에서 레시피 후보로 분류되었으나 아직 승인되지 않은 세션 목록을 반환합니다. "

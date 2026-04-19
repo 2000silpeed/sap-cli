@@ -101,6 +101,8 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "recipe_success": CommandDef("sap_recipe_success",    Permission.WRITE),
     "recipe_query":   CommandDef("sap_recipe_query",     Permission.READ),
     "recipe_pending": CommandDef("sap_recipe_pending",   Permission.READ),
+    "recipe_failure": CommandDef("sap_recipe_failure",   Permission.WRITE),
+    "recipe_enable":  CommandDef("sap_recipe_enable",    Permission.ADMIN),
     "session_start":      CommandDef("sap_session_start",      Permission.WRITE),
     "session_end":        CommandDef("sap_session_end",        Permission.WRITE),
     "session_list":       CommandDef("sap_session_list",       Permission.READ),
@@ -530,6 +532,10 @@ def _execute_command(
         return _dispatch_recipe_query(args)
     if command == "recipe_pending":
         return _dispatch_recipe_pending(args)
+    if command == "recipe_failure":
+        return _dispatch_recipe_failure(args)
+    if command == "recipe_enable":
+        return _dispatch_recipe_enable(args)
     if command == "session_start":
         return _dispatch_session_start(args, ctx)
     if command == "session_end":
@@ -2270,6 +2276,39 @@ def _dispatch_recipe_success(args: dict[str, Any]) -> dict[str, Any]:
     return {
         "recipe_id": recipe_id,
         "success_count": recipe.success_count if recipe else 0,
+    }
+
+
+def _dispatch_recipe_failure(args: dict[str, Any]) -> dict[str, Any]:
+    """레시피 실행 실패 보고. 임계 도달 시 자동 비활성화."""
+    store = _get_recipe_store()
+    recipe_id = str(args["recipe_id"])
+    reason = str(args.get("reason", "")).strip()
+    recipe = store.report_failure(recipe_id, reason=reason)
+    if recipe is None:
+        return {"error": True, "message": f"레시피 '{recipe_id}'를 찾을 수 없습니다."}
+    return {
+        "recipe_id": recipe.id,
+        "failure_count": recipe.failure_count,
+        "success_count": recipe.success_count,
+        "disabled": recipe.disabled,
+        "disabled_reason": recipe.disabled_reason,
+    }
+
+
+def _dispatch_recipe_enable(args: dict[str, Any]) -> dict[str, Any]:
+    """비활성화된 레시피를 수동 재활성화."""
+    store = _get_recipe_store()
+    recipe_id = str(args["recipe_id"])
+    reset = bool(args.get("reset_failure_count", True))
+    recipe = store.enable(recipe_id, reset_failure_count=reset)
+    if recipe is None:
+        return {"error": True, "message": f"레시피 '{recipe_id}'를 찾을 수 없습니다."}
+    return {
+        "recipe_id": recipe.id,
+        "disabled": recipe.disabled,
+        "failure_count": recipe.failure_count,
+        "success_count": recipe.success_count,
     }
 
 

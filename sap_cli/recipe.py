@@ -55,8 +55,24 @@ class Recipe(BaseModel):
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)
     success_count: int = 0
+    failure_count: int = 0
+    last_failed_at: float = 0.0
+    disabled: bool = False
+    disabled_reason: str = ""
     source_session: str = ""
     approved_by: str = ""
+
+
+# 자동 비활성화 임계값 — total≥3 AND failure_rate≥0.5
+AUTO_DISABLE_MIN_TOTAL = 3
+AUTO_DISABLE_FAILURE_RATE = 0.5
+
+
+def should_auto_disable(success: int, failure: int) -> bool:
+    total = success + failure
+    if total < AUTO_DISABLE_MIN_TOTAL:
+        return False
+    return (failure / total) >= AUTO_DISABLE_FAILURE_RATE
 
 
 class RecipeStore:
@@ -131,11 +147,13 @@ class RecipeStore:
             _log.warning("corrupt recipe JSON at %s: %s", path, exc)
             return None
 
-    def list_all(self) -> list[dict[str, Any]]:
+    def list_all(self, include_disabled: bool = True) -> list[dict[str, Any]]:
         results = []
         for path in sorted(self._dir.glob("*.json")):
             r = self._safe_read(path)
             if r is None:
+                continue
+            if not include_disabled and r.disabled:
                 continue
             results.append({
                 "id": r.id,
@@ -144,10 +162,13 @@ class RecipeStore:
                 "keywords": r.keywords,
                 "step_count": len(r.steps),
                 "success_count": r.success_count,
+                "failure_count": r.failure_count,
+                "disabled": r.disabled,
+                "disabled_reason": r.disabled_reason,
             })
         return results
 
-    def search(self, query: str) -> list[Recipe]:
+    def search(self, query: str, include_disabled: bool = False) -> list[Recipe]:
         query_lower = query.lower()
         query_words = query_lower.split()
         results: list[tuple[int, Recipe]] = []
@@ -155,6 +176,8 @@ class RecipeStore:
         for path in self._dir.glob("*.json"):
             r = self._safe_read(path)
             if r is None:
+                continue
+            if r.disabled and not include_disabled:
                 continue
 
             score = 0
@@ -184,13 +207,44 @@ class RecipeStore:
             recipe.success_count += 1
             self.save(recipe)
 
-    def find_by_tcode(self, tcode: str) -> list[Recipe]:
+    def report_failure(self, recipe_id: str, reason: str = "") -> Recipe | None:
+        """레시피 실행 실패 보고. 임계 도달 시 자동 비활성화."""
+        recipe = self.load(recipe_id)
+        if recipe is None:
+            return None
+        recipe.failure_count += 1
+        recipe.last_failed_at = time.time()
+        if not recipe.disabled and should_auto_disable(recipe.success_count, recipe.failure_count):
+            recipe.disabled = True
+            total = recipe.success_count + recipe.failure_count
+            rate = recipe.failure_count / total
+            base = f"auto: failure_rate={rate:.2f} ({recipe.failure_count}/{total})"
+            recipe.disabled_reason = f"{base} | {reason}" if reason else base
+        self.save(recipe)
+        return recipe
+
+    def enable(self, recipe_id: str, reset_failure_count: bool = True) -> Recipe | None:
+        """레시피 수동 재활성화. 기본적으로 failure_count도 0으로 초기화."""
+        recipe = self.load(recipe_id)
+        if recipe is None:
+            return None
+        recipe.disabled = False
+        recipe.disabled_reason = ""
+        if reset_failure_count:
+            recipe.failure_count = 0
+            recipe.last_failed_at = 0.0
+        self.save(recipe)
+        return recipe
+
+    def find_by_tcode(self, tcode: str, include_disabled: bool = False) -> list[Recipe]:
         """특정 트랜잭션과 연관된 레시피 검색."""
         results = []
         tcode_upper = tcode.upper()
         for path in self._dir.glob("*.json"):
             r = self._safe_read(path)
             if r is None:
+                continue
+            if r.disabled and not include_disabled:
                 continue
             linked = any(
                 s.tool in ("sap_run", "sap_command") and
@@ -206,6 +260,7 @@ class RecipeStore:
         self,
         tcode: str | None = None,
         keywords: str | None = None,
+        include_disabled: bool = False,
     ) -> list[tuple[int, Recipe]]:
         """tcode + 키워드 통합 검색. (score, Recipe) 반환."""
         all_recipes = self._load_all()
@@ -214,6 +269,8 @@ class RecipeStore:
         kw_words = keywords.lower().split() if keywords else []
 
         for r in all_recipes:
+            if r.disabled and not include_disabled:
+                continue
             score = 0
             if tcode_upper:
                 for s in r.steps:
@@ -259,6 +316,7 @@ class RecipeStore:
         steps: list[RecipeStep],
         exclude_id: str | None = None,
         threshold: float = 0.6,
+        include_disabled: bool = False,
     ) -> list[tuple[float, Recipe]]:
         """새 레시피와 유사한 기존 레시피 탐지. (similarity, Recipe) 반환.
 
@@ -271,6 +329,8 @@ class RecipeStore:
         results: list[tuple[float, Recipe]] = []
         for r in self._load_all():
             if exclude_id and r.id == exclude_id:
+                continue
+            if r.disabled and not include_disabled:
                 continue
             sim = _compute_similarity(
                 new_kw, new_tcodes, new_words,
