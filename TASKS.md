@@ -802,6 +802,23 @@ SAP GUI 세션을 여러 개 띄우고, 각 에이전트가 고유 슬롯(slot)�
 
 ### Phase 18: AI 학습 루프 (구 Phase 17)
 
+#### Phase 18-0: 레시피 중복 감지 + 힌트 자동 주입 (2026-04-19 ✅)
+
+커밋: `40e792a feat: 레시피 중복 감지(HITL) + sap_run 레시피 힌트 자동 주입`
+
+| 작업 | 내용 | 상태 |
+|------|------|------|
+| `RecipeStore.find_similar` | 키워드 Jaccard(0.35) + tcode 시퀀스(0.35) + 설명/컨텍스트 단어(0.30) | 완료 |
+| `efficiency_score` | 단계수/성공횟수/컨텍스트/최신도 기반 효율성 평가 | 완료 |
+| `sap_recipe_save` HITL 2단계 | `on_duplicate=replace/keep_both` + `approved_ids` + TOCTOU 재검증 | 완료 |
+| 온톨로지 정리 | replace/update/delete 경로에서 stale recipes/action_paths unlink | 완료 |
+| `sap_run` 힌트 주입 | 실행 후 `recipe_hints` 자동 첨부 (context 필드 제외) | 완료 |
+| 원자적 저장 | tmp + os.replace + fsync(파일/디렉토리) + short-write 루프 | 완료 |
+| `_safe_read` | I/O 오류와 JSON/검증 오류 로그 분리 | 완료 |
+| 테스트 25개 | `tests/test_recipe_dedup.py` (전체 399 passed) | 완료 |
+
+#### Phase 18-1 이후: 남은 작업
+
 | 작업 | 내용 | 상태 |
 |------|------|------|
 | 자동 레시피 제안 | AI가 성공 경로 감지 시 자동으로 레시피 저장 제안 | 대기 |
