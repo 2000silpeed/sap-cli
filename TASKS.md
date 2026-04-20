@@ -969,3 +969,4 @@ SAP ADT(ABAP Development Tools) REST API를 활용하여 온톨로지에 **코�
 | 온톨로지 거버넌스 | base + team_overlay 분리, overlay 승격 워크플로 (별도 설계 문서) | 검토 |
 | 외부 디렉토리 연동 | LDAP/SCIM 으로 정책 파일 자동 동기화 (사용자 100명+ 시) | 검토 |
 | 감사 로그 로테이션 | 일별 분리 + 90일 후 압축, S3/내부 스토리지 외부화 | 검토 |
+| Phase 24 후보: 읽기 전용 툴 캐시 | `sap_screen/table_read/tree_read/recipe_list` 한정 Python 내장 TTL 캐시 + session.last_mutation_ts 무효화 + 사용자별 키. token-optimizer-mcp 아이디어 차용(직접 적용은 보안·스테일 리스크로 비권장) | 검토 |
