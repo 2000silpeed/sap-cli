@@ -916,3 +916,56 @@ SAP ADT(ABAP Development Tools) REST API를 활용하여 온톨로지에 **코�
 | 오브젝트 잠금/수정 | 소스코드 수정 + 트랜스포트 생성 (경영진 승인 필요) | 대기 |
 | ATC 정적 분석 | 코드 품질 검사 자동 실행 | 대기 |
 | 단위 테스트 실행 | ABAP Unit 원격 실행 + 결과 수집 | 대기 |
+
+---
+
+### Phase 21~23: 멀티유저 거버넌스 — 사내 공용 MCP 서버화
+
+> 설계 문서: `DESIGN_GOVERNANCE.md`
+> 기반: `DESIGN_REBAC.md` (ReBAC P0 위에 사용자 차원/소유권 차원 추가)
+>
+> **착수 전제:** Phase 18 레시피 축적 KPI 1개월 달성 후 (단일 사용자에서 검증된 데이터 위에 거버넌스 얹는 게 안전)
+> **가장 작은 가치 도달:** Phase 21 만으로도 "누가 만들었는지" 가시성 확보 → 운영팀 거버넌스의 90% 가치
+
+#### Phase 21: 사용자 식별 + 소유권 (P0, 가장 작음)
+
+| # | 작업 | 내용 | 상태 |
+|---|------|------|------|
+| 1 | UserContext 모듈 | `sap_cli/identity.py` — 환경변수/헤더에서 user_id 추출, anonymous fallback | 대기 |
+| 2 | dispatcher 컨텍스트 전파 | 모든 dispatcher 호출에 `user_ctx` 인자 추가 | 대기 |
+| 3 | Recipe 스키마 확장 | `created_by`, `updated_by` (default="system" 역호환) | 대기 |
+| 4 | Session 스키마 확장 | `user_id` (default="system") | 대기 |
+| 5 | 감사 로그 사용자 필드 | `audit.log` 라인에 `user_id` 추가 | 대기 |
+| 6 | MCP 핸드셰이크 | stdio 첫 메시지에서 user_id 옵션 수용 (gateway 주입 대비) | 대기 |
+| 7 | 테스트 | 환경변수 → 컨텍스트, 익명 fallback, 기존 데이터 로드 호환성 | 대기 |
+
+#### Phase 22: 스코프 검색 + 권한 필터링 (P1)
+
+| # | 작업 | 내용 | 상태 |
+|---|------|------|------|
+| 1 | 정책 파일 v2 | `policy.yaml` 에 `teams`, `users.team`, `users.can_share` 섹션 추가 | 대기 |
+| 2 | 스코프 해석기 | `sap_cli/scope.py` — own/team/public/all 결정 로직 | 대기 |
+| 3 | recipe_search 시그니처 확장 | `scope` 파라미터 + `scope_summary` 응답 메타 | 대기 |
+| 4 | recipe_list / chain_search 적용 | 동일 스코프 필터링 일관성 확보 | 대기 |
+| 5 | 신규: sap_recipe_share | public 토글 (`can_share` 권한 검사) | 대기 |
+| 6 | 신규: sap_recipe_transfer | 소유권 이전 (admin 권한) | 대기 |
+| 7 | 테스트 | 스코프별 가시성, 권한 차단, 공유 토글, 정책 v1→v2 호환 | 대기 |
+
+#### Phase 23: 협업 버전닝 + 감사 가시성 (P2)
+
+| # | 작업 | 내용 | 상태 |
+|---|------|------|------|
+| 1 | 낙관적 동시성 | `version_up(expected_version)` 충돌 검출 + `VersionConflict` 예외 | 대기 |
+| 2 | MCP API 변경 | `sap_recipe_version_up` 에 `expected_version` 필수 인자 추가 | 대기 |
+| 3 | disabled 컨텍스트 | `disabled_by`, `disabled_at` 필드 + 자동/수동 구분 | 대기 |
+| 4 | sap_audit_query | 사용자/툴/기간 필터 감사 로그 조회 (본인=open, 타인=admin) | 대기 |
+| 5 | sap audit summary CLI | 사용자별 7d/30d 집계 (실행수/성공률/주요 tcode) | 대기 |
+| 6 | 테스트 | 충돌 검출, 권한별 감사 노출, 집계 정확성 | 대기 |
+
+#### 장기 검토 (Phase 21~23 안정화 후 1개월)
+
+| 작업 | 내용 | 상태 |
+|------|------|------|
+| 온톨로지 거버넌스 | base + team_overlay 분리, overlay 승격 워크플로 (별도 설계 문서) | 검토 |
+| 외부 디렉토리 연동 | LDAP/SCIM 으로 정책 파일 자동 동기화 (사용자 100명+ 시) | 검토 |
+| 감사 로그 로테이션 | 일별 분리 + 90일 후 압축, S3/내부 스토리지 외부화 | 검토 |
