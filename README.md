@@ -322,8 +322,23 @@ AI가 성공한 SAP 조작 경로를 저장하고, 다음에 같은 요청이 �
 # 레시피 검색
 sap recipe-search "가격결정"
 
+# tcode/키워드 기반 통합 검색
+sap recipe-query --tcode SPRO --keywords "가격결정"
+
+# 특정 레시피 상세 실행 계획 조회
+sap recipe-show "spro-pricing-condition"
+
 # 저장된 모든 레시피 목록
 sap recipe-list
+
+# 미승인 레시피 후보 세션 조회
+sap recipe-pending --limit 20
+
+# 레시피 버전 이력 조회
+sap recipe-history "spro-pricing-condition"
+
+# 여러 tcode를 걸치는 복합 레시피 검색
+sap recipe-chain "SPRO,MM03" --match all
 
 # 레시피 저장 (AI가 MCP로 자동 저장하지만, 수동도 가능)
 sap recipe-save "spro-pricing-condition" "SPRO > SD > 가격결정" '[{"tool":"sap_run","args":{"tcode":"SPRO"},"hint":"SPRO 진입"}]' -k "가격결정,pricing"
@@ -331,6 +346,10 @@ sap recipe-save "spro-pricing-condition" "SPRO > SD > 가격결정" '[{"tool":"s
 # 레시피 삭제
 sap recipe-delete "spro-pricing-condition"
 ```
+
+CLI에는 조회 중심의 recipe 명령을 우선 노출합니다. `recipe-failure`,
+`recipe-enable`, `recipe-version-up`, `recipe-success`는 실패/활성화/버전 변경
+같은 상태 변경 명령이므로 현재는 MCP/dispatcher 자동화 흐름 중심으로 유지합니다.
 
 AI MCP 사용 흐름:
 1. 사용자 요청 → AI가 `sap_ontology_query(tcode, action_search="키워드")`로 온톨로지 내 경로 검색

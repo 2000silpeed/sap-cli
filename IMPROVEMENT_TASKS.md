@@ -291,39 +291,55 @@ CLI에 있는 명령:
 ```text
 recipe-save
 recipe-search
+recipe-show
+recipe-query
 recipe-list
+recipe-pending
+recipe-history
+recipe-chain
 recipe-delete
 ```
 
-MCP/dispatcher에는 있으나 CLI에 없는 주요 명령:
+MCP/dispatcher에는 있으나 CLI에 없는 상태 변경 중심 명령:
 
 ```text
-recipe-query
-recipe-pending
 recipe-failure
 recipe-enable
 recipe-version-up
-recipe-history
-recipe-chain-search
+recipe-success
 ```
 
 ### 작업
 
-- [ ] 각 recipe 기능을 CLI에도 노출할지 결정
-- [ ] 운영자용 CLI 명령은 추가하는 방향 권장
-- [ ] 명령 이름 규칙 통일
+- [x] 각 recipe 기능을 CLI에도 노출할지 결정
+- [x] 운영자용 CLI 명령은 추가하는 방향 권장
+- [x] 명령 이름 규칙 통일
   - `recipe-version-up`
   - `recipe-history`
   - `recipe-failure`
   - `recipe-enable`
   - `recipe-chain`
   - `recipe-pending`
-- [ ] README 사용 예시 추가
+- [x] README 사용 예시 추가
+
+### 진행 상태
+
+진행일: 2026-04-25
+
+- Phase B-2의 작은 단계로 READ 계열 recipe CLI를 추가했다.
+  - `recipe-show`
+  - `recipe-query`
+  - `recipe-pending`
+  - `recipe-history`
+  - `recipe-chain`
+- `CommandDef.expose_cli`와 `tests/test_command_surface_consistency.py`의 MCP-only allowlist를 갱신해 CLI/registry drift 검증을 유지했다.
+- 상태 변경 명령인 `recipe-failure`, `recipe-enable`, `recipe-version-up`, `recipe-success`는 이번 단계에서는 MCP/dispatcher 중심으로 유지한다.
+- README 4.11에 신규 CLI 사용 예시와 MCP-only 유지 항목을 문서화했다.
 
 ### 완료 기준
 
 - [ ] 사람이 CLI만 써도 recipe 품질 관리/버전 관리가 가능하다.
-- [ ] MCP-only 기능이면 문서에 명시되어 있다.
+- [x] MCP-only 기능이면 문서에 명시되어 있다.
 
 ---
 

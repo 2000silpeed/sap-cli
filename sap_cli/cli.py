@@ -453,10 +453,57 @@ def recipe_search(
     _run_command("recipe_search", {"query": query})
 
 
+@app.command("recipe-show")
+def recipe_show(
+    recipe_id: str = typer.Argument(help="조회할 레시피 ID"),
+) -> None:
+    """레시피 상세 실행 계획 조회."""
+    _run_command("recipe_show", {"recipe_id": recipe_id})
+
+
+@app.command("recipe-query")
+def recipe_query(
+    tcode: Optional[str] = typer.Option(None, "--tcode", "-t", help="트랜잭션 코드"),
+    keywords: Optional[str] = typer.Option(None, "--keywords", "-k", help="검색 키워드"),
+) -> None:
+    """tcode와/or 키워드로 레시피 통합 검색."""
+    params: dict[str, Any] = {}
+    if tcode:
+        params["tcode"] = tcode
+    if keywords:
+        params["keywords"] = keywords
+    _run_command("recipe_query", params)
+
+
 @app.command("recipe-list")
 def recipe_list() -> None:
     """저장된 모든 레시피 목록."""
     _run_command("recipe_list", {})
+
+
+@app.command("recipe-pending")
+def recipe_pending(
+    limit: int = typer.Option(20, "--limit", "-n", help="조회할 최대 후보 수"),
+) -> None:
+    """미승인 레시피 후보 세션 목록 조회."""
+    _run_command("recipe_pending", {"limit": limit})
+
+
+@app.command("recipe-history")
+def recipe_history(
+    recipe_id: str = typer.Argument(help="이력을 조회할 레시피 ID"),
+) -> None:
+    """레시피 버전 이력 조회."""
+    _run_command("recipe_history", {"recipe_id": recipe_id})
+
+
+@app.command("recipe-chain")
+def recipe_chain(
+    tcodes: str = typer.Argument(help="검색할 tcode 목록 (쉼표 구분, 예: SPRO,MM03)"),
+    match: str = typer.Option("all", "--match", "-m", help="all 또는 any"),
+) -> None:
+    """여러 tcode를 걸치는 복합 레시피 검색."""
+    _run_command("recipe_chain", {"tcodes": tcodes, "match": match})
 
 
 @app.command("recipe-delete")

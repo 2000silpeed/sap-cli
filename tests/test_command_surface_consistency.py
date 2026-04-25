@@ -29,15 +29,11 @@ DISPATCHER_ONLY_TOOLS = {
 }
 
 # MCP에는 노출하지만 아직 별도 CLI subcommand를 만들지 않은 명령.
-# 대부분 agent/daemon/MCP 자동화 흐름에서 쓰는 recipe 후보 검증 및 session lifecycle API다.
+# 대부분 agent/daemon/MCP 자동화 흐름에서 쓰는 write/admin 계열 recipe 관리와
+# session lifecycle API다. read-only recipe 조회 명령은 Phase B-2에서 CLI에 노출했다.
 MCP_ONLY_COMMANDS = {
-    "recipe_chain",
     "recipe_enable",
     "recipe_failure",
-    "recipe_history",
-    "recipe_pending",
-    "recipe_query",
-    "recipe_show",
     "recipe_success",
     "recipe_version_up",
     "session_approve",
