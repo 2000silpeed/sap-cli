@@ -16,25 +16,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
+from .storage import atomic_write_text, fsync_dir_best_effort
+
 _log = logging.getLogger(__name__)
-
-
-def _fsync_dir_best_effort(directory: Path) -> None:
-    """디렉토리 fsync. POSIX에선 rename durability 보장, Windows에선 no-op."""
-    try:
-        fd = os.open(str(directory), os.O_RDONLY)
-    except OSError:
-        return  # Windows는 디렉토리 열기 불가 → skip
-    try:
-        try:
-            os.fsync(fd)
-        except OSError:
-            pass
-    finally:
-        try:
-            os.close(fd)
-        except OSError:
-            pass
 
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_\-]+$")
@@ -104,31 +88,7 @@ class RecipeStore:
         recipe.updated_at = time.time()
         recipe.tcode_sequence = list(_extract_tcode_sequence(recipe.steps))
         final_path = self._path(recipe.id)
-        tmp_path = final_path.with_suffix(final_path.suffix + f".tmp-{os.getpid()}-{time.time_ns()}")
-        try:
-            data = recipe.model_dump_json(indent=2).encode("utf-8")
-            fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
-            try:
-                view = memoryview(data)
-                written = 0
-                while written < len(view):
-                    n = os.write(fd, view[written:])
-                    if n <= 0:
-                        raise OSError(f"short write: {written}/{len(view)} bytes")
-                    written += n
-                if hasattr(os, "fsync"):
-                    os.fsync(fd)  # real flush error (EIO/ENOSPC) must surface
-            finally:
-                os.close(fd)
-            os.replace(tmp_path, final_path)
-            _fsync_dir_best_effort(self._dir)
-        except Exception:
-            if tmp_path.exists():
-                try:
-                    tmp_path.unlink()
-                except OSError:
-                    pass
-            raise
+        atomic_write_text(final_path, recipe.model_dump_json(indent=2), mode=0o644)
 
     def load(self, recipe_id: str) -> Recipe | None:
         path = self._path(recipe_id)
@@ -244,8 +204,8 @@ class RecipeStore:
         current = self._path(recipe.id)
         if current.exists():
             os.replace(current, archive)
-            _fsync_dir_best_effort(self._dir)
-            _fsync_dir_best_effort(self._archive_dir)
+            fsync_dir_best_effort(self._dir)
+            fsync_dir_best_effort(self._archive_dir)
         return archive.name
 
     def version_up(

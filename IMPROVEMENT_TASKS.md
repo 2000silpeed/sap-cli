@@ -414,15 +414,15 @@ sap auth-check sap_recipe_query
 
 ### 작업
 
-- [ ] `sap_cli/storage.py` 추가
-- [ ] 공통 함수 정의
+- [x] `sap_cli/storage.py` 추가
+- [x] 공통 함수 정의
   - `atomic_write_text(path, text, mode=0o644)`
   - `atomic_write_json(path, data, mode=0o644)`
   - `fsync_dir_best_effort(directory)`
   - `safe_read_json(path)`
-- [ ] short-write loop 적용
-- [ ] tmp 파일 cleanup 보장
-- [ ] Windows/POSIX 동작 차이 주석화
+- [x] short-write loop 적용
+- [x] tmp 파일 cleanup 보장
+- [x] Windows/POSIX 동작 차이 주석화
 
 ### 완료 기준
 
@@ -435,13 +435,13 @@ sap auth-check sap_recipe_query
 
 ### 작업
 
-- [ ] 현재 `RecipeStore.save()` 동작을 보존하면서 `storage.py` 사용
-- [ ] 기존 short-write, fsync, mode 0o644 보존
-- [ ] `tests/test_recipe_dedup.py`와 versioning/quality/cross_tcode 테스트 통과
+- [x] 현재 `RecipeStore.save()` 동작을 보존하면서 `storage.py` 사용
+- [x] 기존 short-write, fsync, mode 0o644 보존
+- [x] `tests/test_recipe_dedup.py`와 versioning/quality/cross_tcode 테스트 통과
 
 ### 완료 기준
 
-- [ ] Recipe 저장 안정성 회귀 없음
+- [x] Recipe 저장 안정성 회귀 없음
 
 ---
 
