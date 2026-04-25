@@ -14,6 +14,8 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from sap_cli.storage import atomic_write_json
+
 from .analysis_space import CrossSpace
 from .meta_edge import MetaEdge, MetaEdgeRegistry, create_default_registry
 from .schema import (
@@ -99,7 +101,7 @@ class OntologyStore:
         _validate_id(ontology.tcode, "tcode")
         path = self.transactions_dir / f"{ontology.tcode}.json"
         data = ontology.model_dump(mode="json", exclude_none=True)
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(path, data, mode=0o644)
         return path
 
     def load_transaction(self, tcode: str) -> TransactionOntology | None:
@@ -163,7 +165,7 @@ class OntologyStore:
     def save_meta_registry(self) -> Path:
         path = self.meta_edges_dir / "registry.json"
         data = self.meta_registry.model_dump(mode="json")
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(path, data, mode=0o644)
         return path
 
     def add_meta_edge(self, edge: MetaEdge) -> None:
@@ -199,7 +201,7 @@ class OntologyStore:
     def save_pattern(self, name: str, pattern: dict[str, Any]) -> Path:
         _validate_id(name, "pattern name")
         path = self.patterns_dir / f"{name}.json"
-        path.write_text(json.dumps(pattern, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(path, pattern, mode=0o644)
         return path
 
     def load_pattern(self, name: str) -> dict[str, Any] | None:
@@ -220,7 +222,7 @@ class OntologyStore:
         _validate_id(process.id, "process id")
         path = self.processes_dir / f"{process.id}.json"
         data = process.model_dump(mode="json", exclude_none=True)
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(path, data, mode=0o644)
         return path
 
     def load_process(self, process_id: str) -> BusinessProcess | None:
@@ -258,7 +260,7 @@ class OntologyStore:
         """필드 레지스트리 저장."""
         path = self.knowledge_dir / "field_registry.json"
         data = registry.model_dump(mode="json", exclude_none=True)
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(path, data, mode=0o644)
         return path
 
     def rebuild_field_registry(self) -> FieldRegistry:
@@ -334,7 +336,7 @@ class OntologyStore:
         """필드 종속성 그래프 저장."""
         path = self.knowledge_dir / "field_relationships.json"
         data = graph.model_dump(mode="json", exclude_none=True)
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(path, data, mode=0o644)
         return path
 
     def rebuild_field_dependencies(self) -> FieldDependencyGraph:
@@ -423,7 +425,7 @@ class OntologyStore:
         """문서 흐름 온톨로지 저장."""
         path = self.knowledge_dir / "document_flow.json"
         data = flow.model_dump(mode="json", exclude_none=True)
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(path, data, mode=0o644)
         return path
 
     def rebuild_document_flow(self) -> DocumentFlow:

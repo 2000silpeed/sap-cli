@@ -477,14 +477,14 @@ sap auth-check sap_recipe_query
 
 ### 작업
 
-- [ ] `OntologyStore`의 모든 write path 조사
-- [ ] transaction/process/field_registry/relationships/document_flow 저장 방식 확인
-- [ ] atomic write 적용
-- [ ] path traversal 검증 유지
+- [x] `OntologyStore`의 모든 write path 조사
+- [x] transaction/process/field_registry/relationships/document_flow 저장 방식 확인
+- [x] atomic write 적용
+- [x] path traversal 검증 유지
 
 ### 완료 기준
 
-- [ ] ontology 데이터 저장 중 실패해도 기존 지식 파일이 손상되지 않는다.
+- [x] ontology 데이터 저장 중 실패해도 기존 지식 파일이 손상되지 않는다.
 
 ---
 

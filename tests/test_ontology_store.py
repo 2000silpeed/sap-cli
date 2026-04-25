@@ -1,12 +1,21 @@
 """OntologyStore 단위 테스트 - COM 불필요."""
 
+import json
 import pytest
 from pathlib import Path
 
+import sap_cli.ontology.store as store_module
 from sap_cli.ontology.store import OntologyStore, _validate_id
 from sap_cli.ontology.schema import (
     BusinessProcess,
     DataFlow,
+    DocumentFlow,
+    DocumentFlowEdge,
+    FieldDependencyGraph,
+    FieldDependencyType,
+    FieldRegistry,
+    FieldRegistryEntry,
+    FieldRelationship,
     ProcessStep,
     ScreenOntology,
     SapField,
@@ -37,6 +46,15 @@ def sample_screen():
             ),
         ],
     )
+
+
+def _write_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _fail_atomic_write(*_args, **_kwargs) -> None:
+    raise OSError("simulated ontology write failure")
 
 
 class TestValidateId:
@@ -77,6 +95,21 @@ class TestTransactionCRUD:
         assert store.delete_transaction("MM03") is True
         assert store.load_transaction("MM03") is None
 
+    def test_save_failure_preserves_existing_file(self, store, monkeypatch):
+        path = store.transactions_dir / "MM03.json"
+        old = TransactionOntology(tcode="MM03", title="old").model_dump(
+            mode="json", exclude_none=True
+        )
+        _write_json(path, old)
+        before = path.read_text(encoding="utf-8")
+
+        monkeypatch.setattr(store_module, "atomic_write_json", _fail_atomic_write)
+
+        with pytest.raises(OSError):
+            store.save_transaction(TransactionOntology(tcode="MM03", title="new"))
+
+        assert path.read_text(encoding="utf-8") == before
+
 
 class TestScreenOntology:
     def test_save_and_load_screen(self, store, sample_screen):
@@ -88,6 +121,21 @@ class TestScreenOntology:
 
     def test_load_screen_nonexistent(self, store):
         assert store.load_screen("ZZZZ", 100) is None
+
+
+class TestMetaRegistry:
+    def test_save_failure_preserves_existing_file(self, store, monkeypatch):
+        path = store.meta_edges_dir / "registry.json"
+        _write_json(path, {"edges": []})
+        before = path.read_text(encoding="utf-8")
+        _ = store.meta_registry
+
+        monkeypatch.setattr(store_module, "atomic_write_json", _fail_atomic_write)
+
+        with pytest.raises(OSError):
+            store.save_meta_registry()
+
+        assert path.read_text(encoding="utf-8") == before
 
 
 class TestPatterns:
@@ -108,6 +156,18 @@ class TestPatterns:
     def test_pattern_path_traversal_rejected(self, store):
         with pytest.raises(ValueError):
             store.save_pattern("../../etc", {"bad": True})
+
+    def test_save_failure_preserves_existing_file(self, store, monkeypatch):
+        path = store.patterns_dir / "save_flow.json"
+        _write_json(path, {"name": "old"})
+        before = path.read_text(encoding="utf-8")
+
+        monkeypatch.setattr(store_module, "atomic_write_json", _fail_atomic_write)
+
+        with pytest.raises(OSError):
+            store.save_pattern("save_flow", {"name": "new"})
+
+        assert path.read_text(encoding="utf-8") == before
 
 
 class TestBusinessProcess:
@@ -171,6 +231,21 @@ class TestBusinessProcess:
         with pytest.raises(ValueError):
             store.save_process(BusinessProcess(id="../../evil", name="bad"))
 
+    def test_save_failure_preserves_existing_file(self, store, sample_process, monkeypatch):
+        path = store.processes_dir / "test_procurement.json"
+        old = sample_process.model_copy(update={"name": "old"}).model_dump(
+            mode="json", exclude_none=True
+        )
+        _write_json(path, old)
+        before = path.read_text(encoding="utf-8")
+
+        monkeypatch.setattr(store_module, "atomic_write_json", _fail_atomic_write)
+
+        with pytest.raises(OSError):
+            store.save_process(sample_process.model_copy(update={"name": "new"}))
+
+        assert path.read_text(encoding="utf-8") == before
+
     def test_validate_integrity_ok(self, sample_process):
         assert sample_process.validate_integrity() == []
 
@@ -221,3 +296,88 @@ class TestSeedData:
         seed_dir = Path(__file__).parent.parent / "sap_cli" / "ontology" / "knowledge"
         if (seed_dir / "transactions" / "MM03.json").exists():
             assert store.load_transaction("MM03") is not None
+
+
+class TestOntologyGlobalIndexes:
+    def test_save_field_registry_failure_preserves_existing_file(self, store, monkeypatch):
+        path = store.knowledge_dir / "field_registry.json"
+        old = FieldRegistry(
+            fields={
+                "MATNR": FieldRegistryEntry(
+                    sap_field_name="MATNR",
+                    description="old",
+                )
+            }
+        ).model_dump(mode="json", exclude_none=True)
+        _write_json(path, old)
+        before = path.read_text(encoding="utf-8")
+
+        monkeypatch.setattr(store_module, "atomic_write_json", _fail_atomic_write)
+
+        with pytest.raises(OSError):
+            store.save_field_registry(
+                FieldRegistry(
+                    fields={
+                        "MATNR": FieldRegistryEntry(
+                            sap_field_name="MATNR",
+                            description="new",
+                        )
+                    }
+                )
+            )
+
+        assert path.read_text(encoding="utf-8") == before
+
+    def test_save_field_dependencies_failure_preserves_existing_file(
+        self, store, monkeypatch
+    ):
+        path = store.knowledge_dir / "field_relationships.json"
+        old = FieldDependencyGraph(
+            relationships=[
+                FieldRelationship(
+                    source_field="MATNR",
+                    target_field="MAKTX",
+                    dependency_type=FieldDependencyType.LOOKUP,
+                    description="old",
+                )
+            ]
+        ).model_dump(mode="json", exclude_none=True)
+        _write_json(path, old)
+        before = path.read_text(encoding="utf-8")
+
+        monkeypatch.setattr(store_module, "atomic_write_json", _fail_atomic_write)
+
+        with pytest.raises(OSError):
+            store.save_field_dependencies(
+                FieldDependencyGraph(
+                    relationships=[
+                        FieldRelationship(
+                            source_field="WERKS",
+                            target_field="LGORT",
+                            dependency_type=FieldDependencyType.VALUE_DETERMINES,
+                            description="new",
+                        )
+                    ]
+                )
+            )
+
+        assert path.read_text(encoding="utf-8") == before
+
+    def test_save_document_flow_failure_preserves_existing_file(self, store, monkeypatch):
+        path = store.knowledge_dir / "document_flow.json"
+        old = DocumentFlow(
+            edges=[DocumentFlowEdge(source_tcode="ME21N", target_tcode="MIGO")]
+        ).model_dump(mode="json", exclude_none=True)
+        _write_json(path, old)
+        before = path.read_text(encoding="utf-8")
+
+        monkeypatch.setattr(store_module, "atomic_write_json", _fail_atomic_write)
+
+        with pytest.raises(OSError):
+            store.save_document_flow(
+                DocumentFlow(
+                    edges=[DocumentFlowEdge(source_tcode="VA01", target_tcode="VL01N")]
+                )
+            )
+
+        assert path.read_text(encoding="utf-8") == before
