@@ -13,7 +13,7 @@ from sap_cli.auth.policy import (
     RelationBinding,
     TOOL_PERMISSION_MAP,
 )
-from sap_cli.dispatcher import COMMAND_REGISTRY, MCP_TOOL_TO_COMMAND
+from sap_cli.dispatcher import COMMAND_REGISTRY, MCP_TOOL_TO_COMMAND, resolve_mcp_call
 from sap_cli.mcp_server import TOOL_DEFINITIONS, _visible_tool_names_for_checker
 
 
@@ -122,8 +122,14 @@ def test_mcp_tool_definitions_match_dispatcher_mapping_except_allowlist():
     """MCP schema와 dispatcher MCP mapping은 의도적 비노출 allowlist를 제외하고 일치해야 한다."""
     mcp_definition_names = {definition["name"] for definition in TOOL_DEFINITIONS}
     dispatcher_mcp_names = set(MCP_TOOL_TO_COMMAND)
+    registry_hidden_names = {
+        definition.tool_name
+        for definition in COMMAND_REGISTRY.values()
+        if not definition.expose_mcp
+    }
 
-    assert dispatcher_mcp_names - mcp_definition_names == DISPATCHER_ONLY_TOOLS
+    assert registry_hidden_names == DISPATCHER_ONLY_TOOLS
+    assert dispatcher_mcp_names - mcp_definition_names == set()
     assert mcp_definition_names - dispatcher_mcp_names == set()
 
 
@@ -143,6 +149,18 @@ def test_mcp_exposure_metadata_matches_tool_definitions():
 
     assert exposed_by_registry == mcp_definition_names
     assert hidden_by_registry == DISPATCHER_ONLY_TOOLS
+    assert hidden_by_registry.isdisjoint(MCP_TOOL_TO_COMMAND)
+
+
+def test_hidden_mcp_commands_do_not_resolve_as_mcp_calls():
+    """expose_mcp=False인 registry command는 MCP 역해석 경로에서도 숨겨져야 한다."""
+    for tool_name in DISPATCHER_ONLY_TOOLS:
+        try:
+            resolve_mcp_call(tool_name, {})
+        except ValueError as exc:
+            assert str(exc) == f"Unknown tool: {tool_name}"
+        else:
+            raise AssertionError(f"{tool_name} resolved despite expose_mcp=False")
 
 
 def test_cli_exposure_metadata_matches_actual_cli_dispatch_except_allowlist():

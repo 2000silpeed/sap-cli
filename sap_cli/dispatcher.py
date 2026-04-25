@@ -123,7 +123,9 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
 }
 
 COMMAND_TOOL_MAP: dict[str, str] = {cmd: d.tool_name for cmd, d in COMMAND_REGISTRY.items()}
-MCP_TOOL_TO_COMMAND: dict[str, str] = {d.tool_name: cmd for cmd, d in COMMAND_REGISTRY.items()}
+MCP_TOOL_TO_COMMAND: dict[str, str] = {
+    d.tool_name: cmd for cmd, d in COMMAND_REGISTRY.items() if d.expose_mcp
+}
 
 POST_ACTION_COMMANDS = {
     "connect",

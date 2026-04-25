@@ -270,11 +270,13 @@ slot_release
 - CLI는 Typer command 이름과 dispatcher command key가 다를 수 있으므로, `sap_cli/cli.py`의 `_run_command()` / `_dispatch_local()` 호출을 정적으로 수집해 `CommandDef.expose_cli`와 비교하는 테스트를 추가했다.
 - MCP 전용 command는 allowlist와 `expose_cli=False`로 명시했다.
 - policy permission은 기존 `test_registry_permission_matches_policy_permission`에서 `CommandDef.permission`과 `TOOL_PERMISSION_MAP` 일치를 검증하며, 이번 작업에서 유지/강화했다.
+- `MCP_TOOL_TO_COMMAND`를 `CommandDef.expose_mcp=True`인 command만 포함하도록 변경해 MCP 역해석 경로에서도 비노출 도구가 `Unknown tool`로 거부되게 했다.
+- `expose_mcp=False` 도구가 MCP mapping/resolve 경로에 절대 포함되지 않는 consistency 테스트를 추가했다.
 
 ### 완료 기준
 
-- [ ] command 추가 시 수정해야 할 위치가 줄어든다.
-- [ ] dispatcher/policy/MCP drift가 구조적으로 줄어든다.
+- [x] command 추가 시 수정해야 할 위치가 줄어든다.
+- [x] dispatcher/policy/MCP drift가 구조적으로 줄어든다.
 
 ---
 
