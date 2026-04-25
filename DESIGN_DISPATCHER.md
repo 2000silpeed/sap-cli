@@ -132,3 +132,9 @@ uv run pytest tests/test_command_surface_consistency.py
 - [x] `sap_cli.dispatcher` import 호환성 유지
 - [x] recipe 관련 테스트 범위 먼저 실행
 - [x] 전체 테스트 실행
+
+## D-2 진행 메모
+
+- `recipe_failure`, `recipe_enable`, `recipe_history`, `recipe_chain` 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.
+- `sap_cli.dispatcher`에는 기존 private import/monkeypatch 호환을 위한 얇은 wrapper를 남겼다.
+- wrapper는 dispatcher module의 `_get_recipe_store`를 implementation에 주입하므로 기존 `sap_cli.dispatcher._get_recipe_store` monkeypatch가 계속 동작한다.

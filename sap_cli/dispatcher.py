@@ -21,7 +21,14 @@ from .auth.policy import TOOL_PERMISSION_MAP, Permission, Policy, load_policy
 from .auth.transcript import TranscriptLogger
 from .command_parser import extract_tcode_from_command
 from .com_wrapper import SapGuiWrapper
-from .dispatchers.recipe import dispatch_recipe_command, is_recipe_command
+from .dispatchers.recipe import (
+    dispatch_recipe_chain as _dispatch_recipe_chain_impl,
+    dispatch_recipe_command,
+    dispatch_recipe_enable as _dispatch_recipe_enable_impl,
+    dispatch_recipe_failure as _dispatch_recipe_failure_impl,
+    dispatch_recipe_history as _dispatch_recipe_history_impl,
+    is_recipe_command,
+)
 from .macro.player import MacroPlayer
 from .ontology.store import OntologyStore
 from .service import (
@@ -2279,35 +2286,12 @@ def _dispatch_recipe_success(args: dict[str, Any]) -> dict[str, Any]:
 
 def _dispatch_recipe_failure(args: dict[str, Any]) -> dict[str, Any]:
     """레시피 실행 실패 보고. 임계 도달 시 자동 비활성화."""
-    store = _get_recipe_store()
-    recipe_id = str(args["recipe_id"])
-    reason = str(args.get("reason", "")).strip()
-    recipe = store.report_failure(recipe_id, reason=reason)
-    if recipe is None:
-        return {"error": True, "message": f"레시피 '{recipe_id}'를 찾을 수 없습니다."}
-    return {
-        "recipe_id": recipe.id,
-        "failure_count": recipe.failure_count,
-        "success_count": recipe.success_count,
-        "disabled": recipe.disabled,
-        "disabled_reason": recipe.disabled_reason,
-    }
+    return _dispatch_recipe_failure_impl(args, _get_recipe_store)
 
 
 def _dispatch_recipe_enable(args: dict[str, Any]) -> dict[str, Any]:
     """비활성화된 레시피를 수동 재활성화."""
-    store = _get_recipe_store()
-    recipe_id = str(args["recipe_id"])
-    reset = bool(args.get("reset_failure_count", True))
-    recipe = store.enable(recipe_id, reset_failure_count=reset)
-    if recipe is None:
-        return {"error": True, "message": f"레시피 '{recipe_id}'를 찾을 수 없습니다."}
-    return {
-        "recipe_id": recipe.id,
-        "disabled": recipe.disabled,
-        "failure_count": recipe.failure_count,
-        "success_count": recipe.success_count,
-    }
+    return _dispatch_recipe_enable_impl(args, _get_recipe_store)
 
 
 def _dispatch_recipe_version_up(args: dict[str, Any]) -> dict[str, Any]:
@@ -2353,63 +2337,12 @@ def _dispatch_recipe_version_up(args: dict[str, Any]) -> dict[str, Any]:
 
 def _dispatch_recipe_history(args: dict[str, Any]) -> dict[str, Any]:
     """레시피의 과거 버전 목록 + 현재 활성 버전 메타."""
-    store = _get_recipe_store()
-    recipe_id = str(args["recipe_id"])
-
-    current = store.load(recipe_id)
-    archives = store.history(recipe_id)
-    return {
-        "recipe_id": recipe_id,
-        "current_version": current.version if current else None,
-        "active": current is not None,
-        "archive_count": len(archives),
-        "archives": archives,
-    }
+    return _dispatch_recipe_history_impl(args, _get_recipe_store)
 
 
 def _dispatch_recipe_chain(args: dict[str, Any]) -> dict[str, Any]:
     """여러 tcode를 걸치는 복합 레시피 검색."""
-    store = _get_recipe_store()
-    tcodes_raw = args.get("tcodes", [])
-    if isinstance(tcodes_raw, str):
-        tcodes = [t.strip() for t in tcodes_raw.split(",") if t.strip()]
-    elif isinstance(tcodes_raw, (list, tuple)):
-        tcodes = [str(t).strip() for t in tcodes_raw if str(t).strip()]
-    else:
-        return {"error": True, "message": "tcodes는 배열 또는 쉼표 구분 문자열이어야 합니다."}
-
-    if not tcodes:
-        return {"error": True, "message": "tcodes는 최소 1개 이상이어야 합니다."}
-
-    match = str(args.get("match", "all")).lower()
-    if match not in ("all", "any"):
-        return {"error": True, "message": "match는 'all' 또는 'any'여야 합니다."}
-
-    recipes = store.find_chain(tcodes, match=match)
-
-    summaries = []
-    for r in recipes:
-        seq = list(store._tcode_seq(r))
-        summaries.append({
-            "id": r.id,
-            "description": r.description,
-            "context": r.context,
-            "tcode_sequence": seq,
-            "cross_tcode": len(seq) > 1,
-            "step_count": len(r.steps),
-            "success_count": r.success_count,
-        })
-
-    return {
-        "tcodes": tcodes,
-        "match": match,
-        "count": len(summaries),
-        "recipes": summaries,
-        "hint": (
-            "여러 tcode를 거치는 복합 레시피입니다. "
-            "sap_recipe_show(recipe_id=...)로 상세 단계를 조회하여 그대로 따라 실행하세요."
-        ) if summaries else "조건에 맞는 복합 레시피가 없습니다.",
-    }
+    return _dispatch_recipe_chain_impl(args, _get_recipe_store)
 
 
 def _dispatch_recipe_query(args: dict[str, Any]) -> dict[str, Any]:
