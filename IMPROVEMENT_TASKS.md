@@ -603,6 +603,10 @@ _dispatch_recipe_pending
 - `recipe_delete`는 dispatcher module의 `_delete_recipe_with_links`를 implementation에 주입하므로 기존 helper monkeypatch 호환성을 유지한다.
 - `dispatcher.py`는 3078줄에서 2987줄로 추가 감소했다.
 - recipe 관련 테스트 통과 확인: `146 passed`.
+- 네 번째 작은 단계로 `recipe_query`, `recipe_pending` 실제 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.
+- `recipe_query` wrapper는 dispatcher module의 `_get_recipe_store`를, `recipe_pending` wrapper는 `_get_session_store`를 implementation에 주입하므로 기존 monkeypatch 테스트 호환성을 유지한다.
+- `dispatcher.py`는 2987줄에서 2894줄로 추가 감소했다.
+- recipe 관련 테스트 통과 확인: `146 passed`.
 
 ---
 

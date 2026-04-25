@@ -29,6 +29,8 @@ from .dispatchers.recipe import (
     dispatch_recipe_failure as _dispatch_recipe_failure_impl,
     dispatch_recipe_history as _dispatch_recipe_history_impl,
     dispatch_recipe_list as _dispatch_recipe_list_impl,
+    dispatch_recipe_pending as _dispatch_recipe_pending_impl,
+    dispatch_recipe_query as _dispatch_recipe_query_impl,
     dispatch_recipe_search as _dispatch_recipe_search_impl,
     dispatch_recipe_show as _dispatch_recipe_show_impl,
     dispatch_recipe_success as _dispatch_recipe_success_impl,
@@ -2256,107 +2258,12 @@ def _dispatch_recipe_chain(args: dict[str, Any]) -> dict[str, Any]:
 
 def _dispatch_recipe_query(args: dict[str, Any]) -> dict[str, Any]:
     """tcode + 키워드 통합 레시피 조회. AI 자동 참조용."""
-    store = _get_recipe_store()
-    tcode = args.get("tcode")
-    keywords = args.get("keywords")
-
-    if not tcode and not keywords:
-        raise ValueError("tcode 또는 keywords 중 하나는 필수입니다.")
-
-    scored = store.query_for_ai(tcode=tcode, keywords=keywords)
-    if not scored:
-        return {
-            "tcode": tcode,
-            "keywords": keywords,
-            "count": 0,
-            "recipes": [],
-            "hint": "일치하는 레시피가 없습니다. 직접 트랜잭션을 탐색하세요.",
-        }
-
-    if len(scored) == 1:
-        score, r = scored[0]
-        execution_plan = [
-            {"order": i + 1, "tool": s.tool, "args": s.args, **({"hint": s.hint} if s.hint else {})}
-            for i, s in enumerate(r.steps)
-        ]
-        return {
-            "tcode": tcode,
-            "keywords": keywords,
-            "count": 1,
-            "exact_match": True,
-            "recipe_id": r.id,
-            "description": r.description,
-            "context": r.context,
-            "success_count": r.success_count,
-            "execution_plan": execution_plan,
-            "instruction": (
-                f"레시피 '{r.id}'가 검색되었습니다. "
-                "execution_plan의 단계를 순서대로 정확히 실행하세요. "
-                "별도 탐색(sap_tree_read, sap_screen)하지 마세요. "
-                "모든 단계 완료 후 sap_recipe_success를 호출하세요."
-            ),
-        }
-
-    recipes = []
-    for score, r in scored:
-        recipes.append({
-            "id": r.id,
-            "description": r.description,
-            "context": r.context,
-            "keywords": r.keywords,
-            "step_count": len(r.steps),
-            "success_count": r.success_count,
-            "relevance_score": score,
-        })
-    return {
-        "tcode": tcode,
-        "keywords": keywords,
-        "count": len(recipes),
-        "exact_match": False,
-        "recipes": recipes,
-        "hint": (
-            "여러 레시피가 검색되었습니다. description과 context를 비교하여 "
-            "가장 적합한 레시피를 선택한 후 sap_recipe_show(recipe_id=...)로 "
-            "실행 계획을 조회하세요."
-        ),
-    }
+    return _dispatch_recipe_query_impl(args, _get_recipe_store)
 
 
 def _dispatch_recipe_pending(args: dict[str, Any]) -> dict[str, Any]:
     """미승인 candidate 세션 요약. 자동 제안된 레시피 후보를 한눈에 보여준다."""
-    from .session_analyzer import analyze
-
-    store = _get_session_store()
-    limit = int(args.get("limit", 20))
-    sessions = store.list_sessions(status="completed", limit=max(limit * 4, limit))
-
-    pending = []
-    for s_summary in sessions:
-        session = store.load(s_summary["id"])
-        if session is None:
-            continue
-        analyze(session)
-        if not session.candidate or session.approved:
-            continue
-        pending.append({
-            "session_id": session.id,
-            "user_request": session.user_request[:120],
-            "started_at": session.started_at,
-            "step_count": len(session.steps),
-            "sap_user": session.sap_user,
-            "sap_system": session.sap_system,
-        })
-        if len(pending) >= limit:
-            break
-
-    return {
-        "count": len(pending),
-        "pending_suggestions": pending,
-        "instruction": (
-            "이 세션들은 자동 평가에서 레시피 저장 후보로 분류되었으나 아직 승인되지 않았습니다. "
-            "sap_session_show로 상세 확인 후 sap_session_approve로 승인하면 레시피로 저장됩니다."
-        ) if pending else "현재 미승인 레시피 후보가 없습니다.",
-    }
+    return _dispatch_recipe_pending_impl(args, _get_session_store)
 
 
 _RECIPE_HANDLERS = {
