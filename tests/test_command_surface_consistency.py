@@ -33,8 +33,6 @@ DISPATCHER_ONLY_TOOLS = {
 # session lifecycle API다. read-only recipe 조회 명령은 Phase B-2에서 CLI에 노출했다.
 MCP_ONLY_COMMANDS = {
     "recipe_enable",
-    "recipe_failure",
-    "recipe_success",
     "recipe_version_up",
     "session_approve",
     "session_candidates",

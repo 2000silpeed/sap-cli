@@ -506,6 +506,26 @@ def recipe_chain(
     _run_command("recipe_chain", {"tcodes": tcodes, "match": match})
 
 
+@app.command("recipe-success")
+def recipe_success(
+    recipe_id: str = typer.Argument(help="성공을 기록할 레시피 ID"),
+) -> None:
+    """레시피 실행 성공 기록."""
+    _run_command("recipe_success", {"recipe_id": recipe_id})
+
+
+@app.command("recipe-failure")
+def recipe_failure(
+    recipe_id: str = typer.Argument(help="실패를 기록할 레시피 ID"),
+    reason: str = typer.Option("", "--reason", "-r", help="실패 사유"),
+) -> None:
+    """레시피 실행 실패 기록. 임계 도달 시 자동 비활성화될 수 있음."""
+    params = {"recipe_id": recipe_id}
+    if reason:
+        params["reason"] = reason
+    _run_command("recipe_failure", params)
+
+
 @app.command("recipe-delete")
 def recipe_delete(
     recipe_id: str = typer.Argument(help="삭제할 레시피 ID"),

@@ -336,9 +336,18 @@ recipe-success
 - 상태 변경 명령인 `recipe-failure`, `recipe-enable`, `recipe-version-up`, `recipe-success`는 이번 단계에서는 MCP/dispatcher 중심으로 유지한다.
 - README 4.11에 신규 CLI 사용 예시와 MCP-only 유지 항목을 문서화했다.
 
+추가 진행일: 2026-04-26
+
+- 운영자 품질관리용 WRITE 계열 recipe CLI 명령을 작은 단계로 추가했다.
+  - `recipe-success`
+  - `recipe-failure`
+- `CommandDef.expose_cli`와 MCP-only allowlist를 갱신해 CLI/registry drift 검증을 유지했다.
+- `recipe-enable`은 ADMIN 계열, `recipe-version-up`은 steps JSON 입력 UX가 복잡하므로 아직 MCP/dispatcher 중심으로 유지한다.
+- README 4.11에 `recipe-success` / `recipe-failure` 예시와 남은 MCP 중심 항목을 갱신했다.
+
 ### 완료 기준
 
-- [ ] 사람이 CLI만 써도 recipe 품질 관리/버전 관리가 가능하다.
+- [ ] 사람이 CLI만 써도 recipe 품질 관리는 가능하며, 버전 관리는 아직 MCP/dispatcher 중심이다.
 - [x] MCP-only 기능이면 문서에 명시되어 있다.
 
 ---
