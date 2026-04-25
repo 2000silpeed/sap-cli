@@ -41,6 +41,11 @@ class CommandDef:
     tool_name: str
     permission: Permission
     mcp_arg_map: dict[str, str] | None = None  # MCP인자명 -> dispatcher인자명
+    expose_cli: bool = True
+    expose_mcp: bool = True
+    description: str = ""
+    category: str = "general"
+    risk_level: str = "medium"
 
 
 COMMAND_REGISTRY: dict[str, CommandDef] = {
@@ -85,36 +90,36 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "tree_expand":    CommandDef("sap_tree_expand",        Permission.EXECUTE),
     "tree_collapse":  CommandDef("sap_tree_collapse",      Permission.EXECUTE),
     "tree_press":     CommandDef("sap_tree_press",         Permission.EXECUTE),
-    "ontology_ask":   CommandDef("sap_ontology_ask",      Permission.READ),
+    "ontology_ask":   CommandDef("sap_ontology_ask",      Permission.READ, expose_mcp=False, category="ontology", risk_level="low"),
     "ontology_relationships": CommandDef("sap_ontology_relationships", Permission.READ),
     "field_dependencies": CommandDef("sap_field_dependencies", Permission.READ),
     "document_flow":      CommandDef("sap_document_flow",      Permission.READ),
     "process_path":       CommandDef("sap_process_path",       Permission.READ),
-    "ontology_rebuild":   CommandDef("sap_ontology_rebuild",   Permission.ADMIN),
-    "capture":        CommandDef("sap_capture",           Permission.READ),
-    "capture_list":   CommandDef("sap_capture_list",      Permission.READ),
+    "ontology_rebuild":   CommandDef("sap_ontology_rebuild",   Permission.ADMIN, expose_mcp=False, category="ontology", risk_level="high"),
+    "capture":        CommandDef("sap_capture",           Permission.READ, expose_mcp=False, category="capture", risk_level="low"),
+    "capture_list":   CommandDef("sap_capture_list",      Permission.READ, expose_mcp=False, category="capture", risk_level="low"),
     "recipe_save":    CommandDef("sap_recipe_save",       Permission.WRITE),
     "recipe_search":  CommandDef("sap_recipe_search",     Permission.READ),
-    "recipe_show":    CommandDef("sap_recipe_show",       Permission.READ),
+    "recipe_show":    CommandDef("sap_recipe_show",       Permission.READ, expose_cli=False, category="recipe", risk_level="low"),
     "recipe_list":    CommandDef("sap_recipe_list",       Permission.READ),
     "recipe_delete":  CommandDef("sap_recipe_delete",     Permission.ADMIN),
-    "recipe_success": CommandDef("sap_recipe_success",    Permission.WRITE),
-    "recipe_query":   CommandDef("sap_recipe_query",     Permission.READ),
-    "recipe_pending": CommandDef("sap_recipe_pending",   Permission.READ),
-    "recipe_failure": CommandDef("sap_recipe_failure",   Permission.WRITE),
-    "recipe_enable":  CommandDef("sap_recipe_enable",    Permission.ADMIN),
-    "recipe_version_up": CommandDef("sap_recipe_version_up", Permission.WRITE),
-    "recipe_history":    CommandDef("sap_recipe_history",    Permission.READ),
-    "recipe_chain":      CommandDef("sap_recipe_chain_search", Permission.READ),
-    "session_start":      CommandDef("sap_session_start",      Permission.WRITE),
-    "session_end":        CommandDef("sap_session_end",        Permission.WRITE),
-    "session_list":       CommandDef("sap_session_list",       Permission.READ),
-    "session_show":       CommandDef("sap_session_show",       Permission.READ),
-    "session_candidates": CommandDef("sap_session_candidates", Permission.READ),
-    "session_approve":    CommandDef("sap_session_approve",    Permission.ADMIN),
+    "recipe_success": CommandDef("sap_recipe_success",    Permission.WRITE, expose_cli=False, category="recipe", risk_level="medium"),
+    "recipe_query":   CommandDef("sap_recipe_query",     Permission.READ, expose_cli=False, category="recipe", risk_level="low"),
+    "recipe_pending": CommandDef("sap_recipe_pending",   Permission.READ, expose_cli=False, category="recipe", risk_level="low"),
+    "recipe_failure": CommandDef("sap_recipe_failure",   Permission.WRITE, expose_cli=False, category="recipe", risk_level="medium"),
+    "recipe_enable":  CommandDef("sap_recipe_enable",    Permission.ADMIN, expose_cli=False, category="recipe", risk_level="high"),
+    "recipe_version_up": CommandDef("sap_recipe_version_up", Permission.WRITE, expose_cli=False, category="recipe", risk_level="medium"),
+    "recipe_history":    CommandDef("sap_recipe_history",    Permission.READ, expose_cli=False, category="recipe", risk_level="low"),
+    "recipe_chain":      CommandDef("sap_recipe_chain_search", Permission.READ, expose_cli=False, category="recipe", risk_level="low"),
+    "session_start":      CommandDef("sap_session_start",      Permission.WRITE, expose_cli=False, category="session", risk_level="medium"),
+    "session_end":        CommandDef("sap_session_end",        Permission.WRITE, expose_cli=False, category="session", risk_level="medium"),
+    "session_list":       CommandDef("sap_session_list",       Permission.READ, expose_cli=False, category="session", risk_level="low"),
+    "session_show":       CommandDef("sap_session_show",       Permission.READ, expose_cli=False, category="session", risk_level="low"),
+    "session_candidates": CommandDef("sap_session_candidates", Permission.READ, expose_cli=False, category="session", risk_level="low"),
+    "session_approve":    CommandDef("sap_session_approve",    Permission.ADMIN, expose_cli=False, category="session", risk_level="high"),
     "slots":              CommandDef("sap_session_pool",       Permission.READ),
-    "slot_allocate":      CommandDef("sap_session_allocate",   Permission.ADMIN),
-    "slot_release":       CommandDef("sap_session_release",    Permission.ADMIN),
+    "slot_allocate":      CommandDef("sap_session_allocate",   Permission.ADMIN, expose_cli=False, category="session", risk_level="high"),
+    "slot_release":       CommandDef("sap_session_release",    Permission.ADMIN, expose_cli=False, category="session", risk_level="high"),
 }
 
 COMMAND_TOOL_MAP: dict[str, str] = {cmd: d.tool_name for cmd, d in COMMAND_REGISTRY.items()}

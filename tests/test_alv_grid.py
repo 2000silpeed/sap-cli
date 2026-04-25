@@ -247,7 +247,19 @@ class TestReadAlvGrid:
         assert len(result.rows) == 7
 
     def test_max_500_rows(self, wrapper):
-        """1000행 ALV → 최대 500행만 읽기."""
+        """1000행 ALV + 명시적 max_rows=500 → 최대 500행만 읽기."""
+        alv = _make_alv_shell(
+            "wnd[0]/usr/shell",
+            row_count=1000, col_count=1, visible_rows=50,
+            columns=["COL"],
+        )
+        wrapper._session.FindById.return_value = alv
+
+        result = wrapper.read_table("wnd[0]/usr/shell", max_rows=500)
+        assert len(result.rows) == 500
+
+    def test_default_max_rows_is_50(self, wrapper):
+        """기본 호출은 응답 크기 보호를 위해 50행만 읽는다."""
         alv = _make_alv_shell(
             "wnd[0]/usr/shell",
             row_count=1000, col_count=1, visible_rows=50,
@@ -256,7 +268,7 @@ class TestReadAlvGrid:
         wrapper._session.FindById.return_value = alv
 
         result = wrapper.read_table("wnd[0]/usr/shell")
-        assert len(result.rows) == 500
+        assert len(result.rows) == 50
 
     def test_filtered_sorted_columns(self, wrapper):
         alv = _make_alv_shell(
