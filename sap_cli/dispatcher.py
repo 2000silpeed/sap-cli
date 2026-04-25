@@ -107,7 +107,7 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "recipe_query":   CommandDef("sap_recipe_query",     Permission.READ, category="recipe", risk_level="low"),
     "recipe_pending": CommandDef("sap_recipe_pending",   Permission.READ, category="recipe", risk_level="low"),
     "recipe_failure": CommandDef("sap_recipe_failure",   Permission.WRITE, category="recipe", risk_level="medium"),
-    "recipe_enable":  CommandDef("sap_recipe_enable",    Permission.ADMIN, expose_cli=False, category="recipe", risk_level="high"),
+    "recipe_enable":  CommandDef("sap_recipe_enable",    Permission.ADMIN, category="recipe", risk_level="high"),
     "recipe_version_up": CommandDef("sap_recipe_version_up", Permission.WRITE, expose_cli=False, category="recipe", risk_level="medium"),
     "recipe_history":    CommandDef("sap_recipe_history",    Permission.READ, category="recipe", risk_level="low"),
     "recipe_chain":      CommandDef("sap_recipe_chain_search", Permission.READ, category="recipe", risk_level="low"),

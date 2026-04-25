@@ -533,6 +533,25 @@ def recipe_failure(
     _run_command("recipe_failure", params)
 
 
+@app.command("recipe-enable")
+def recipe_enable(
+    recipe_id: str = typer.Argument(help="재활성화할 레시피 ID"),
+    reset_failure_count: bool = typer.Option(
+        True,
+        "--reset-failure-count/--keep-failure-count",
+        help="재활성화하면서 실패 카운트를 초기화할지 여부",
+    ),
+) -> None:
+    """비활성화된 레시피를 수동 재활성화."""
+    _run_command(
+        "recipe_enable",
+        {
+            "recipe_id": recipe_id,
+            "reset_failure_count": reset_failure_count,
+        },
+    )
+
+
 @app.command("recipe-delete")
 def recipe_delete(
     recipe_id: str = typer.Argument(help="삭제할 레시피 ID"),

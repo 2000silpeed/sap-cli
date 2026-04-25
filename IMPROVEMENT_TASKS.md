@@ -345,9 +345,18 @@ recipe-success
 - `recipe-enable`은 ADMIN 계열, `recipe-version-up`은 steps JSON 입력 UX가 복잡하므로 아직 MCP/dispatcher 중심으로 유지한다.
 - README 4.11에 `recipe-success` / `recipe-failure` 예시와 남은 MCP 중심 항목을 갱신했다.
 
+추가 진행일: 2026-04-26
+
+- 운영자 수동 복구용 ADMIN 계열 recipe CLI 명령을 작은 단계로 추가했다.
+  - `recipe-enable`
+- `recipe-enable`은 기본적으로 실패 카운트를 초기화하며, `--keep-failure-count`로 기존 실패 카운트를 유지할 수 있다.
+- `CommandDef.expose_cli`와 MCP-only allowlist를 갱신해 CLI/registry drift 검증을 유지했다.
+- README 4.11에 `recipe-enable` 예시와 남은 MCP 중심 항목을 갱신했다.
+- `recipe-version-up`은 steps JSON 입력 UX가 복잡하므로 아직 MCP/dispatcher 중심으로 유지한다.
+
 ### 완료 기준
 
-- [ ] 사람이 CLI만 써도 recipe 품질 관리는 가능하며, 버전 관리는 아직 MCP/dispatcher 중심이다.
+- [x] 사람이 CLI만 써도 recipe 품질 관리는 가능하며, 버전 관리는 아직 MCP/dispatcher 중심이다.
 - [x] MCP-only 기능이면 문서에 명시되어 있다.
 
 ---
