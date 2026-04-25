@@ -537,10 +537,20 @@ sap_cli/dispatchers/
 
 `dispatcher.py`는 하위 호환 import 및 중앙 entrypoint만 담당한다.
 
+### 진행 상태
+
+진행일: 2026-04-26
+
+- 대규모 리팩토링 없이 Phase D-1 설계 산출물 `DESIGN_DISPATCHER.md`를 추가했다.
+- 현재 `sap_cli.dispatcher`에서 유지해야 하는 외부 import surface를 명시했다.
+- `dispatchers/` 목표 구조, 단계별 분리 순서, command routing 규칙, 금지 사항, 검증 기준을 정리했다.
+- MCP `TOOL_DEFINITIONS` 자동 생성은 Phase D 범위에서 무리하게 진행하지 않는 것으로 명시했다.
+- D-2 착수 전에는 registry 분리 또는 recipe 분리 중 하나만 선택해 작은 커밋으로 진행한다.
+
 ### 완료 기준
 
-- [ ] 외부 API `dispatch_command()`는 유지된다.
-- [ ] 테스트는 수정 최소화로 통과한다.
+- [x] 외부 API `dispatch_command()`는 유지된다.
+- [x] 테스트는 수정 최소화로 통과한다.
 
 ---
 
