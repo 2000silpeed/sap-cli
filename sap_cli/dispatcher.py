@@ -24,9 +24,14 @@ from .com_wrapper import SapGuiWrapper
 from .dispatchers.recipe import (
     dispatch_recipe_chain as _dispatch_recipe_chain_impl,
     dispatch_recipe_command,
+    dispatch_recipe_delete as _dispatch_recipe_delete_impl,
     dispatch_recipe_enable as _dispatch_recipe_enable_impl,
     dispatch_recipe_failure as _dispatch_recipe_failure_impl,
     dispatch_recipe_history as _dispatch_recipe_history_impl,
+    dispatch_recipe_list as _dispatch_recipe_list_impl,
+    dispatch_recipe_search as _dispatch_recipe_search_impl,
+    dispatch_recipe_show as _dispatch_recipe_show_impl,
+    dispatch_recipe_success as _dispatch_recipe_success_impl,
     is_recipe_command,
 )
 from .macro.player import MacroPlayer
@@ -2169,119 +2174,23 @@ def _dispatch_recipe_save(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _dispatch_recipe_search(args: dict[str, Any]) -> dict[str, Any]:
-    store = _get_recipe_store()
-    query = str(args["query"])
-    results = store.search(query)
-
-    if len(results) == 1:
-        r = results[0]
-        execution_plan = []
-        for i, step in enumerate(r.steps):
-            plan_step = {
-                "order": i + 1,
-                "tool": step.tool,
-                "args": step.args,
-            }
-            if step.hint:
-                plan_step["hint"] = step.hint
-            execution_plan.append(plan_step)
-
-        return {
-            "query": query,
-            "count": 1,
-            "exact_match": True,
-            "recipe_id": r.id,
-            "description": r.description,
-            "context": r.context,
-            "success_count": r.success_count,
-            "execution_plan": execution_plan,
-            "instruction": (
-                f"레시피 '{r.id}'가 검색되었습니다. "
-                "아래 execution_plan의 단계를 순서대로 정확히 실행하세요. "
-                "sap_tree_read, sap_screen 등으로 별도 탐색하지 마세요. "
-                "레시피의 tool과 args를 그대로 호출하면 됩니다. "
-                "모든 단계 완료 후 sap_recipe_success를 호출하세요."
-            ),
-        }
-
-    summaries = []
-    for r in results:
-        summaries.append({
-            "id": r.id,
-            "description": r.description,
-            "context": r.context,
-            "keywords": r.keywords,
-            "step_count": len(r.steps),
-            "success_count": r.success_count,
-        })
-    return {
-        "query": query,
-        "count": len(results),
-        "exact_match": False,
-        "recipes": summaries,
-        "hint": "여러 레시피가 검색되었습니다. context를 비교하여 가장 적합한 레시피의 id를 선택한 후, sap_recipe_search에 해당 id를 정확히 입력하여 상세 steps를 조회하세요.",
-    }
+    return _dispatch_recipe_search_impl(args, _get_recipe_store)
 
 
 def _dispatch_recipe_show(args: dict[str, Any]) -> dict[str, Any]:
-    store = _get_recipe_store()
-    recipe_id = str(args["recipe_id"])
-    r = store.load(recipe_id)
-    if not r:
-        return {"error": True, "message": f"레시피 '{recipe_id}'를 찾을 수 없습니다."}
-
-    execution_plan = []
-    for i, step in enumerate(r.steps):
-        plan_step = {
-            "order": i + 1,
-            "tool": step.tool,
-            "args": step.args,
-        }
-        if step.hint:
-            plan_step["hint"] = step.hint
-        execution_plan.append(plan_step)
-
-    return {
-        "recipe_id": r.id,
-        "description": r.description,
-        "context": r.context,
-        "success_count": r.success_count,
-        "execution_plan": execution_plan,
-        "instruction": (
-            f"레시피 '{r.id}'의 상세 실행 계획입니다. "
-            "execution_plan의 단계를 순서대로 정확히 실행하세요. "
-            "sap_tree_read, sap_screen 등으로 별도 탐색하지 마세요. "
-            "레시피의 tool과 args를 그대로 호출하면 됩니다. "
-            "모든 단계 완료 후 sap_recipe_success를 호출하세요."
-        ),
-    }
+    return _dispatch_recipe_show_impl(args, _get_recipe_store)
 
 
 def _dispatch_recipe_list() -> dict[str, Any]:
-    store = _get_recipe_store()
-    recipes = store.list_all()
-    return {"count": len(recipes), "recipes": recipes}
+    return _dispatch_recipe_list_impl(_get_recipe_store)
 
 
 def _dispatch_recipe_delete(args: dict[str, Any]) -> dict[str, Any]:
-    recipe_id = str(args["recipe_id"])
-    result = _delete_recipe_with_links(recipe_id)
-    return {
-        "deleted": result["deleted"],
-        "recipe_id": recipe_id,
-        "cleaned_tcodes": result["cleaned_tcodes"],
-    }
+    return _dispatch_recipe_delete_impl(args, _delete_recipe_with_links)
 
 
 def _dispatch_recipe_success(args: dict[str, Any]) -> dict[str, Any]:
-    store = _get_recipe_store()
-    recipe_id = str(args["recipe_id"])
-    store.increment_success(recipe_id)
-    recipe = store.load(recipe_id)
-    return {
-        "recipe_id": recipe_id,
-        "success_count": recipe.success_count if recipe else 0,
-    }
+    return _dispatch_recipe_success_impl(args, _get_recipe_store)
 
 
 def _dispatch_recipe_failure(args: dict[str, Any]) -> dict[str, Any]:

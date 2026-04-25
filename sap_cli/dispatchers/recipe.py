@@ -157,3 +157,131 @@ def dispatch_recipe_chain(
             "sap_recipe_show(recipe_id=...)로 상세 단계를 조회하여 그대로 따라 실행하세요."
         ) if summaries else "조건에 맞는 복합 레시피가 없습니다.",
     }
+
+
+def _execution_plan(recipe: Any) -> list[dict[str, Any]]:
+    """Build the client-facing execution plan for a recipe."""
+    plan = []
+    for i, step in enumerate(recipe.steps):
+        plan_step = {
+            "order": i + 1,
+            "tool": step.tool,
+            "args": step.args,
+        }
+        if step.hint:
+            plan_step["hint"] = step.hint
+        plan.append(plan_step)
+    return plan
+
+
+def dispatch_recipe_search(
+    args: dict[str, Any],
+    get_recipe_store: RecipeStoreFactory,
+) -> dict[str, Any]:
+    """Search recipes and expand a single match into an executable plan."""
+    store = get_recipe_store()
+    query = str(args["query"])
+    results = store.search(query)
+
+    if len(results) == 1:
+        r = results[0]
+        return {
+            "query": query,
+            "count": 1,
+            "exact_match": True,
+            "recipe_id": r.id,
+            "description": r.description,
+            "context": r.context,
+            "success_count": r.success_count,
+            "execution_plan": _execution_plan(r),
+            "instruction": (
+                f"레시피 '{r.id}'가 검색되었습니다. "
+                "아래 execution_plan의 단계를 순서대로 정확히 실행하세요. "
+                "sap_tree_read, sap_screen 등으로 별도 탐색하지 마세요. "
+                "레시피의 tool과 args를 그대로 호출하면 됩니다. "
+                "모든 단계 완료 후 sap_recipe_success를 호출하세요."
+            ),
+        }
+
+    summaries = []
+    for r in results:
+        summaries.append({
+            "id": r.id,
+            "description": r.description,
+            "context": r.context,
+            "keywords": r.keywords,
+            "step_count": len(r.steps),
+            "success_count": r.success_count,
+        })
+    return {
+        "query": query,
+        "count": len(results),
+        "exact_match": False,
+        "recipes": summaries,
+        "hint": "여러 레시피가 검색되었습니다. context를 비교하여 가장 적합한 레시피의 id를 선택한 후, sap_recipe_search에 해당 id를 정확히 입력하여 상세 steps를 조회하세요.",
+    }
+
+
+def dispatch_recipe_show(
+    args: dict[str, Any],
+    get_recipe_store: RecipeStoreFactory,
+) -> dict[str, Any]:
+    """Return a recipe as an executable plan."""
+    store = get_recipe_store()
+    recipe_id = str(args["recipe_id"])
+    r = store.load(recipe_id)
+    if not r:
+        return {"error": True, "message": f"레시피 '{recipe_id}'를 찾을 수 없습니다."}
+
+    return {
+        "recipe_id": r.id,
+        "description": r.description,
+        "context": r.context,
+        "success_count": r.success_count,
+        "execution_plan": _execution_plan(r),
+        "instruction": (
+            f"레시피 '{r.id}'의 상세 실행 계획입니다. "
+            "execution_plan의 단계를 순서대로 정확히 실행하세요. "
+            "sap_tree_read, sap_screen 등으로 별도 탐색하지 마세요. "
+            "레시피의 tool과 args를 그대로 호출하면 됩니다. "
+            "모든 단계 완료 후 sap_recipe_success를 호출하세요."
+        ),
+    }
+
+
+def dispatch_recipe_list(
+    get_recipe_store: RecipeStoreFactory,
+) -> dict[str, Any]:
+    """List all saved recipes."""
+    store = get_recipe_store()
+    recipes = store.list_all()
+    return {"count": len(recipes), "recipes": recipes}
+
+
+def dispatch_recipe_delete(
+    args: dict[str, Any],
+    delete_recipe_with_links: Callable[[str], dict[str, Any]],
+) -> dict[str, Any]:
+    """Delete a recipe and clean ontology links through the supplied facade."""
+    recipe_id = str(args["recipe_id"])
+    result = delete_recipe_with_links(recipe_id)
+    return {
+        "deleted": result["deleted"],
+        "recipe_id": recipe_id,
+        "cleaned_tcodes": result["cleaned_tcodes"],
+    }
+
+
+def dispatch_recipe_success(
+    args: dict[str, Any],
+    get_recipe_store: RecipeStoreFactory,
+) -> dict[str, Any]:
+    """Increment a recipe's success counter."""
+    store = get_recipe_store()
+    recipe_id = str(args["recipe_id"])
+    store.increment_success(recipe_id)
+    recipe = store.load(recipe_id)
+    return {
+        "recipe_id": recipe_id,
+        "success_count": recipe.success_count if recipe else 0,
+    }

@@ -138,3 +138,6 @@ uv run pytest tests/test_command_surface_consistency.py
 - `recipe_failure`, `recipe_enable`, `recipe_history`, `recipe_chain` 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.
 - `sap_cli.dispatcher`에는 기존 private import/monkeypatch 호환을 위한 얇은 wrapper를 남겼다.
 - wrapper는 dispatcher module의 `_get_recipe_store`를 implementation에 주입하므로 기존 `sap_cli.dispatcher._get_recipe_store` monkeypatch가 계속 동작한다.
+- 추가로 `recipe_search`, `recipe_show`, `recipe_list`, `recipe_delete`, `recipe_success` 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.
+- `recipe_delete` wrapper는 dispatcher module의 `_delete_recipe_with_links`를 implementation에 주입하므로 helper monkeypatch 호환성을 유지한다.
+- 현재 남은 큰 recipe 구현은 `recipe_save`, `recipe_version_up`, `recipe_query`, `recipe_pending` 및 ontology-link helper 계열이다. helper 이동은 monkeypatch 영향이 커서 별도 작은 단계로 진행한다.
