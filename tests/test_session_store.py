@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+
+import pytest
 
 from sap_cli.auth.policy import SessionConfig
 from sap_cli.session_store import SessionStore
@@ -246,3 +249,25 @@ def test_atomic_write_survives_concurrent_reads(tmp_path):
         store.add_step(session.id, command=f"cmd_{i}", outcome="success")
     reloaded = store.load(session.id)
     assert len(reloaded.steps) == 10
+
+
+def test_save_keeps_existing_session_file_on_write_failure(tmp_path, monkeypatch):
+    store = _make_store(tmp_path)
+    session = store.create_session(user_request="atomic failure")
+    path = store._find_session_path(session.id)
+    assert path is not None
+    original_text = path.read_text(encoding="utf-8")
+
+    def fail_write(fd: int, data: bytes | memoryview) -> int:
+        raise OSError("simulated session write failure")
+
+    monkeypatch.setattr(os, "write", fail_write)
+
+    with pytest.raises(OSError, match="simulated session write failure"):
+        store.finish_session(session.id, outcome="success")
+
+    assert path.read_text(encoding="utf-8") == original_text
+    reloaded = store.load(session.id)
+    assert reloaded is not None
+    assert reloaded.status == "running"
+    assert all(".tmp-" not in child.name for child in path.parent.iterdir())

@@ -1,5 +1,8 @@
 """MacroStore 단위 테스트 - COM 불필요."""
 
+import os
+import stat
+
 import pytest
 from pathlib import Path
 
@@ -62,6 +65,51 @@ class TestMacroStore:
         assert loaded.id == sample_macro.id
         assert loaded.name == sample_macro.name
         assert len(loaded.steps) == 2
+
+    def test_save_uses_0644_mode(self, store, sample_macro):
+        path = store.save(sample_macro)
+
+        assert stat.S_IMODE(path.stat().st_mode) == 0o644
+
+    def test_save_keeps_existing_file_on_write_failure(
+        self,
+        store,
+        sample_macro,
+        monkeypatch,
+    ):
+        path = store.save(sample_macro)
+        original_text = path.read_text(encoding="utf-8")
+
+        updated_macro = sample_macro.model_copy(update={"description": "updated"})
+
+        def fail_write(fd: int, data: bytes | memoryview) -> int:
+            raise OSError("simulated macro write failure")
+
+        monkeypatch.setattr(os, "write", fail_write)
+
+        with pytest.raises(OSError, match="simulated macro write failure"):
+            store.save(updated_macro)
+
+        assert path.read_text(encoding="utf-8") == original_text
+        assert store.load(sample_macro.id) == sample_macro
+        assert all(".tmp-" not in child.name for child in path.parent.iterdir())
+
+    def test_save_retries_partial_writes(self, store, sample_macro, monkeypatch):
+        real_write = os.write
+        calls = 0
+
+        def short_write(fd: int, data: bytes | memoryview) -> int:
+            nonlocal calls
+            calls += 1
+            return real_write(fd, bytes(data[:1]))
+
+        monkeypatch.setattr(os, "write", short_write)
+
+        path = store.save(sample_macro)
+
+        assert store.load(sample_macro.id) == sample_macro
+        assert path.read_text(encoding="utf-8") == sample_macro.model_dump_json(indent=2)
+        assert calls > 1
 
     def test_load_nonexistent(self, store):
         assert store.load("nonexistent") is None

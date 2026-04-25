@@ -449,13 +449,13 @@ sap auth-check sap_recipe_query
 
 ### 작업
 
-- [ ] `MacroStore.save()`를 atomic write로 변경
-- [ ] mode 0o644 적용
-- [ ] corrupt write/partial write 관련 테스트 추가
+- [x] `MacroStore.save()`를 atomic write로 변경
+- [x] mode 0o644 적용
+- [x] corrupt write/partial write 관련 테스트 추가
 
 ### 완료 기준
 
-- [ ] 매크로 저장 중 실패해도 기존 파일이 손상되지 않는다.
+- [x] 매크로 저장 중 실패해도 기존 파일이 손상되지 않는다.
 
 ---
 
@@ -463,13 +463,13 @@ sap auth-check sap_recipe_query
 
 ### 작업
 
-- [ ] `SessionStore._save()`를 공통 atomic write로 변경
-- [ ] directory fsync best effort 적용
-- [ ] 기존 session 테스트 통과
+- [x] `SessionStore._save()`를 공통 atomic write로 변경
+- [x] directory fsync best effort 적용
+- [x] 기존 session 테스트 통과
 
 ### 완료 기준
 
-- [ ] session 저장 정책이 recipe와 일관된다.
+- [x] session 저장 정책이 recipe와 일관된다.
 
 ---
 

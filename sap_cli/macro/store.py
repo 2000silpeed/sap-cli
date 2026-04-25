@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 from sap_cli.macro.schema import Macro
+from sap_cli.storage import atomic_write_text
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_\-]+$")
 
@@ -53,9 +54,10 @@ class MacroStore:
         if self.name_exists(macro.name, exclude_id=macro.id):
             raise ValueError(f"이름이 '{macro.name}'인 매크로가 이미 존재합니다.")
         path = self._macro_path(macro.id)
-        path.write_text(
+        atomic_write_text(
+            path,
             macro.model_dump_json(indent=2),
-            encoding="utf-8",
+            mode=0o644,
         )
         return path
 

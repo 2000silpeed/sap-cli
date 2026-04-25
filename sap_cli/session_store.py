@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
-import tempfile
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -15,6 +13,7 @@ from typing import Any
 
 from .auth.policy import SessionConfig
 from .ontology.schema import McpSession, SessionStep
+from .storage import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
@@ -207,16 +206,5 @@ class SessionStore:
         date_dir = self._date_dir(session.started_at)
         target = date_dir / f"{session.id}.json"
         data = session.model_dump(mode="json", exclude_none=True)
-        content = json.dumps(data, ensure_ascii=False, indent=2)
-        fd, tmp_path = tempfile.mkstemp(dir=date_dir, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(content)
-            os.replace(tmp_path, target)
-        except BaseException:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            raise
+        atomic_write_json(target, data, mode=0o644)
         return target
