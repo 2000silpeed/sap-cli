@@ -366,17 +366,33 @@ sap auth-tools
 sap auth-check sap_recipe_query
 ```
 
+### 진행 상태
+
+진행일: 2026-04-26
+
+- SAP GUI 실행 경로와 분리된 read-only 진단 CLI 그룹과 top-level 별칭을 추가했다.
+  - `sap auth status`
+  - `sap auth tools`
+  - `sap auth check <tool>`
+  - `sap auth-status`
+  - `sap auth-tools`
+  - `sap auth-check <tool>`
+- `sap auth status`는 policy 로드 여부, 기본 policy path, active/effective agent, agent relation 요약, visible MCP tool 개수를 출력한다.
+- `sap auth tools`는 현재 agent에 실제 노출되는 MCP tool 목록을 출력한다.
+- `sap auth check <tool>`은 tool permission, resource, MCP 노출 여부, 권한 판단 결과와 reason을 출력한다.
+- 정책이 없으면 `mode: "allow_all"`, 유효한 policy/agent가 있으면 `mode: "enforcing"`으로 표시한다.
+
 ### 작업
 
-- [ ] 현재 policy 로드 여부 출력
-- [ ] active_agent 출력
-- [ ] agent relation 요약 출력
-- [ ] visible MCP tools 출력
-- [ ] 특정 tool/resource에 대한 permission 판단 결과 출력
+- [x] 현재 policy 로드 여부 출력
+- [x] active_agent 출력
+- [x] agent relation 요약 출력
+- [x] visible MCP tools 출력
+- [x] 특정 tool/resource에 대한 permission 판단 결과 출력
 
 ### 완료 기준
 
-- [ ] 권한 문제를 로그를 뒤지지 않고 CLI에서 진단할 수 있다.
+- [x] 권한 문제를 로그를 뒤지지 않고 CLI에서 진단할 수 있다.
 
 ---
 

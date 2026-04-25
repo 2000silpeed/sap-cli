@@ -20,18 +20,23 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
+from pathlib import Path
 from typing import Any, Optional
 
 import typer
 from rich.console import Console
 
+from .auth.checker import PermissionChecker
+from .auth.policy import TOOL_PERMISSION_MAP, Policy, load_policy
 from .dispatcher import (
     ApprovalRequiredError,
     DispatchContext,
     PermissionDeniedError,
     dispatch_command,
+    _resolve_agent_name,
 )
 
 app = typer.Typer(
@@ -40,6 +45,8 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+auth_app = typer.Typer(help="ReBAC 정책/도구 노출 진단")
+app.add_typer(auth_app, name="auth")
 
 # 글로벌 슬롯 ID — @app.callback()에서 설정
 _global_slot_id: str = "ses0"
@@ -532,6 +539,146 @@ def recipe_delete(
 ) -> None:
     """레시피 삭제."""
     _run_command("recipe_delete", {"recipe_id": recipe_id})
+
+
+# -------------------------------------------------------------------
+# Auth Diagnostic Commands
+# -------------------------------------------------------------------
+
+def _default_policy_path() -> Path:
+    """load_policy()와 같은 기본 정책 파일 경로를 반환."""
+    yaml_path = Path.home() / ".sap_cli" / "policy.yaml"
+    if yaml_path.exists():
+        return yaml_path
+    json_path = yaml_path.with_suffix(".json")
+    if json_path.exists():
+        return json_path
+    return yaml_path
+
+
+def _load_auth_diagnostic(agent: str | None = None) -> tuple[Policy | None, PermissionChecker, str | None]:
+    """진단 명령용 policy/checker/effective agent 구성."""
+    policy = load_policy()
+    checker = PermissionChecker(policy)
+    configured_agent = _resolve_agent_name(policy, agent)
+    if configured_agent:
+        checker.set_agent(configured_agent)
+    effective_agent = checker.agent_name or configured_agent
+    return policy, checker, effective_agent
+
+
+def _agent_relation_summary(policy: Policy | None, agent_name: str | None) -> list[dict[str, str]]:
+    if not policy or not agent_name:
+        return []
+    agent_policy = policy.get_agent(agent_name)
+    if not agent_policy:
+        return []
+    return [
+        {"resource": binding.resource, "relation": binding.relation.value}
+        for binding in agent_policy.relations
+    ]
+
+
+def _visible_mcp_tool_names(checker: PermissionChecker) -> list[str]:
+    from .mcp_server import _visible_tool_names_for_checker
+
+    return _visible_tool_names_for_checker(checker)
+
+
+@auth_app.command("status")
+def auth_status(
+    agent: Optional[str] = typer.Option(None, "--agent", help="진단할 agent 이름 (미지정 시 SAP_CLI_AGENT 또는 active_agent)"),
+) -> None:
+    """현재 ReBAC 정책 로드 상태와 active/effective agent를 출력."""
+    policy, checker, effective_agent = _load_auth_diagnostic(agent)
+    visible_tools = _visible_mcp_tool_names(checker)
+    policy_path = _default_policy_path()
+
+    _output_json(
+        {
+            "policy_loaded": policy is not None,
+            "policy_path": str(policy_path),
+            "mode": "enforcing" if checker.is_enforcing else "allow_all",
+            "active_agent": policy.active_agent if policy else None,
+            "env_agent": os.getenv("SAP_CLI_AGENT") or None,
+            "effective_agent": effective_agent,
+            "agent_known": bool(policy and effective_agent and policy.get_agent(effective_agent)),
+            "agents": sorted(policy.agents) if policy else [],
+            "relations": _agent_relation_summary(policy, effective_agent),
+            "visible_mcp_tool_count": len(visible_tools),
+        }
+    )
+
+
+@auth_app.command("tools")
+def auth_tools(
+    agent: Optional[str] = typer.Option(None, "--agent", help="진단할 agent 이름 (미지정 시 SAP_CLI_AGENT 또는 active_agent)"),
+) -> None:
+    """현재 agent에 노출되는 MCP tool 목록을 출력."""
+    policy, checker, effective_agent = _load_auth_diagnostic(agent)
+    visible_tools = _visible_mcp_tool_names(checker)
+
+    _output_json(
+        {
+            "policy_loaded": policy is not None,
+            "mode": "enforcing" if checker.is_enforcing else "allow_all",
+            "effective_agent": effective_agent,
+            "visible_mcp_tools": visible_tools,
+            "visible_mcp_tool_count": len(visible_tools),
+        }
+    )
+
+
+@auth_app.command("check")
+def auth_check(
+    tool: str = typer.Argument(help="확인할 MCP tool 이름 (예: sap_recipe_query)"),
+    agent: Optional[str] = typer.Option(None, "--agent", help="진단할 agent 이름 (미지정 시 SAP_CLI_AGENT 또는 active_agent)"),
+) -> None:
+    """특정 tool의 permission/resource/노출/허용 여부를 진단."""
+    policy, checker, effective_agent = _load_auth_diagnostic(agent)
+    visible_tools = set(_visible_mcp_tool_names(checker))
+    permission = TOOL_PERMISSION_MAP.get(tool)
+    check = checker.check_tool(tool, {})
+
+    _output_json(
+        {
+            "tool": tool,
+            "known_tool": permission is not None,
+            "permission": permission.value if permission else None,
+            "resource": checker.resolve_resource(tool, {}),
+            "policy_loaded": policy is not None,
+            "mode": "enforcing" if checker.is_enforcing else "allow_all",
+            "effective_agent": effective_agent,
+            "visible_on_mcp": tool in visible_tools,
+            "allowed": check.allowed,
+            "reason": check.reason,
+        }
+    )
+
+
+@app.command("auth-status")
+def auth_status_alias(
+    agent: Optional[str] = typer.Option(None, "--agent", help="진단할 agent 이름 (미지정 시 SAP_CLI_AGENT 또는 active_agent)"),
+) -> None:
+    """`sap auth status`의 top-level 별칭."""
+    auth_status(agent)
+
+
+@app.command("auth-tools")
+def auth_tools_alias(
+    agent: Optional[str] = typer.Option(None, "--agent", help="진단할 agent 이름 (미지정 시 SAP_CLI_AGENT 또는 active_agent)"),
+) -> None:
+    """`sap auth tools`의 top-level 별칭."""
+    auth_tools(agent)
+
+
+@app.command("auth-check")
+def auth_check_alias(
+    tool: str = typer.Argument(help="확인할 MCP tool 이름 (예: sap_recipe_query)"),
+    agent: Optional[str] = typer.Option(None, "--agent", help="진단할 agent 이름 (미지정 시 SAP_CLI_AGENT 또는 active_agent)"),
+) -> None:
+    """`sap auth check <tool>`의 top-level 별칭."""
+    auth_check(tool, agent)
 
 
 # -------------------------------------------------------------------

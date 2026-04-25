@@ -1132,6 +1132,27 @@ SM30, SE38, SU01 등 위험 트랜잭션은 모든 프리셋에서 차단됩니�
 
 도구 호출 이력은 `~/.sap_cli/audit/` 경로에 감사 로그로, 실행 전후 상태는 `~/.sap_cli/transcripts/` 경로에 transcript로 기록됩니다.
 
+### Auth 진단 CLI
+
+ReBAC 운영 중 “정책이 로드됐는지”, “현재 agent가 무엇인지”, “왜 MCP 도구가 보이지 않는지”를 SAP GUI 연결 없이 확인할 수 있습니다.
+
+```powershell
+# 정책 로드 여부, active/effective agent, relation 요약, visible MCP tool 개수
+sap auth status
+sap auth-status
+
+# 현재 agent에 노출되는 MCP tool 목록
+sap auth tools
+sap auth-tools
+
+# 특정 tool의 permission/resource/노출/허용 여부
+sap auth check sap_recipe_query
+sap auth check sap_recipe_failure --agent readonly
+sap auth-check sap_recipe_query
+```
+
+정책 파일이 없으면 `mode: "allow_all"`로 표시되며, 정책 파일이 있고 active/effective agent가 유효하면 `mode: "enforcing"`으로 표시됩니다.
+
 ### 정책 파일 예시
 
 ```yaml
