@@ -21,6 +21,7 @@ from .auth.policy import TOOL_PERMISSION_MAP, Permission, Policy, load_policy
 from .auth.transcript import TranscriptLogger
 from .command_parser import extract_tcode_from_command
 from .com_wrapper import SapGuiWrapper
+from .dispatchers.recipe import dispatch_recipe_command, is_recipe_command
 from .macro.player import MacroPlayer
 from .ontology.store import OntologyStore
 from .service import (
@@ -526,32 +527,8 @@ def _execute_command(
         return _dispatch_capture(args, ctx)
     if command == "capture_list":
         return _dispatch_capture_list(args)
-    if command == "recipe_save":
-        return _dispatch_recipe_save(args)
-    if command == "recipe_search":
-        return _dispatch_recipe_search(args)
-    if command == "recipe_show":
-        return _dispatch_recipe_show(args)
-    if command == "recipe_list":
-        return _dispatch_recipe_list()
-    if command == "recipe_delete":
-        return _dispatch_recipe_delete(args)
-    if command == "recipe_success":
-        return _dispatch_recipe_success(args)
-    if command == "recipe_query":
-        return _dispatch_recipe_query(args)
-    if command == "recipe_pending":
-        return _dispatch_recipe_pending(args)
-    if command == "recipe_failure":
-        return _dispatch_recipe_failure(args)
-    if command == "recipe_enable":
-        return _dispatch_recipe_enable(args)
-    if command == "recipe_version_up":
-        return _dispatch_recipe_version_up(args)
-    if command == "recipe_history":
-        return _dispatch_recipe_history(args)
-    if command == "recipe_chain":
-        return _dispatch_recipe_chain(args)
+    if is_recipe_command(command):
+        return dispatch_recipe_command(command, args, _RECIPE_HANDLERS)
     if command == "session_start":
         return _dispatch_session_start(args, ctx)
     if command == "session_end":
@@ -2538,6 +2515,23 @@ def _dispatch_recipe_pending(args: dict[str, Any]) -> dict[str, Any]:
             "sap_session_show로 상세 확인 후 sap_session_approve로 승인하면 레시피로 저장됩니다."
         ) if pending else "현재 미승인 레시피 후보가 없습니다.",
     }
+
+
+_RECIPE_HANDLERS = {
+    "recipe_save": _dispatch_recipe_save,
+    "recipe_search": _dispatch_recipe_search,
+    "recipe_show": _dispatch_recipe_show,
+    "recipe_list": lambda _args: _dispatch_recipe_list(),
+    "recipe_delete": _dispatch_recipe_delete,
+    "recipe_success": _dispatch_recipe_success,
+    "recipe_query": _dispatch_recipe_query,
+    "recipe_pending": _dispatch_recipe_pending,
+    "recipe_failure": _dispatch_recipe_failure,
+    "recipe_enable": _dispatch_recipe_enable,
+    "recipe_version_up": _dispatch_recipe_version_up,
+    "recipe_history": _dispatch_recipe_history,
+    "recipe_chain": _dispatch_recipe_chain,
+}
 
 
 def _dispatch_session_start(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:

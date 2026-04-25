@@ -127,8 +127,8 @@ uv run pytest tests/test_command_surface_consistency.py
 
 ## D-2 착수 전 체크리스트
 
-- [ ] `dispatchers/` 패키지 생성
-- [ ] registry 분리 또는 recipe 분리 중 하나만 선택
-- [ ] `sap_cli.dispatcher` import 호환성 유지
-- [ ] recipe 관련 테스트 범위 먼저 실행
-- [ ] 전체 테스트 실행
+- [x] `dispatchers/` 패키지 생성
+- [x] registry 분리 또는 recipe 분리 중 하나만 선택
+- [x] `sap_cli.dispatcher` import 호환성 유지
+- [x] recipe 관련 테스트 범위 먼저 실행
+- [x] 전체 테스트 실행

@@ -590,6 +590,12 @@ _dispatch_recipe_pending
 - [ ] dispatcher.py 줄 수 감소
 - [ ] recipe 기능 수정 시 recipe dispatcher만 보면 된다.
 
+### 진행 메모
+
+- D-2의 첫 작은 단계로 `sap_cli/dispatchers/` 패키지와 `recipe.py` recipe command router를 추가했다.
+- 대규모 함수 이동은 피하고, 기존 `sap_cli.dispatcher` private import/monkeypatch 호환성을 유지한 채 `_execute_command()`의 recipe if-chain만 feature router로 넘겼다.
+- 다음 단계에서 `_dispatch_recipe_*` 구현과 recipe helper를 `sap_cli/dispatchers/recipe.py`로 옮기면 `dispatcher.py` 줄 수 감소 완료 기준을 체크할 수 있다.
+
 ---
 
 ## D-3. Session dispatch 분리
