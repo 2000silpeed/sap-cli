@@ -116,6 +116,12 @@ from .dispatchers.capture import (
     dispatch_capture_list as _dispatch_capture_list_impl,
     is_capture_command,
 )
+from .dispatchers.form import (
+    dispatch_fill as _dispatch_fill_impl,
+    dispatch_form_command,
+    dispatch_learn as _dispatch_learn_impl,
+    is_form_command,
+)
 from .ontology.store import OntologyStore
 from .service import (
     execute_sap_action as _execute_sap_action,
@@ -494,12 +500,17 @@ def _execute_command(
         )
     if is_transcript_command(command):
         return dispatch_transcript_command(command, args, policy)
-    if command == "learn":
-        return _dispatch_learn(ctx)
     if is_process_command(command):
         return dispatch_process_command(command, args, get_store=_get_store)
-    if command == "fill":
-        return _dispatch_fill(args, ctx)
+    if is_form_command(command):
+        return dispatch_form_command(
+            command,
+            args,
+            ctx,
+            get_sap=_get_sap,
+            get_learner=_get_learner,
+            with_post_action=_with_post_action,
+        )
     if is_capture_command(command):
         return dispatch_capture_command(command, args, ctx, get_sap=_get_sap)
     if is_recipe_command(command):
@@ -749,15 +760,7 @@ def _make_ontology_store(policy: Policy | None) -> OntologyStore:
 
 
 def _dispatch_learn(ctx: DispatchContext | None = None) -> dict[str, Any]:
-    slot_id = ctx.slot_id if ctx else "ses0"
-    screen = _get_learner(slot_id).learn_current_screen()
-    return {
-        "learned": True,
-        "transaction": screen.transaction,
-        "screen_number": screen.screen_number,
-        "fields_count": len(screen.fields),
-        "buttons_count": len(screen.buttons),
-    }
+    return _dispatch_learn_impl(ctx, _get_learner)
 
 
 def _dispatch_annotate(args: dict[str, Any]) -> dict[str, Any]:
@@ -797,62 +800,7 @@ def _dispatch_process_status() -> dict[str, Any]:
 
 
 def _dispatch_fill(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
-    """여러 필드를 한번에 입력.
-
-    필드명(MATNR) 또는 element_id 모두 지원.
-    필드명인 경우 현재 화면을 스캔하여 element_id를 자동 매핑.
-    """
-    sap = _get_sap(ctx.slot_id)
-    fields: dict[str, str] = args["fields"]
-    do_enter = args.get("enter", True)
-
-    screen = sap.get_screen()
-    results: list[dict[str, Any]] = []
-    errors: list[str] = []
-
-    for key, value in fields.items():
-        # 1) element_id로 직접 지정한 경우 (wnd[0]/... 형태)
-        if key.startswith("wnd["):
-            element_id = key
-        else:
-            # 2) 필드명으로 검색 (MATNR, WERKS 등)
-            field = (
-                screen.get_field_by_name(key)
-                or screen.get_field_by_name(key.upper())
-                or screen.get_field_by_label(key)
-            )
-            if field is None:
-                errors.append(f"필드를 찾을 수 없습니다: {key}")
-                continue
-            element_id = field.id
-
-        try:
-            if "/chk" in element_id:
-                checked = value.lower() not in ("", "0", "false", "off", "no")
-                sap.set_checkbox(element_id, checked)
-            elif "/rad" in element_id:
-                sap.select_radio(element_id)
-            else:
-                sap.set_field(element_id, value)
-            results.append({
-                "field": key,
-                "element_id": element_id,
-                "value_set": value,
-            })
-        except Exception as e:
-            errors.append(f"{key} ({element_id}): {e}")
-
-    if do_enter and results and not errors:
-        sap.send_vkey(0)
-
-    payload: dict[str, Any] = {
-        "filled": len(results),
-        "results": results,
-        "enter_sent": do_enter and bool(results) and not errors,
-    }
-    if errors:
-        payload["errors"] = errors
-    return _with_post_action(payload, sap, "fill", ctx)
+    return _dispatch_fill_impl(args, ctx, _get_sap, _with_post_action)
 
 
 def _dispatch_ontology_relationships(args: dict[str, Any]) -> dict[str, Any]:

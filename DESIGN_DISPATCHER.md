@@ -194,6 +194,15 @@ uv run pytest tests/test_command_surface_consistency.py
 - `sap_cli/dispatchers/__init__.py`에서도 capture command public surface를 re-export한다.
 - `dispatcher.py`는 1483줄에서 1451줄로 감소했다.
 
+## D-10 form 분리 진행 메모
+
+- `fill/learn` 구현을 `sap_cli/dispatchers/form.py`로 이동했다.
+- `sap_cli.dispatcher`에는 `_dispatch_fill`, `_dispatch_learn` wrapper를 유지해 기존 private import surface를 보존한다.
+- 중앙 `_execute_command`는 `is_form_command()`와 `dispatch_form_command()`를 통해 form 명령군을 라우팅한다.
+- form dispatcher는 SAP wrapper factory, learner factory, post-action hook을 facade에서 주입받으므로 기존 monkeypatch 기반 테스트 호환성을 유지한다.
+- `sap_cli/dispatchers/__init__.py`에서도 form command public surface를 re-export한다.
+- `dispatcher.py`는 1451줄에서 1399줄로 감소했다.
+
 ## D-2 진행 메모
 
 - `recipe_failure`, `recipe_enable`, `recipe_history`, `recipe_chain` 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.

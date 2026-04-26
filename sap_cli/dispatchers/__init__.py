@@ -46,6 +46,11 @@ from .capture import (
     dispatch_capture_command,
     is_capture_command,
 )
+from .form import (
+    FORM_COMMANDS,
+    dispatch_form_command,
+    is_form_command,
+)
 
 __all__ = [
     "COMMAND_REGISTRY",
@@ -74,4 +79,7 @@ __all__ = [
     "CAPTURE_COMMANDS",
     "dispatch_capture_command",
     "is_capture_command",
+    "FORM_COMMANDS",
+    "dispatch_form_command",
+    "is_form_command",
 ]
