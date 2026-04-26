@@ -546,6 +546,8 @@ sap_cli/dispatchers/
 - `dispatchers/` 목표 구조, 단계별 분리 순서, command routing 규칙, 금지 사항, 검증 기준을 정리했다.
 - MCP `TOOL_DEFINITIONS` 자동 생성은 Phase D 범위에서 무리하게 진행하지 않는 것으로 명시했다.
 - D-2 착수 전에는 registry 분리 또는 recipe 분리 중 하나만 선택해 작은 커밋으로 진행한다.
+- D-3의 작은 선행 단계로 command registry를 `sap_cli/dispatchers/registry.py`로 분리했다.
+- `sap_cli.dispatcher`는 `CommandDef`, `COMMAND_REGISTRY`, `COMMAND_TOOL_MAP`, `MCP_TOOL_TO_COMMAND`를 re-export해 기존 import surface를 유지한다.
 
 ### 완료 기준
 
@@ -619,7 +621,33 @@ _dispatch_recipe_pending
 
 ---
 
-## D-3. Session dispatch 분리
+## D-3. Registry 분리
+
+### 이동 대상
+
+```text
+CommandDef
+COMMAND_REGISTRY
+COMMAND_TOOL_MAP
+MCP_TOOL_TO_COMMAND
+```
+
+### 완료 기준
+
+- [x] `sap_cli.dispatcher` import 호환성 유지
+- [x] registry / policy / MCP / CLI drift 테스트 통과
+- [x] MCP `TOOL_DEFINITIONS` 자동 생성은 진행하지 않음
+
+### 진행 메모
+
+- `CommandDef`, `COMMAND_REGISTRY`, `COMMAND_TOOL_MAP`, `MCP_TOOL_TO_COMMAND`를 `sap_cli/dispatchers/registry.py`로 이동했다.
+- `sap_cli/dispatchers/__init__.py`에서도 registry public surface를 re-export한다.
+- `sap_cli.dispatcher`는 같은 이름을 import해 기존 CLI, MCP, daemon, 테스트 import 호환성을 유지한다.
+- 핵심 drift 테스트 통과 확인: `tests/test_command_surface_consistency.py`.
+
+---
+
+## D-4. Session dispatch 분리
 
 ### 이동 대상
 
@@ -640,7 +668,7 @@ _log_session_step
 
 ---
 
-## D-4. Ontology / Process dispatch 분리
+## D-5. Ontology / Process dispatch 분리
 
 ### 이동 대상
 
@@ -917,8 +945,9 @@ ADT는 강력하지만 인증/권한/시스템 설정 의존성이 추가된다.
 
 1. D-1 dispatcher 분리 설계
 2. D-2 recipe dispatch 분리
-3. D-3 session dispatch 분리
-4. D-4 ontology/process dispatch 분리
+3. D-3 registry 분리
+4. D-4 session dispatch 분리
+5. D-5 ontology/process dispatch 분리
 
 완료 기준:
 

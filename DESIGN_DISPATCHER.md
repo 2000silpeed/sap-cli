@@ -133,6 +133,14 @@ uv run pytest tests/test_command_surface_consistency.py
 - [x] recipe 관련 테스트 범위 먼저 실행
 - [x] 전체 테스트 실행
 
+## D-3 registry 분리 진행 메모
+
+- `CommandDef`, `COMMAND_REGISTRY`, `COMMAND_TOOL_MAP`, `MCP_TOOL_TO_COMMAND`를 `sap_cli/dispatchers/registry.py`로 이동했다.
+- `sap_cli.dispatcher`는 같은 이름을 re-export해 기존 외부 import surface를 유지한다.
+- `sap_cli/dispatchers/__init__.py`에서도 registry public surface를 re-export한다.
+- MCP `TOOL_DEFINITIONS` 자동 생성은 설계대로 진행하지 않았다.
+- registry drift 핵심 테스트 통과 확인: `tests/test_command_surface_consistency.py`.
+
 ## D-2 진행 메모
 
 - `recipe_failure`, `recipe_enable`, `recipe_history`, `recipe_chain` 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.
