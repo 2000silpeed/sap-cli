@@ -131,6 +131,7 @@ from .dispatchers.sap_actions import (
     dispatch_tree_doubleclick as _dispatch_tree_doubleclick_impl,
     dispatch_tree_expand as _dispatch_tree_expand_impl,
     dispatch_tree_press as _dispatch_tree_press_impl,
+    dispatch_tree_read as _dispatch_tree_read_impl,
     dispatch_tree_select as _dispatch_tree_select_impl,
     is_sap_action_command,
 )
@@ -412,30 +413,6 @@ def _execute_command(
         if isinstance(col_filter, str):
             col_filter = [c.strip() for c in col_filter.split(",")]
         return _get_sap(ctx.slot_id).read_table(element_id, max_rows=max_rows, columns=col_filter).model_dump(mode="json")
-    if command == "tree":
-        element_id = str(args["element_id"])
-        node_key = str(args.get("node_key", "")).strip()
-        depth = int(args.get("depth", -1))
-        sap = _get_sap(ctx.slot_id)
-        nodes = sap.read_tree(element_id)
-        # node_key가 지정되면 해당 노드의 자식만 반환
-        if node_key:
-            target = _find_tree_node(nodes, node_key)
-            if target is None:
-                raise ValueError(f"노드를 찾을 수 없습니다: {node_key}")
-            nodes = target.children
-        # depth 제한 적용
-        if depth >= 0:
-            nodes = [_truncate_tree_depth(n, depth) for n in nodes]
-        columns = getattr(sap, "_tree_columns", [])
-        return {
-            "element_id": element_id,
-            **({"columns": columns} if columns else {}),
-            **({"parent_node_key": node_key} if node_key else {}),
-            **({"depth": depth} if depth >= 0 else {}),
-            "node_count": sum(1 for _ in _flatten_tree_nodes(nodes)),
-            "nodes": [n.model_dump(mode="json", exclude_none=True) for n in nodes],
-        }
     if command == "command":
         sap = _get_sap(ctx.slot_id)
         command_text = str(args["cmd"])
@@ -652,6 +629,10 @@ def _dispatch_table_doubleclick(args: dict[str, Any], ctx: DispatchContext) -> d
     return _dispatch_table_doubleclick_impl(args, ctx, _get_sap, _with_post_action)
 
 
+def _dispatch_tree_read(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    return _dispatch_tree_read_impl(args, ctx, _get_sap)
+
+
 def _dispatch_tree_select(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
     return _dispatch_tree_select_impl(args, ctx, _get_sap, _with_post_action)
 
@@ -800,53 +781,6 @@ def _dispatch_ontology_rebuild() -> dict[str, Any]:
 
 def _dispatch_process_path(args: dict[str, Any]) -> dict[str, Any]:
     return _dispatch_process_path_impl(args, _get_store)
-
-
-def _flatten_tree_nodes(nodes: list) -> list:
-    """트리 노드를 평탄화."""
-    result = []
-    for n in nodes:
-        result.append(n)
-        if n.children:
-            result.extend(_flatten_tree_nodes(n.children))
-    return result
-
-
-def _find_tree_node(nodes: list, key: str):
-    """트리에서 key에 해당하는 노드를 재귀 탐색."""
-    for n in nodes:
-        if n.key == key:
-            return n
-        if n.children:
-            found = _find_tree_node(n.children, key)
-            if found:
-                return found
-    return None
-
-
-def _truncate_tree_depth(node, remaining_depth: int):
-    """트리 깊이를 제한. 잘린 노드에는 child_count를 표시."""
-    from sap_cli.ontology.schema import SapTreeNode
-    if remaining_depth <= 0:
-        # 이 노드까지만 표시, children은 잘라내고 child_count만 기록
-        return SapTreeNode(
-            key=node.key,
-            text=node.text,
-            level=node.level,
-            items=node.items,
-            children=[],
-            child_count=len(node.children) if node.children else None,
-        )
-    # 아직 깊이 여유 있음 — 자식도 재귀 처리
-    truncated_children = [_truncate_tree_depth(c, remaining_depth - 1) for c in node.children]
-    return SapTreeNode(
-        key=node.key,
-        text=node.text,
-        level=node.level,
-        items=node.items,
-        children=truncated_children,
-        child_count=None,
-    )
 
 
 def _dispatch_capture(args: dict[str, Any], ctx: DispatchContext | None = None) -> dict[str, Any]:

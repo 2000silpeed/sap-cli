@@ -913,6 +913,38 @@ tree_press
 
 ---
 
+## D-13. Tree read dispatch/helper 분리
+
+### 이동 대상
+
+```text
+tree
+_flatten_tree_nodes
+_find_tree_node
+_truncate_tree_depth
+```
+
+### 완료 기준
+
+- [x] `tree` read command routing이 SAP action dispatcher를 통한다.
+- [x] tree read helper가 중앙 dispatcher에서 제거된다.
+- [x] `sap_cli.dispatcher` facade wrapper 유지
+- [x] 관련 테스트 및 전체 테스트 통과
+
+### 진행 메모
+
+- 기존 중앙 `_execute_command`에 남아 있던 `tree` 읽기 구현을 `sap_cli/dispatchers/sap_actions.py`의 `dispatch_tree_read()`로 이동했다.
+- `_flatten_tree_nodes`/`_find_tree_node`/`_truncate_tree_depth` helper를 각각 `flatten_tree_nodes`/`find_tree_node`/`truncate_tree_depth`로 SAP action dispatcher에 분리했다.
+- 중앙 `_execute_command`는 `tree` 명령도 기존 `is_sap_action_command()` / `dispatch_sap_action_command()` 라우팅으로 처리한다.
+- `sap_cli.dispatcher`에는 `_dispatch_tree_read` facade wrapper를 추가해 private import/monkeypatch 호환 구조를 유지했다.
+- `read_table` 기본 `max_rows=50`은 변경하지 않았다.
+- `dispatcher.py`는 1378줄에서 1312줄로 감소했다.
+- 검증: `uv run pytest tests/test_command_surface_consistency.py tests/test_session_analyzer.py tests/test_scan_children.py tests/test_alv_grid.py` → 74 passed.
+- 검증: `uv run pytest tests/test_command_surface_consistency.py tests/test_dispatcher.py tests/test_session_analyzer.py tests/test_scan_children.py tests/test_alv_grid.py` → 82 passed.
+- 검증: `uv run pytest` → 505 passed.
+
+---
+
 # Phase E: Recipe 운영 고도화
 
 목표: recipe를 실제 사내 운영 자산으로 만들기 위한 품질·검증·소유권 기반을 준비한다.

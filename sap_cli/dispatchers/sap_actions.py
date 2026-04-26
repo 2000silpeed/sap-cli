@@ -17,6 +17,7 @@ SAP_ACTION_COMMANDS: frozenset[str] = frozenset(
         "record_step",
         "table_select",
         "table_doubleclick",
+        "tree",
         "tree_select",
         "tree_doubleclick",
         "tree_expand",
@@ -57,6 +58,8 @@ def dispatch_sap_action_command(
         return dispatch_table_select(args, ctx, get_sap, with_post_action)
     if command == "table_doubleclick":
         return dispatch_table_doubleclick(args, ctx, get_sap, with_post_action)
+    if command == "tree":
+        return dispatch_tree_read(args, ctx, get_sap)
     if command == "tree_select":
         return dispatch_tree_select(args, ctx, get_sap, with_post_action)
     if command == "tree_doubleclick":
@@ -143,6 +146,81 @@ def dispatch_table_doubleclick(
     sap.double_click_table_cell(element_id, row, col)
     payload = {"double_clicked": True, "table": element_id, "row": row, "column": col}
     return with_post_action(payload, sap, "table_doubleclick", ctx)
+
+
+def dispatch_tree_read(args: dict[str, Any], ctx: Any, get_sap: Factory) -> dict[str, Any]:
+    """Read a SAP GUI tree, optionally narrowing by node and depth."""
+    element_id = str(args["element_id"])
+    node_key = str(args.get("node_key", "")).strip()
+    depth = int(args.get("depth", -1))
+    sap = get_sap(ctx.slot_id)
+    nodes = sap.read_tree(element_id)
+
+    if node_key:
+        target = find_tree_node(nodes, node_key)
+        if target is None:
+            raise ValueError(f"노드를 찾을 수 없습니다: {node_key}")
+        nodes = target.children
+
+    if depth >= 0:
+        nodes = [truncate_tree_depth(n, depth) for n in nodes]
+
+    columns = getattr(sap, "_tree_columns", [])
+    return {
+        "element_id": element_id,
+        **({"columns": columns} if columns else {}),
+        **({"parent_node_key": node_key} if node_key else {}),
+        **({"depth": depth} if depth >= 0 else {}),
+        "node_count": sum(1 for _ in flatten_tree_nodes(nodes)),
+        "nodes": [n.model_dump(mode="json", exclude_none=True) for n in nodes],
+    }
+
+
+def flatten_tree_nodes(nodes: list[Any]) -> list[Any]:
+    """Flatten tree nodes in pre-order."""
+    result: list[Any] = []
+    for node in nodes:
+        result.append(node)
+        if node.children:
+            result.extend(flatten_tree_nodes(node.children))
+    return result
+
+
+def find_tree_node(nodes: list[Any], key: str) -> Any | None:
+    """Find a tree node recursively by key."""
+    for node in nodes:
+        if node.key == key:
+            return node
+        if node.children:
+            found = find_tree_node(node.children, key)
+            if found:
+                return found
+    return None
+
+
+def truncate_tree_depth(node: Any, remaining_depth: int) -> Any:
+    """Limit tree depth and preserve child_count for truncated children."""
+    from sap_cli.ontology.schema import SapTreeNode
+
+    if remaining_depth <= 0:
+        return SapTreeNode(
+            key=node.key,
+            text=node.text,
+            level=node.level,
+            items=node.items,
+            children=[],
+            child_count=len(node.children) if node.children else None,
+        )
+
+    truncated_children = [truncate_tree_depth(child, remaining_depth - 1) for child in node.children]
+    return SapTreeNode(
+        key=node.key,
+        text=node.text,
+        level=node.level,
+        items=node.items,
+        children=truncated_children,
+        child_count=None,
+    )
 
 
 def dispatch_tree_select(

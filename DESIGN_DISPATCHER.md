@@ -221,6 +221,15 @@ uv run pytest tests/test_command_surface_consistency.py
 - `read_table` 기본 `max_rows=50`은 변경하지 않았다.
 - `dispatcher.py`는 1385줄에서 1378줄로 감소했다.
 
+## D-13 tree read/helper 분리 진행 메모
+
+- `tree` 읽기 구현을 `sap_cli/dispatchers/sap_actions.py`의 `dispatch_tree_read()`로 이동했다.
+- tree read helper인 `_flatten_tree_nodes`, `_find_tree_node`, `_truncate_tree_depth`를 SAP action dispatcher로 옮기고 public helper명은 leading underscore 없이 정리했다.
+- 중앙 `_execute_command`는 `tree` 명령도 `is_sap_action_command()`와 `dispatch_sap_action_command()` 라우팅으로 처리한다.
+- `sap_cli.dispatcher`에는 `_dispatch_tree_read` wrapper를 추가해 facade compatibility를 유지한다.
+- `read_table` 기본 `max_rows=50`은 변경하지 않았다.
+- `dispatcher.py`는 1378줄에서 1312줄로 감소했다.
+
 ## D-2 진행 메모
 
 - `recipe_failure`, `recipe_enable`, `recipe_history`, `recipe_chain` 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.
