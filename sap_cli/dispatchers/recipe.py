@@ -288,6 +288,52 @@ def dispatch_recipe_success(
     }
 
 
+def dispatch_recipe_version_up(
+    args: dict[str, Any],
+    get_recipe_store: RecipeStoreFactory,
+    unlink_recipe_from_ontology: Callable[[Any], list[str]],
+    link_recipe_to_ontology: Callable[..., list[str]],
+) -> dict[str, Any]:
+    """Save a new recipe version and refresh ontology links."""
+    from ..recipe import RecipeStep
+
+    store = get_recipe_store()
+    recipe_id = str(args["recipe_id"])
+    steps_raw = args.get("new_steps", [])
+    new_steps = [RecipeStep(**s) if isinstance(s, dict) else s for s in steps_raw]
+    new_context = str(args.get("new_context", ""))
+    change_note = str(args.get("change_note", ""))
+
+    if not new_steps:
+        return {"error": True, "message": "new_steps는 비어있을 수 없습니다."}
+
+    existing = store.load(recipe_id)
+    if existing is None:
+        return {"error": True, "message": f"레시피 '{recipe_id}'를 찾을 수 없습니다."}
+
+    unlink_recipe_from_ontology(existing)
+    new_recipe = store.version_up(
+        recipe_id, new_steps=new_steps, new_context=new_context, change_note=change_note,
+    )
+    if new_recipe is None:
+        return {"error": True, "message": f"version_up 실패: {recipe_id}"}
+
+    linked_tcodes = link_recipe_to_ontology(
+        recipe_id, new_recipe.steps,
+        description=new_recipe.description,
+        context=new_recipe.context,
+        keywords=new_recipe.keywords,
+    )
+
+    return {
+        "recipe_id": recipe_id,
+        "new_version": new_recipe.version,
+        "previous_version_archive": new_recipe.previous_version_archive,
+        "step_count": len(new_recipe.steps),
+        "linked_tcodes": linked_tcodes,
+    }
+
+
 def dispatch_recipe_query(
     args: dict[str, Any],
     get_recipe_store: RecipeStoreFactory,

@@ -34,6 +34,7 @@ from .dispatchers.recipe import (
     dispatch_recipe_search as _dispatch_recipe_search_impl,
     dispatch_recipe_show as _dispatch_recipe_show_impl,
     dispatch_recipe_success as _dispatch_recipe_success_impl,
+    dispatch_recipe_version_up as _dispatch_recipe_version_up_impl,
     is_recipe_command,
 )
 from .macro.player import MacroPlayer
@@ -2207,43 +2208,12 @@ def _dispatch_recipe_enable(args: dict[str, Any]) -> dict[str, Any]:
 
 def _dispatch_recipe_version_up(args: dict[str, Any]) -> dict[str, Any]:
     """기존 레시피의 새 버전을 저장. 기존 버전은 _archive로 이동."""
-    from .recipe import RecipeStep
-
-    store = _get_recipe_store()
-    recipe_id = str(args["recipe_id"])
-    steps_raw = args.get("new_steps", [])
-    new_steps = [RecipeStep(**s) if isinstance(s, dict) else s for s in steps_raw]
-    new_context = str(args.get("new_context", ""))
-    change_note = str(args.get("change_note", ""))
-
-    if not new_steps:
-        return {"error": True, "message": "new_steps는 비어있을 수 없습니다."}
-
-    existing = store.load(recipe_id)
-    if existing is None:
-        return {"error": True, "message": f"레시피 '{recipe_id}'를 찾을 수 없습니다."}
-
-    _unlink_recipe_from_ontology(existing)
-    new_recipe = store.version_up(
-        recipe_id, new_steps=new_steps, new_context=new_context, change_note=change_note,
+    return _dispatch_recipe_version_up_impl(
+        args,
+        _get_recipe_store,
+        _unlink_recipe_from_ontology,
+        _link_recipe_to_ontology,
     )
-    if new_recipe is None:
-        return {"error": True, "message": f"version_up 실패: {recipe_id}"}
-
-    linked_tcodes = _link_recipe_to_ontology(
-        recipe_id, new_recipe.steps,
-        description=new_recipe.description,
-        context=new_recipe.context,
-        keywords=new_recipe.keywords,
-    )
-
-    return {
-        "recipe_id": recipe_id,
-        "new_version": new_recipe.version,
-        "previous_version_archive": new_recipe.previous_version_archive,
-        "step_count": len(new_recipe.steps),
-        "linked_tcodes": linked_tcodes,
-    }
 
 
 def _dispatch_recipe_history(args: dict[str, Any]) -> dict[str, Any]:
