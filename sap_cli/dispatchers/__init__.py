@@ -31,6 +31,11 @@ from .session import (
     dispatch_session_command,
     is_session_command,
 )
+from .slot import (
+    SLOT_COMMANDS,
+    dispatch_slot_command,
+    is_slot_command,
+)
 
 __all__ = [
     "COMMAND_REGISTRY",
@@ -50,4 +55,7 @@ __all__ = [
     "SESSION_SKIP_COMMANDS",
     "dispatch_session_command",
     "is_session_command",
+    "SLOT_COMMANDS",
+    "dispatch_slot_command",
+    "is_slot_command",
 ]

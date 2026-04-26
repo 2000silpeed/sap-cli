@@ -740,6 +740,33 @@ _utc_to_local
 - macro dispatcher는 recorder, macro store, SAP wrapper, post-action hook 의존성을 facade에서 주입받으므로 기존 `sap_cli.dispatcher._get_recorder`/`_get_macro_store`/`_get_sap` monkeypatch 호환성을 유지한다.
 - `sap_cli/dispatchers/__init__.py`에서도 macro command public surface를 re-export한다.
 
+## D-7. Slot dispatch 분리
+
+### 이동 대상
+
+```text
+_dispatch_slots
+_dispatch_slot_allocate
+_dispatch_slot_release
+```
+
+### 완료 기준
+
+- [x] slot 관련 command routing이 feature dispatcher를 통한다.
+- [x] `sap_cli.dispatcher` private import/monkeypatch 호환 wrapper 유지
+- [x] command surface / MCP drift 테스트 통과
+
+### 진행 메모
+
+- `sap_cli/dispatchers/slot.py`를 추가해 slots/allocate/release 실제 구현을 이동했다.
+- `sap_cli.dispatcher`에는 기존 `_dispatch_slots`, `_dispatch_slot_allocate`, `_dispatch_slot_release` private import 호환을 위한 thin wrapper를 유지했다.
+- 중앙 `_execute_command`는 `is_slot_command()`와 `dispatch_slot_command()`를 통해 slot 명령군을 라우팅한다.
+- slot dispatcher는 pool factory와 SAP wrapper factory 의존성을 facade에서 주입받으므로 기존 `sap_cli.dispatcher._get_pool`/`_get_sap` monkeypatch 호환성을 유지한다.
+- `sap_cli/dispatchers/__init__.py`에서도 slot command public surface를 re-export한다.
+- `dispatcher.py`는 1552줄에서 1504줄로 감소했다.
+- 검증: `uv run pytest tests/test_session_pool.py tests/test_dispatcher.py tests/test_command_surface_consistency.py tests/test_mcp_server.py tests/test_mcp_daemon.py` → 79 passed.
+- 검증: `uv run pytest` → 505 passed.
+
 ---
 
 # Phase E: Recipe 운영 고도화
@@ -1002,6 +1029,7 @@ ADT는 강력하지만 인증/권한/시스템 설정 의존성이 추가된다.
 4. D-4 session dispatch 분리
 5. D-5 ontology/process dispatch 분리
 6. D-6 macro dispatch 분리
+7. D-7 slot dispatch 분리
 
 완료 기준:
 

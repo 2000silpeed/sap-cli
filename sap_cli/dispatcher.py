@@ -97,6 +97,13 @@ from .dispatchers.session import (
     is_session_command,
     log_session_step as _log_session_step_impl,
 )
+from .dispatchers.slot import (
+    dispatch_slot_allocate as _dispatch_slot_allocate_impl,
+    dispatch_slot_command,
+    dispatch_slot_release as _dispatch_slot_release_impl,
+    dispatch_slots as _dispatch_slots_impl,
+    is_slot_command,
+)
 from .ontology.store import OntologyStore
 from .service import (
     execute_sap_action as _execute_sap_action,
@@ -104,6 +111,7 @@ from .service import (
     get_macro_store as _get_macro_store,
     get_recorder as _get_recorder,
     get_sap as _get_sap,
+    get_pool as _get_pool,
     get_session_store as _get_session_store,
     get_store as _get_store,
     map_action as _map_action,
@@ -500,12 +508,14 @@ def _execute_command(
             get_existing_sap=_get_existing_sap,
             link_recipe_to_ontology=_link_recipe_to_ontology,
         )
-    if command == "slots":
-        return _dispatch_slots()
-    if command == "slot_allocate":
-        return _dispatch_slot_allocate(args, ctx)
-    if command == "slot_release":
-        return _dispatch_slot_release(args)
+    if is_slot_command(command):
+        return dispatch_slot_command(
+            command,
+            args,
+            ctx,
+            get_pool=_get_pool,
+            get_sap=_get_sap,
+        )
     raise ValueError(f"미구현 명령: {command}")
 
 
@@ -1483,70 +1493,12 @@ def _collect_modal(sap: SapGuiWrapper) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def _dispatch_slots() -> dict[str, Any]:
-    from .service import get_pool
-    pool = get_pool()
-    return {
-        "slot_count": pool.slot_count(),
-        "max_sessions": pool.max_sessions,
-        "slots": pool.list_slots(),
-    }
+    return _dispatch_slots_impl(_get_pool)
 
 
 def _dispatch_slot_allocate(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
-    from .service import get_pool
-    slot_id = str(args.get("slot_id", ""))
-    if not slot_id:
-        raise ValueError("slot_id가 필요합니다.")
-    agent_name = args.get("agent_name") or ctx.agent_name
-    system = args.get("system")
-    session_index = int(args.get("session_index", -1))
-    create_new = bool(args.get("create_new_session", False))
-
-    pool = get_pool()
-    wrapper = pool.get_or_create(slot_id, agent_name=agent_name)
-
-    result: dict[str, Any] = {
-        "allocated": True,
-        "slot_id": slot_id,
-        "agent_name": agent_name,
-    }
-
-    # create_new_session: 기존 연결에서 새 SAP 세션을 생성하여 할당
-    if create_new:
-        from .service import get_sap
-        base_wrapper = get_sap("ses0")
-        new_idx = base_wrapper.create_session()
-        session_index = new_idx
-        result["created_session_index"] = new_idx
-
-    # 시스템이나 세션 인덱스가 지정되면 바로 연결
-    if system or session_index >= 0:
-        info = wrapper.connect(
-            session_index=max(session_index, 0),
-            system=system,
-        )
-        pool.update_slot_connection(
-            slot_id,
-            wrapper._last_connection_index,
-            wrapper._last_session_index,
-            system_id=system,
-        )
-        result["connected"] = True
-        result["session"] = info.model_dump(mode="json")
-
-    return result
+    return _dispatch_slot_allocate_impl(args, ctx, _get_pool, _get_sap)
 
 
 def _dispatch_slot_release(args: dict[str, Any]) -> dict[str, Any]:
-    from .service import get_pool
-    slot_id = str(args.get("slot_id", ""))
-    if not slot_id:
-        raise ValueError("slot_id가 필요합니다.")
-    close = args.get("close", False)
-
-    pool = get_pool()
-    if close:
-        ok = pool.close(slot_id)
-    else:
-        ok = pool.release(slot_id)
-    return {"released": ok, "slot_id": slot_id, "closed": close}
+    return _dispatch_slot_release_impl(args, _get_pool)
