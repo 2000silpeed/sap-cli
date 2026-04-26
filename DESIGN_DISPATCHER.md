@@ -177,6 +177,14 @@ uv run pytest tests/test_command_surface_consistency.py
 - `sap_cli/dispatchers/__init__.py`에서도 slot command public surface를 re-export한다.
 - `dispatcher.py`는 1552줄에서 1504줄로 감소했다.
 
+## D-8 transcript 분리 진행 메모
+
+- `transcript_query/transcript_plan` 구현과 `_make_ontology_store` helper를 `sap_cli/dispatchers/transcript.py`로 이동했다.
+- `sap_cli.dispatcher`에는 `_dispatch_transcript_query`, `_dispatch_transcript_plan`, `_make_ontology_store` wrapper를 유지해 기존 private import surface를 보존한다.
+- 중앙 `_execute_command`는 `is_transcript_command()`와 `dispatch_transcript_command()`를 통해 transcript 명령군을 라우팅한다.
+- `sap_cli/dispatchers/__init__.py`에서도 transcript command public surface를 re-export한다.
+- `dispatcher.py`는 1504줄에서 1483줄로 감소했다.
+
 ## D-2 진행 메모
 
 - `recipe_failure`, `recipe_enable`, `recipe_history`, `recipe_chain` 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.

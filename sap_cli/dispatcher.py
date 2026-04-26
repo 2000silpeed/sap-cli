@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 _logger = logging.getLogger(__name__)
@@ -104,6 +103,13 @@ from .dispatchers.slot import (
     dispatch_slots as _dispatch_slots_impl,
     is_slot_command,
 )
+from .dispatchers.transcript import (
+    dispatch_transcript_command,
+    dispatch_transcript_plan as _dispatch_transcript_plan_impl,
+    dispatch_transcript_query as _dispatch_transcript_query_impl,
+    make_ontology_store as _make_ontology_store_impl,
+    is_transcript_command,
+)
 from .ontology.store import OntologyStore
 from .service import (
     execute_sap_action as _execute_sap_action,
@@ -116,8 +122,6 @@ from .service import (
     get_store as _get_store,
     map_action as _map_action,
 )
-from .transcript_planner import TranscriptPlanner
-from .transcript_store import TranscriptStore
 
 
 POST_ACTION_COMMANDS = {
@@ -482,10 +486,8 @@ def _execute_command(
             get_store=_get_store,
             get_recipe_store=_get_recipe_store,
         )
-    if command == "transcript_query":
-        return _dispatch_transcript_query(args, policy)
-    if command == "transcript_plan":
-        return _dispatch_transcript_plan(args, policy)
+    if is_transcript_command(command):
+        return dispatch_transcript_command(command, args, policy)
     if command == "learn":
         return _dispatch_learn(ctx)
     if is_process_command(command):
@@ -728,41 +730,18 @@ def _dispatch_transcript_query(
     args: dict[str, Any],
     policy: Policy | None,
 ) -> dict[str, Any]:
-    store = TranscriptStore(policy.transcript if policy else None)
-    return store.query(
-        limit=int(args.get("limit", 20)),
-        outcome=args.get("outcome"),
-        command=args.get("command"),
-        tool=args.get("tool"),
-        agent=args.get("agent"),
-        text=args.get("text"),
-        full=bool(args.get("full", False)),
-    )
+    return _dispatch_transcript_query_impl(args, policy)
 
 
 def _dispatch_transcript_plan(
     args: dict[str, Any],
     policy: Policy | None,
 ) -> dict[str, Any]:
-    store = TranscriptStore(policy.transcript if policy else None)
-    planner = TranscriptPlanner(store, ontology_store=_make_ontology_store(policy))
-    return planner.plan(
-        limit=int(args.get("limit", 20)),
-        index=int(args.get("index", 0)),
-        outcome=args.get("outcome"),
-        command=args.get("command"),
-        tool=args.get("tool"),
-        agent=args.get("agent"),
-        text=args.get("text"),
-    )
+    return _dispatch_transcript_plan_impl(args, policy)
 
 
 def _make_ontology_store(policy: Policy | None) -> OntologyStore:
-    if policy is None:
-        return OntologyStore()
-    transcript_dir = Path(policy.transcript.log_dir).expanduser()
-    knowledge_dir = transcript_dir.parent / "knowledge"
-    return OntologyStore(knowledge_dir=knowledge_dir)
+    return _make_ontology_store_impl(policy)
 
 
 def _dispatch_learn(ctx: DispatchContext | None = None) -> dict[str, Any]:

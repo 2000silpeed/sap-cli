@@ -36,6 +36,11 @@ from .slot import (
     dispatch_slot_command,
     is_slot_command,
 )
+from .transcript import (
+    TRANSCRIPT_COMMANDS,
+    dispatch_transcript_command,
+    is_transcript_command,
+)
 
 __all__ = [
     "COMMAND_REGISTRY",
@@ -58,4 +63,7 @@ __all__ = [
     "SLOT_COMMANDS",
     "dispatch_slot_command",
     "is_slot_command",
+    "TRANSCRIPT_COMMANDS",
+    "dispatch_transcript_command",
+    "is_transcript_command",
 ]

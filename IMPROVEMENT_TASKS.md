@@ -769,6 +769,34 @@ _dispatch_slot_release
 
 ---
 
+## D-8. Transcript dispatch 분리
+
+### 이동 대상
+
+```text
+_dispatch_transcript_query
+_dispatch_transcript_plan
+_make_ontology_store
+```
+
+### 완료 기준
+
+- [x] transcript 관련 command routing이 feature dispatcher를 통한다.
+- [x] `sap_cli.dispatcher` private import 호환 wrapper 유지
+- [x] transcript / command surface / MCP drift 테스트 통과
+
+### 진행 메모
+
+- `sap_cli/dispatchers/transcript.py`를 추가해 `transcript_query/transcript_plan` 실제 구현과 `_make_ontology_store` helper 구현을 이동했다.
+- `sap_cli.dispatcher`에는 기존 `_dispatch_transcript_query`, `_dispatch_transcript_plan`, `_make_ontology_store` private import 호환을 위한 thin wrapper를 유지했다.
+- 중앙 `_execute_command`는 `is_transcript_command()`와 `dispatch_transcript_command()`를 통해 transcript 명령군을 라우팅한다.
+- `sap_cli/dispatchers/__init__.py`에서도 transcript command public surface를 re-export한다.
+- `dispatcher.py`는 1504줄에서 1483줄로 감소했다.
+- 검증: `uv run pytest tests/test_dispatcher.py tests/test_transcript_store.py tests/test_transcript_planner.py tests/test_command_surface_consistency.py tests/test_mcp_server.py tests/test_mcp_daemon.py` → 35 passed.
+- 검증: `uv run pytest` → 505 passed.
+
+---
+
 # Phase E: Recipe 운영 고도화
 
 목표: recipe를 실제 사내 운영 자산으로 만들기 위한 품질·검증·소유권 기반을 준비한다.
