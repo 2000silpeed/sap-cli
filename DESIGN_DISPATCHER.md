@@ -257,6 +257,15 @@ uv run pytest tests/test_command_surface_consistency.py
 - `sap_cli/dispatchers/__init__.py`에서도 post_action helper public surface를 re-export한다.
 - `dispatcher.py`는 1223줄에서 1171줄로 감소했다.
 
+## Phase D 종료 메모
+
+- Phase D는 D-16까지의 분리 상태를 기준으로 종료한다.
+- 현재 중앙 dispatcher는 command routing, auth/audit/transcript/session orchestration, facade compatibility 유지에 집중한다.
+- 기능별 실제 구현은 `sap_cli/dispatchers/` 아래 recipe, registry, session, process, ontology, macro, slot, transcript, capture, form, sap_actions, connection, post_action module로 분리됐다.
+- `dispatch_command` 주변 audit/transcript/session logging helper는 중앙 orchestration 성격이 강하므로 Phase D 종료 시점에서는 유지한다.
+- 이후 더 분리가 필요하면 별도 phase/task에서 logging pipeline 설계부터 진행한다.
+- 다음 작업은 Phase E의 recipe 운영 고도화로 전환한다.
+
 ## D-2 진행 메모
 
 - `recipe_failure`, `recipe_enable`, `recipe_history`, `recipe_chain` 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.

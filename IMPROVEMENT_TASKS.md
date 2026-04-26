@@ -1050,6 +1050,29 @@ _enum_value
 
 ---
 
+## Phase D 종료 메모
+
+### 종료 결정
+
+- [x] Phase D는 D-16까지의 dispatcher/helper 분리 작업을 기준으로 종료한다.
+- [x] 추가 후보였던 `dispatch_command` 주변 audit/transcript/session logging 분리는 다음 단계로 넘긴다.
+
+### 종료 사유
+
+- 기능별 dispatcher module이 충분히 분리되어 중앙 `sap_cli/dispatcher.py`의 책임이 라우팅, auth/audit/transcript orchestration, facade compatibility 중심으로 정리됐다.
+- Recipe, registry, session, process, ontology, macro, slot, transcript, capture, form, SAP action, connection/screen, post-action helper가 각각 별도 module로 이동했다.
+- `dispatch_command` 주변은 중앙 오케스트레이션 성격이 강해, Phase D에서 더 분리하면 흐름 추적 비용이 커질 수 있다.
+- `dispatcher.py`는 Phase D 진행 중 1500줄대에서 1171줄까지 감소했다.
+- 마지막 전체 검증 기준: `uv run pytest` → 505 passed.
+
+### 다음 단계
+
+- Phase E로 진입한다.
+- 우선 후보는 `E-1. Recipe 품질 점수 개선`이다.
+- Phase E 진입 전 필요하면 recipe 관련 현재 구현/테스트/문서 상태를 먼저 재점검한다.
+
+---
+
 # Phase E: Recipe 운영 고도화
 
 목표: recipe를 실제 사내 운영 자산으로 만들기 위한 품질·검증·소유권 기반을 준비한다.
