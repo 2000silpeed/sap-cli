@@ -147,7 +147,7 @@ class RecipeStore:
                 "disabled": r.disabled,
                 "disabled_reason": r.disabled_reason,
                 "quality_score": efficiency_score(r),
-                "replay_quality": replay_quality_summary(r),
+                "replay_quality": replay_quality_summary(r, include_details=False),
             })
         return results
 
@@ -596,8 +596,18 @@ def replay_speed_score(recipe: Recipe) -> float | None:
     return round(max(0.0, 1.0 - (avg_ms / 60000.0)), 4)
 
 
-def replay_quality_summary(recipe: Recipe) -> dict[str, Any]:
-    """Compact replay quality metadata for search/list/show responses."""
+def replay_quality_summary(
+    recipe: Recipe,
+    *,
+    include_details: bool = False,
+) -> dict[str, Any]:
+    """Replay quality metadata for operator-facing responses.
+
+    The default shape is intentionally compact for list/search/hint responses:
+    these surfaces may include many recipes, so only ranking/triage fields are
+    returned.  Single-recipe drill-down surfaces can set ``include_details`` to
+    expose failure buckets and system/client aggregates for diagnosis.
+    """
     success_rate = replay_success_rate(recipe)
     speed_score = replay_speed_score(recipe)
     summary: dict[str, Any] = {
@@ -609,9 +619,9 @@ def replay_quality_summary(recipe: Recipe) -> dict[str, Any]:
         "success_rate": round(success_rate, 4) if success_rate is not None else None,
         "speed_score": speed_score,
     }
-    if recipe.replay_failure_type_counts:
+    if include_details and recipe.replay_failure_type_counts:
         summary["failure_type_counts"] = recipe.replay_failure_type_counts
-    if recipe.replay_system_client_stats:
+    if include_details and recipe.replay_system_client_stats:
         summary["system_client_stats"] = recipe.replay_system_client_stats
     return summary
 

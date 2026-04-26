@@ -155,7 +155,7 @@ def dispatch_recipe_replay_plan(
         "success_count": recipe.success_count,
         "failure_count": recipe.failure_count,
         "quality_score": efficiency_score(recipe),
-        "replay_quality": replay_quality_summary(recipe),
+        "replay_quality": replay_quality_summary(recipe, include_details=True),
         "flow": ["precheck", "dry_run_plan", "execute", "verify", "report"],
         "precheck": precheck,
         "dry_run_plan": dry_run_plan,
@@ -883,7 +883,7 @@ def dispatch_recipe_show(
         "success_count": r.success_count,
         "failure_count": r.failure_count,
         "quality_score": efficiency_score(r),
-        "replay_quality": replay_quality_summary(r),
+        "replay_quality": replay_quality_summary(r, include_details=True),
         "execution_plan": _execution_plan(r),
         "instruction": (
             f"레시피 '{r.id}'의 상세 실행 계획입니다. "

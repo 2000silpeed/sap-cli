@@ -204,16 +204,28 @@ class TestDispatchRecipeQuery:
             system_name="TST",
             client="100",
         )
+        store.record_replay_execution(
+            "VA01_replay_meta",
+            status="failed",
+            execution_ms=2000,
+            failure_type="sap_status_error",
+            system_name="TST",
+            client="100",
+        )
 
         with patch("sap_cli.dispatcher._get_recipe_store", return_value=store):
             shown = _dispatch_recipe_show({"recipe_id": "VA01_replay_meta"})
             listed = _dispatch_recipe_list()
 
         assert shown["quality_score"] > 0
-        assert shown["replay_quality"]["execution_count"] == 1
-        assert shown["replay_quality"]["success_rate"] == 1.0
+        assert shown["replay_quality"]["execution_count"] == 2
+        assert shown["replay_quality"]["success_rate"] == 0.5
+        assert shown["replay_quality"]["failure_type_counts"]["sap_status_error"] == 1
+        assert shown["replay_quality"]["system_client_stats"]["TST/100"]["total"] == 2
         assert listed["recipes"][0]["quality_score"] > 0
-        assert listed["recipes"][0]["replay_quality"]["average_execution_ms"] == 1234
+        assert listed["recipes"][0]["replay_quality"]["average_execution_ms"] == 1617
+        assert "failure_type_counts" not in listed["recipes"][0]["replay_quality"]
+        assert "system_client_stats" not in listed["recipes"][0]["replay_quality"]
 
     def test_no_match(self, tmp_path: Path):
         from sap_cli.dispatcher import _dispatch_recipe_query

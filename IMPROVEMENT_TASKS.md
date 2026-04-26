@@ -1170,7 +1170,9 @@ precheck → dry-run plan → execute → verify → report
   - `efficiency_score()`가 replay 평균 실행 시간과 system/client별 replay 성공률을 작은 가중치로 반영한다.
   - `search`, `query_for_ai`, `find_by_tcode`, `find_chain`, `find_similar`의 기존 품질 점수 기반 tie-break가 replay 품질 메타를 자동 활용한다.
   - `sap_recipe_search`, `sap_recipe_query`, `sap_recipe_show`, `sap_recipe_list`, `sap_recipe_replay_plan` 응답에 `replay_quality` 요약을 노출한다.
-  - replay 품질 요약은 실행 횟수, 평균/마지막 실행 시간, 마지막 상태/실패 유형, 성공률, 속도 점수, 실패 유형 집계, system/client별 집계를 포함한다.
+  - 목록/검색/힌트의 replay 품질 요약은 실행 횟수, 평균/마지막 실행 시간, 마지막 상태/실패 유형, 성공률, 속도 점수까지만 포함한다.
+  - 단일 레시피 상세(`sap_recipe_show`)와 replay 계획(`sap_recipe_replay_plan`)은 진단용으로 실패 유형 집계, system/client별 집계를 추가 포함한다.
+  - 운영 관점에서 `sap_recipe_list`의 응답 크기와 환경별 집계 노출을 줄이기 위해 compact/detailed replay 품질 요약을 분리했다.
 - [x] E-2 replay execute 고도화 1차
   - `sap_recipe_replay_execute`가 step 실행 직전 `precondition`을 실제 SAP 관찰값과 비교한다.
   - 지원 precondition: `tcode`/`transaction`, `screen_number`/`screen`, `program`, `title_contains`/`screen_contains`, `modal_absent`.
@@ -1186,6 +1188,7 @@ precheck → dry-run plan → execute → verify → report
   - 실제 execute 래퍼에서 verify 결과에 따라 자동 success/failure 호출을 연결했다.
   - replay execute 메타데이터가 recipe JSON에 누적되어 후속 품질 분석의 기반으로 사용 가능하다.
   - replay 품질 메타데이터가 검색 순위와 recipe 조회/list 응답에 반영된다.
+  - `sap_recipe_list`는 compact replay 품질만 노출하고, 상세 집계는 `sap_recipe_show`/`sap_recipe_replay_plan`에서 확인한다.
 
 ---
 
