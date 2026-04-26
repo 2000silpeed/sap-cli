@@ -14,7 +14,14 @@ Factory = Callable[..., Any]
 
 SAP_ACTION_COMMANDS: frozenset[str] = frozenset(
     {
+        "command",
+        "get",
+        "press",
         "record_step",
+        "run",
+        "set",
+        "status",
+        "table",
         "table_select",
         "table_doubleclick",
         "tree",
@@ -23,6 +30,7 @@ SAP_ACTION_COMMANDS: frozenset[str] = frozenset(
         "tree_expand",
         "tree_collapse",
         "tree_press",
+        "vkey",
     }
 )
 
@@ -41,9 +49,26 @@ def dispatch_sap_action_command(
     get_recorder: Factory,
     map_action: Factory,
     execute_sap_action: Factory,
+    collect_recipe_hints: Factory,
     with_post_action: Factory,
-) -> dict[str, Any]:
+) -> Any:
     """Dispatch an SAP action command with facade-provided compatibility hooks."""
+    if command == "run":
+        return dispatch_run(args, ctx, get_sap, collect_recipe_hints, with_post_action)
+    if command == "set":
+        return dispatch_set(args, ctx, get_sap, with_post_action)
+    if command == "get":
+        return dispatch_get(args, ctx, get_sap)
+    if command == "press":
+        return dispatch_press(args, ctx, get_sap, with_post_action)
+    if command == "vkey":
+        return dispatch_vkey(args, ctx, get_sap, with_post_action)
+    if command == "status":
+        return dispatch_status(ctx, get_sap)
+    if command == "table":
+        return dispatch_table_read(args, ctx, get_sap)
+    if command == "command":
+        return dispatch_command_text(args, ctx, get_sap, with_post_action)
     if command == "record_step":
         return dispatch_record_step(
             args,
@@ -71,6 +96,124 @@ def dispatch_sap_action_command(
     if command == "tree_press":
         return dispatch_tree_press(args, ctx, get_sap, with_post_action)
     raise ValueError(f"미구현 SAP action 명령: {command}")
+
+
+def dispatch_run(
+    args: dict[str, Any],
+    ctx: Any,
+    get_sap: Factory,
+    collect_recipe_hints: Factory,
+    with_post_action: Factory,
+) -> dict[str, Any]:
+    """Run a transaction code."""
+    sap = get_sap(ctx.slot_id)
+    tcode = str(args["tcode"])
+    sap.run_transaction(tcode)
+    info = sap.get_session_info()
+    payload = {
+        "executed": tcode,
+        "current_transaction": info.transaction,
+        "screen_number": info.screen_number,
+    }
+    hints = collect_recipe_hints(tcode)
+    if hints:
+        payload["recipe_hints"] = hints
+    return with_post_action(payload, sap, "run", ctx)
+
+
+def dispatch_set(
+    args: dict[str, Any],
+    ctx: Any,
+    get_sap: Factory,
+    with_post_action: Factory,
+) -> dict[str, Any]:
+    """Set a field, checkbox, or radio button value."""
+    sap = get_sap(ctx.slot_id)
+    element_id = str(args["element_id"])
+    value = str(args["value"])
+    if "/chk" in element_id:
+        checked = value.lower() not in ("", "0", "false", "off", "no")
+        sap.set_checkbox(element_id, checked)
+    elif "/rad" in element_id:
+        sap.select_radio(element_id)
+    else:
+        sap.set_field(element_id, value)
+    payload = {
+        "field": element_id,
+        "value_set": value,
+        "actual_value": sap.get_field(element_id),
+    }
+    return with_post_action(payload, sap, "set", ctx)
+
+
+def dispatch_get(args: dict[str, Any], ctx: Any, get_sap: Factory) -> Any:
+    """Get one or more field info payloads."""
+    sap = get_sap(ctx.slot_id)
+    element_ids = args.get("element_ids") or [str(args["element_id"])]
+    if len(element_ids) == 1:
+        return sap.get_field_info(element_ids[0])
+    return [sap.get_field_info(eid) for eid in element_ids]
+
+
+def dispatch_press(
+    args: dict[str, Any],
+    ctx: Any,
+    get_sap: Factory,
+    with_post_action: Factory,
+) -> dict[str, Any]:
+    """Press a SAP GUI element."""
+    sap = get_sap(ctx.slot_id)
+    element_id = str(args["element_id"])
+    sap.press(element_id)
+    payload = {"pressed": element_id}
+    return with_post_action(payload, sap, "press", ctx)
+
+
+def dispatch_vkey(
+    args: dict[str, Any],
+    ctx: Any,
+    get_sap: Factory,
+    with_post_action: Factory,
+) -> dict[str, Any]:
+    """Send a virtual key."""
+    sap = get_sap(ctx.slot_id)
+    key = int(args["key"])
+    sap.send_vkey(key)
+    payload = {"vkey_sent": key}
+    return with_post_action(payload, sap, "vkey", ctx)
+
+
+def dispatch_status(ctx: Any, get_sap: Factory) -> dict[str, Any]:
+    """Read the current SAP GUI status bar."""
+    return get_sap(ctx.slot_id).get_status().model_dump(mode="json")
+
+
+def dispatch_table_read(args: dict[str, Any], ctx: Any, get_sap: Factory) -> dict[str, Any]:
+    """Read a SAP GUI table with optional row and column limits."""
+    element_id = str(args["element_id"])
+    max_rows = int(args.get("max_rows", 50))
+    col_filter = args.get("columns")
+    if isinstance(col_filter, str):
+        col_filter = [column.strip() for column in col_filter.split(",")]
+    return get_sap(ctx.slot_id).read_table(
+        element_id,
+        max_rows=max_rows,
+        columns=col_filter,
+    ).model_dump(mode="json")
+
+
+def dispatch_command_text(
+    args: dict[str, Any],
+    ctx: Any,
+    get_sap: Factory,
+    with_post_action: Factory,
+) -> dict[str, Any]:
+    """Send a SAP command field value."""
+    sap = get_sap(ctx.slot_id)
+    command_text = str(args["cmd"])
+    sap.send_command(command_text)
+    payload = {"command": command_text}
+    return with_post_action(payload, sap, "command", ctx)
 
 
 def dispatch_record_step(

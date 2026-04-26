@@ -230,6 +230,15 @@ uv run pytest tests/test_command_surface_consistency.py
 - `read_table` 기본 `max_rows=50`은 변경하지 않았다.
 - `dispatcher.py`는 1378줄에서 1312줄로 감소했다.
 
+## D-14 core SAP action 분리 진행 메모
+
+- `run/set/get/press/vkey/status/table/command` 구현을 `sap_cli/dispatchers/sap_actions.py`로 이동했다.
+- 중앙 `_execute_command`에서 core SAP action inline 구현을 제거하고, 기존 `is_sap_action_command()`와 `dispatch_sap_action_command()` 라우팅으로 통합했다.
+- `run`은 recipe hint 수집을 위해 facade의 `_collect_recipe_hints` hook을 dispatcher implementation에 주입한다.
+- `sap_cli.dispatcher`에는 `_dispatch_run`, `_dispatch_set`, `_dispatch_get`, `_dispatch_press`, `_dispatch_vkey`, `_dispatch_status`, `_dispatch_table_read`, `_dispatch_command_text` wrapper를 추가해 facade compatibility를 유지한다.
+- `read_table` 기본 `max_rows=50`은 변경하지 않았다.
+- `dispatcher.py`는 1312줄에서 1289줄로 감소했다.
+
 ## D-2 진행 메모
 
 - `recipe_failure`, `recipe_enable`, `recipe_history`, `recipe_chain` 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.

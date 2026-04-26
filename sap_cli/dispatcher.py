@@ -123,8 +123,15 @@ from .dispatchers.form import (
     is_form_command,
 )
 from .dispatchers.sap_actions import (
+    dispatch_command_text as _dispatch_command_text_impl,
+    dispatch_get as _dispatch_get_impl,
+    dispatch_press as _dispatch_press_impl,
     dispatch_record_step as _dispatch_record_step_impl,
+    dispatch_run as _dispatch_run_impl,
     dispatch_sap_action_command,
+    dispatch_set as _dispatch_set_impl,
+    dispatch_status as _dispatch_status_impl,
+    dispatch_table_read as _dispatch_table_read_impl,
     dispatch_table_doubleclick as _dispatch_table_doubleclick_impl,
     dispatch_table_select as _dispatch_table_select_impl,
     dispatch_tree_collapse as _dispatch_tree_collapse_impl,
@@ -133,6 +140,7 @@ from .dispatchers.sap_actions import (
     dispatch_tree_press as _dispatch_tree_press_impl,
     dispatch_tree_read as _dispatch_tree_read_impl,
     dispatch_tree_select as _dispatch_tree_select_impl,
+    dispatch_vkey as _dispatch_vkey_impl,
     is_sap_action_command,
 )
 from .ontology.store import OntologyStore
@@ -355,70 +363,6 @@ def _execute_command(
         return _get_sap(ctx.slot_id).get_session_info().model_dump(mode="json")
     if command == "screen":
         return _dispatch_screen(args, ctx)
-    if command == "run":
-        sap = _get_sap(ctx.slot_id)
-        tcode = str(args["tcode"])
-        sap.run_transaction(tcode)
-        info = sap.get_session_info()
-        payload = {
-            "executed": tcode,
-            "current_transaction": info.transaction,
-            "screen_number": info.screen_number,
-        }
-        hints = _collect_recipe_hints(tcode)
-        if hints:
-            payload["recipe_hints"] = hints
-        return _with_post_action(payload, sap, command, ctx)
-    if command == "set":
-        sap = _get_sap(ctx.slot_id)
-        element_id = str(args["element_id"])
-        value = str(args["value"])
-        if "/chk" in element_id:
-            checked = value.lower() not in ("", "0", "false", "off", "no")
-            sap.set_checkbox(element_id, checked)
-        elif "/rad" in element_id:
-            sap.select_radio(element_id)
-        else:
-            sap.set_field(element_id, value)
-        payload = {
-            "field": element_id,
-            "value_set": value,
-            "actual_value": sap.get_field(element_id),
-        }
-        return _with_post_action(payload, sap, command, ctx)
-    if command == "get":
-        sap = _get_sap(ctx.slot_id)
-        element_ids = args.get("element_ids") or [str(args["element_id"])]
-        if len(element_ids) == 1:
-            return sap.get_field_info(element_ids[0])
-        return [sap.get_field_info(eid) for eid in element_ids]
-    if command == "press":
-        sap = _get_sap(ctx.slot_id)
-        element_id = str(args["element_id"])
-        sap.press(element_id)
-        payload = {"pressed": element_id}
-        return _with_post_action(payload, sap, command, ctx)
-    if command == "vkey":
-        sap = _get_sap(ctx.slot_id)
-        key = int(args["key"])
-        sap.send_vkey(key)
-        payload = {"vkey_sent": key}
-        return _with_post_action(payload, sap, command, ctx)
-    if command == "status":
-        return _get_sap(ctx.slot_id).get_status().model_dump(mode="json")
-    if command == "table":
-        element_id = str(args["element_id"])
-        max_rows = int(args.get("max_rows", 50))
-        col_filter = args.get("columns")
-        if isinstance(col_filter, str):
-            col_filter = [c.strip() for c in col_filter.split(",")]
-        return _get_sap(ctx.slot_id).read_table(element_id, max_rows=max_rows, columns=col_filter).model_dump(mode="json")
-    if command == "command":
-        sap = _get_sap(ctx.slot_id)
-        command_text = str(args["cmd"])
-        sap.send_command(command_text)
-        payload = {"command": command_text}
-        return _with_post_action(payload, sap, command, ctx)
     if command == "modal":
         return _collect_modal(_get_sap(ctx.slot_id))
     if is_sap_action_command(command):
@@ -430,6 +374,7 @@ def _execute_command(
             get_recorder=_get_recorder,
             map_action=_map_action,
             execute_sap_action=_execute_sap_action,
+            collect_recipe_hints=_collect_recipe_hints,
             with_post_action=_with_post_action,
         )
     if is_macro_command(command):
@@ -619,6 +564,38 @@ def _dispatch_record_step(
         _execute_sap_action,
         _with_post_action,
     )
+
+
+def _dispatch_run(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    return _dispatch_run_impl(args, ctx, _get_sap, _collect_recipe_hints, _with_post_action)
+
+
+def _dispatch_set(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    return _dispatch_set_impl(args, ctx, _get_sap, _with_post_action)
+
+
+def _dispatch_get(args: dict[str, Any], ctx: DispatchContext) -> Any:
+    return _dispatch_get_impl(args, ctx, _get_sap)
+
+
+def _dispatch_press(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    return _dispatch_press_impl(args, ctx, _get_sap, _with_post_action)
+
+
+def _dispatch_vkey(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    return _dispatch_vkey_impl(args, ctx, _get_sap, _with_post_action)
+
+
+def _dispatch_status(_args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    return _dispatch_status_impl(ctx, _get_sap)
+
+
+def _dispatch_table_read(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    return _dispatch_table_read_impl(args, ctx, _get_sap)
+
+
+def _dispatch_command_text(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    return _dispatch_command_text_impl(args, ctx, _get_sap, _with_post_action)
 
 
 def _dispatch_table_select(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:

@@ -945,6 +945,42 @@ _truncate_tree_depth
 
 ---
 
+## D-14. Core SAP action dispatch 분리
+
+### 이동 대상
+
+```text
+run
+set
+get
+press
+vkey
+status
+table
+command
+```
+
+### 완료 기준
+
+- [x] core SAP action command routing이 SAP action dispatcher를 통한다.
+- [x] `run`의 recipe hint 수집 hook이 facade 주입 방식으로 유지된다.
+- [x] `sap_cli.dispatcher` facade wrapper 유지
+- [x] `read_table` 기본 `max_rows=50` 유지
+- [x] command surface / dispatcher 테스트 통과
+
+### 진행 메모
+
+- 중앙 `_execute_command`에 남아 있던 `run/set/get/press/vkey/status/table/command` inline 구현을 `sap_cli/dispatchers/sap_actions.py`로 이동했다.
+- `SAP_ACTION_COMMANDS`와 `dispatch_sap_action_command()`에 core SAP action 명령군을 추가해 기존 SAP action dispatcher 라우팅으로 통합했다.
+- `run`은 `_collect_recipe_hints`를 implementation에 직접 import하지 않고 facade에서 `collect_recipe_hints` hook을 주입받도록 해 기존 monkeypatch 호환성을 유지했다.
+- `sap_cli.dispatcher`에는 `_dispatch_run`, `_dispatch_set`, `_dispatch_get`, `_dispatch_press`, `_dispatch_vkey`, `_dispatch_status`, `_dispatch_table_read`, `_dispatch_command_text` wrapper를 추가했다.
+- `read_table` 기본 `max_rows=50`은 변경하지 않았다.
+- `dispatcher.py`는 1312줄에서 1289줄로 감소했다.
+- 검증: `uv run pytest tests/test_dispatcher.py tests/test_command_surface_consistency.py` → 17 passed.
+- 검증: `uv run pytest` → 505 passed.
+
+---
+
 # Phase E: Recipe 운영 고도화
 
 목표: recipe를 실제 사내 운영 자산으로 만들기 위한 품질·검증·소유권 기반을 준비한다.
