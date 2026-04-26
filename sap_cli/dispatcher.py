@@ -122,9 +122,15 @@ from .dispatchers.form import (
     dispatch_learn as _dispatch_learn_impl,
     is_form_command,
 )
+from .dispatchers.sap_actions import (
+    dispatch_record_step as _dispatch_record_step_impl,
+    dispatch_sap_action_command,
+    dispatch_table_doubleclick as _dispatch_table_doubleclick_impl,
+    dispatch_table_select as _dispatch_table_select_impl,
+    is_sap_action_command,
+)
 from .ontology.store import OntologyStore
 from .service import (
-    execute_sap_action as _execute_sap_action,
     get_learner as _get_learner,
     get_macro_store as _get_macro_store,
     get_recorder as _get_recorder,
@@ -132,6 +138,7 @@ from .service import (
     get_pool as _get_pool,
     get_session_store as _get_session_store,
     get_store as _get_store,
+    execute_sap_action as _execute_sap_action,
     map_action as _map_action,
 )
 
@@ -464,8 +471,17 @@ def _execute_command(
         return _with_post_action(payload, sap, command, ctx)
     if command == "modal":
         return _collect_modal(_get_sap(ctx.slot_id))
-    if command == "record_step":
-        return _dispatch_record_step(args, ctx)
+    if is_sap_action_command(command):
+        return dispatch_sap_action_command(
+            command,
+            args,
+            ctx,
+            get_sap=_get_sap,
+            get_recorder=_get_recorder,
+            map_action=_map_action,
+            execute_sap_action=_execute_sap_action,
+            with_post_action=_with_post_action,
+        )
     if is_macro_command(command):
         return dispatch_macro_command(
             command,
@@ -476,21 +492,6 @@ def _execute_command(
             get_sap=_get_sap,
             with_post_action=_with_post_action,
         )
-    if command == "table_select":
-        sap = _get_sap(ctx.slot_id)
-        element_id = str(args["element_id"])
-        row = int(args["row"])
-        sap.select_table_row(element_id, row)
-        payload = {"selected": True, "table": element_id, "row": row}
-        return _with_post_action(payload, sap, command, ctx)
-    if command == "table_doubleclick":
-        sap = _get_sap(ctx.slot_id)
-        element_id = str(args["element_id"])
-        row = int(args["row"])
-        col = str(args.get("column", ""))
-        sap.double_click_table_cell(element_id, row, col)
-        payload = {"double_clicked": True, "table": element_id, "row": row, "column": col}
-        return _with_post_action(payload, sap, command, ctx)
     if is_ontology_command(command):
         return dispatch_ontology_command(
             command,
@@ -659,38 +660,23 @@ def _dispatch_record_step(
     args: dict[str, Any],
     ctx: DispatchContext,
 ) -> dict[str, Any]:
-    sap = _get_sap(ctx.slot_id)
-    recorder = _get_recorder()
-    action = str(args["action"])
-    target = str(args["target"])
-    value = args.get("value")
-    description = str(args.get("description", ""))
-
-    action_type = _map_action(action)
-    _execute_sap_action(sap, action.lower(), target, None if value is None else str(value))
-
-    info = sap.get_session_info()
-    record_value = None if value is None else str(value)
-    if action.lower() in ("run", "vkey") and not record_value:
-        record_value = target
-
-    step = recorder.record_step(
-        action=action_type,
-        target_id=target,
-        value=record_value,
-        description=description,
-        screen_number=info.screen_number,
+    return _dispatch_record_step_impl(
+        args,
+        ctx,
+        _get_sap,
+        _get_recorder,
+        _map_action,
+        _execute_sap_action,
+        _with_post_action,
     )
 
-    payload = {
-        "recorded": True,
-        "step_number": step.step_number,
-        "action": action,
-        "target": target,
-        "value": value,
-        "screen_number": info.screen_number,
-    }
-    return _with_post_action(payload, sap, "record_step", ctx)
+
+def _dispatch_table_select(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    return _dispatch_table_select_impl(args, ctx, _get_sap, _with_post_action)
+
+
+def _dispatch_table_doubleclick(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    return _dispatch_table_doubleclick_impl(args, ctx, _get_sap, _with_post_action)
 
 
 def _dispatch_macro_control(args: dict[str, Any]) -> dict[str, Any]:

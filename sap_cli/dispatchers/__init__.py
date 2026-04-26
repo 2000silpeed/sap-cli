@@ -51,6 +51,11 @@ from .form import (
     dispatch_form_command,
     is_form_command,
 )
+from .sap_actions import (
+    SAP_ACTION_COMMANDS,
+    dispatch_sap_action_command,
+    is_sap_action_command,
+)
 
 __all__ = [
     "COMMAND_REGISTRY",
@@ -82,4 +87,7 @@ __all__ = [
     "FORM_COMMANDS",
     "dispatch_form_command",
     "is_form_command",
+    "SAP_ACTION_COMMANDS",
+    "dispatch_sap_action_command",
+    "is_sap_action_command",
 ]

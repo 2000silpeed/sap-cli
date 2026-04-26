@@ -203,6 +203,15 @@ uv run pytest tests/test_command_surface_consistency.py
 - `sap_cli/dispatchers/__init__.py`에서도 form command public surface를 re-export한다.
 - `dispatcher.py`는 1451줄에서 1399줄로 감소했다.
 
+## D-11 SAP action 일부 분리 진행 메모
+
+- `record_step`, `table_select`, `table_doubleclick` 구현을 `sap_cli/dispatchers/sap_actions.py`로 이동했다.
+- `sap_cli.dispatcher`에는 `_dispatch_record_step` wrapper를 유지하고, table action wrapper도 추가해 facade compatibility를 유지한다.
+- 중앙 `_execute_command`는 `is_sap_action_command()`와 `dispatch_sap_action_command()`를 통해 해당 SAP action 명령군을 라우팅한다.
+- SAP action dispatcher는 SAP wrapper factory, recorder factory, action mapper, SAP action executor, post-action hook을 facade에서 주입받으므로 기존 monkeypatch 기반 테스트 호환성을 유지한다.
+- `sap_cli/dispatchers/__init__.py`에서도 SAP action command public surface를 re-export한다.
+- `dispatcher.py`는 1399줄에서 1385줄로 감소했다.
+
 ## D-2 진행 메모
 
 - `recipe_failure`, `recipe_enable`, `recipe_history`, `recipe_chain` 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.

@@ -853,6 +853,35 @@ _dispatch_learn
 
 ---
 
+## D-11. SAP action dispatch 일부 분리
+
+### 이동 대상
+
+```text
+_dispatch_record_step
+table_select
+table_doubleclick
+```
+
+### 완료 기준
+
+- [x] record_step/table_select/table_doubleclick routing이 feature dispatcher를 통한다.
+- [x] `sap_cli.dispatcher` private import/monkeypatch 호환 wrapper 유지
+- [x] command surface / dispatcher 테스트 통과
+
+### 진행 메모
+
+- `sap_cli/dispatchers/sap_actions.py`를 추가해 `record_step`, `table_select`, `table_doubleclick` 실제 구현을 이동했다.
+- `sap_cli.dispatcher`에는 기존 `_dispatch_record_step` private import 호환 wrapper를 유지하고, table action wrapper도 추가했다.
+- 중앙 `_execute_command`는 `is_sap_action_command()`와 `dispatch_sap_action_command()`를 통해 해당 SAP action 명령군을 라우팅한다.
+- SAP action dispatcher는 SAP wrapper factory, recorder factory, action mapper, SAP action executor, post-action hook 의존성을 facade에서 주입받으므로 기존 `sap_cli.dispatcher._get_sap`/`_get_recorder` monkeypatch 호환성을 유지한다.
+- `sap_cli/dispatchers/__init__.py`에서도 SAP action command public surface를 re-export한다.
+- `dispatcher.py`는 1399줄에서 1385줄로 감소했다.
+- 검증: `uv run pytest tests/test_command_surface_consistency.py tests/test_dispatcher.py` → 17 passed.
+- 검증: `uv run pytest` → 505 passed.
+
+---
+
 # Phase E: Recipe 운영 고도화
 
 목표: recipe를 실제 사내 운영 자산으로 만들기 위한 품질·검증·소유권 기반을 준비한다.
