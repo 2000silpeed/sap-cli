@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 _logger = logging.getLogger(__name__)
@@ -220,6 +220,7 @@ class AuthorizationDecision:
     reason: str = ""
     approval_required: bool = False
     approval_reason: str = ""
+    risk_metadata: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -1080,22 +1081,30 @@ def _preflight_recipe_replay_steps(
         tool_name = COMMAND_REGISTRY[command].tool_name
         authz, _ = _evaluate_authorization(tool_name, step_args, ctx)
         if not authz.allowed:
-            issues.append({
+            issue = {
                 "order": order,
                 "tool": tool,
                 "command": command,
                 "code": "permission_denied",
                 "message": authz.reason,
-            })
+            }
+            if authz.risk_metadata:
+                issue["risk"] = authz.risk_metadata
+                issue["code"] = authz.risk_metadata.get("preflight_code") or issue["code"]
+            issues.append(issue)
             continue
         if authz.approval_required:
-            issues.append({
+            issue = {
                 "order": order,
                 "tool": tool,
                 "command": command,
                 "code": "approval_required",
                 "message": authz.approval_reason,
-            })
+            }
+            if authz.risk_metadata:
+                issue["risk"] = authz.risk_metadata
+                issue["code"] = authz.risk_metadata.get("preflight_code") or issue["code"]
+            issues.append(issue)
             continue
         steps.append({
             "order": order,
@@ -1489,6 +1498,7 @@ def _evaluate_authorization(
     check = checker.check_tool(tool_name, args)
     permission = TOOL_PERMISSION_MAP.get(tool_name, "")
     resource = checker.resolve_resource(tool_name, args)
+    risk_metadata = checker.risk_metadata(tool_name, args)
     effective_agent = checker.agent_name or configured_agent or "anonymous"
 
     if not ctx.enforce_auth:
@@ -1499,6 +1509,7 @@ def _evaluate_authorization(
                 resource=resource,
                 allowed=True,
                 reason="auth_disabled",
+                risk_metadata=risk_metadata,
             ),
             policy,
         )
@@ -1511,6 +1522,7 @@ def _evaluate_authorization(
                 resource=resource,
                 allowed=False,
                 reason=check.reason,
+                risk_metadata=check.risk_metadata or risk_metadata,
             ),
             policy,
         )
@@ -1526,6 +1538,7 @@ def _evaluate_authorization(
                 reason=check.reason,
                 approval_required=True,
                 approval_reason=approval_reason,
+                risk_metadata=risk_metadata,
             ),
             policy,
         )
@@ -1536,6 +1549,7 @@ def _evaluate_authorization(
             resource=resource,
             allowed=True,
             reason=check.reason,
+            risk_metadata=risk_metadata,
         ),
         policy,
     )

@@ -8,6 +8,7 @@ from sap_cli.auth.policy import (
     AgentPolicy,
     AuditConfig,
     DangerousTransaction,
+    DangerousReport,
     Permission,
     Policy,
     Relation,
@@ -81,11 +82,28 @@ class TestPolicy:
 
     def test_dangerous_tcodes(self):
         policy = Policy(dangerous_transactions=[
-            DangerousTransaction(tcode="SM30", reason="테이블 수정"),
+            DangerousTransaction(
+                tcode="SM30",
+                reason="테이블 수정",
+                category="table_maintenance",
+                risk_level="critical",
+                preflight_code="dangerous_table_maintenance",
+            ),
         ])
         d = policy.get_dangerous_tcodes()
         assert "SM30" in d
         assert d["SM30"] == "테이블 수정"
+        details = policy.get_dangerous_transaction_details()
+        assert details["SM30"].category == "table_maintenance"
+        assert details["SM30"].preflight_code == "dangerous_table_maintenance"
+
+    def test_dangerous_reports(self):
+        policy = Policy(dangerous_reports=[
+            DangerousReport(report="RSPARAM", reason="시스템 파라미터 조회"),
+        ])
+        details = policy.get_dangerous_report_details()
+        assert "RSPARAM" in details
+        assert details["RSPARAM"].category == "sensitive_report"
 
 
 # ---------------------------------------------------------------------------
@@ -207,11 +225,62 @@ class TestDangerousTransactions:
         reason = checker.requires_approval("sap_run", {"tcode": "SM30"})
         assert reason is not None
         assert "테이블" in reason
+        assert "sensitive_transaction" in reason
 
     def test_command_requires_approval(self, checker):
         reason = checker.requires_approval("sap_command", {"cmd": "/nSM30"})
         assert reason is not None
         assert "테이블" in reason
+
+    def test_risk_metadata_for_dangerous_tcode(self, checker):
+        metadata = checker.risk_metadata("sap_run", {"tcode": "SM30"})
+        assert metadata["type"] == "transaction"
+        assert metadata["id"] == "SM30"
+        assert metadata["category"] == "sensitive_transaction"
+        assert metadata["auth_action"] == "approval_required"
+        assert metadata["preflight_code"] == "dangerous_transaction"
+
+    def test_deny_auth_action_blocks_tool(self):
+        policy = _make_policy(
+            "standard",
+            [{"resource": "tx:*", "relation": "operator"}],
+            dangerous=[{"tcode": "SM30", "reason": "테이블 직접 수정", "auth_action": "deny"}],
+        )
+        checker = PermissionChecker(policy)
+
+        result = checker.check_tool("sap_run", {"tcode": "SM30"})
+
+        assert result.allowed is False
+        assert result.risk_metadata["auth_action"] == "deny"
+
+    def test_requires_approval_for_dangerous_report(self):
+        policy = Policy(
+            agents={
+                "standard": AgentPolicy(
+                    relations=[RelationBinding(resource="tx:*", relation="operator")],
+                )
+            },
+            dangerous_reports=[
+                DangerousReport(
+                    report="RSPARAM",
+                    reason="시스템 파라미터 조회",
+                    category="system_configuration_report",
+                    risk_level="medium",
+                    preflight_code="dangerous_system_report",
+                )
+            ],
+            active_agent="standard",
+        )
+        checker = PermissionChecker(policy)
+
+        reason = checker.requires_approval("sap_run", {"tcode": "SA38", "report": "RSPARAM"})
+        metadata = checker.risk_metadata("sap_run", {"tcode": "SA38", "report": "RSPARAM"})
+
+        assert reason is not None
+        assert "시스템 파라미터" in reason
+        assert metadata["type"] == "report"
+        assert metadata["id"] == "RSPARAM"
+        assert metadata["preflight_code"] == "dangerous_system_report"
 
 
 # ---------------------------------------------------------------------------

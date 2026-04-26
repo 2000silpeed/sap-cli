@@ -16,11 +16,17 @@ from .policy import (
 
 
 class CheckResult:
-    __slots__ = ("allowed", "reason")
+    __slots__ = ("allowed", "reason", "risk_metadata")
 
-    def __init__(self, allowed: bool, reason: str = ""):
+    def __init__(
+        self,
+        allowed: bool,
+        reason: str = "",
+        risk_metadata: dict[str, str] | None = None,
+    ):
         self.allowed = allowed
         self.reason = reason
+        self.risk_metadata = risk_metadata or {}
 
     def __bool__(self) -> bool:
         return self.allowed
@@ -65,6 +71,14 @@ class PermissionChecker:
         if permission is None:
             return CheckResult(False, f"알 수 없는 도구: {tool_name}")
 
+        risk_metadata = self.risk_metadata(tool_name, arguments or {})
+        if risk_metadata.get("auth_action") == "deny":
+            return CheckResult(
+                False,
+                self._format_risk_reason(risk_metadata),
+                risk_metadata=risk_metadata,
+            )
+
         resource = self._resolve_resource(tool_name, arguments or {})
         return self._check_permission(resource, permission)
 
@@ -76,9 +90,15 @@ class PermissionChecker:
         resource = f"tx:{tcode.upper()}"
 
         # 위험 트랜잭션 체크
-        dangerous = self._policy.get_dangerous_tcodes()
-        if tcode.upper() in dangerous:
-            return CheckResult(False, f"위험 트랜잭션: {dangerous[tcode.upper()]}")
+        dangerous = self._policy.get_dangerous_transaction_details()
+        dangerous_entry = dangerous.get(tcode.upper())
+        if dangerous_entry:
+            metadata = dangerous_entry.to_risk_metadata()
+            return CheckResult(
+                False,
+                self._format_risk_reason(metadata),
+                risk_metadata=metadata,
+            )
 
         return self._check_permission(resource, Permission.EXECUTE)
 
@@ -90,9 +110,16 @@ class PermissionChecker:
         # 위험 트랜잭션 체크
         tcode = self._extract_tcode(tool_name, arguments or {})
         if tcode:
-            dangerous = self._policy.get_dangerous_tcodes()
-            if tcode.upper() in dangerous:
-                return dangerous[tcode.upper()]
+            dangerous = self._policy.get_dangerous_transaction_details()
+            dangerous_entry = dangerous.get(tcode.upper())
+            if dangerous_entry and dangerous_entry.auth_action == "approval_required":
+                return self._format_risk_reason(dangerous_entry.to_risk_metadata())
+
+        report = self._extract_report(tool_name, arguments or {})
+        if report:
+            dangerous_report = self._policy.get_dangerous_report_details().get(report.upper())
+            if dangerous_report and dangerous_report.auth_action == "approval_required":
+                return self._format_risk_reason(dangerous_report.to_risk_metadata())
 
         # 에이전트별 승인 규칙 체크
         if self._agent and self._agent.requires_approval:
@@ -103,6 +130,26 @@ class PermissionChecker:
                         return f"에이전트 정책: {self._agent_name}은 {tcode} {permission.value}에 승인 필요"
 
         return None
+
+    def risk_metadata(self, tool_name: str, arguments: dict[str, Any] | None = None) -> dict[str, str]:
+        """권한/preflight 응답에 포함할 구조화 위험 분류를 반환."""
+        if not self.is_enforcing or not self._policy:
+            return {}
+
+        args = arguments or {}
+        tcode = self._extract_tcode(tool_name, args)
+        if tcode:
+            dangerous = self._policy.get_dangerous_transaction_details().get(tcode.upper())
+            if dangerous:
+                return dangerous.to_risk_metadata()
+
+        report = self._extract_report(tool_name, args)
+        if report:
+            dangerous_report = self._policy.get_dangerous_report_details().get(report.upper())
+            if dangerous_report:
+                return dangerous_report.to_risk_metadata()
+
+        return {}
 
     def can_access_tool_surface(self, tool_name: str) -> bool:
         """현재 에이전트 프로필에 이 도구를 MCP surface에 노출할 수 있는지 판단."""
@@ -201,3 +248,17 @@ class PermissionChecker:
         if tool_name == "sap_command":
             return extract_tcode_from_command(str(arguments.get("cmd", "")))
         return None
+
+    def _extract_report(self, tool_name: str, arguments: dict[str, Any]) -> str | None:
+        if tool_name != "sap_run":
+            return None
+        report = arguments.get("report") or arguments.get("program")
+        return str(report).strip() if report else None
+
+    def _format_risk_reason(self, metadata: dict[str, str]) -> str:
+        reason = metadata.get("reason") or metadata.get("category") or "위험 항목"
+        target_type = "트랜잭션" if metadata.get("type") == "transaction" else "리포트"
+        category = metadata.get("category", "")
+        risk_level = metadata.get("risk_level", "")
+        suffix = f" [{category}/{risk_level}]" if category or risk_level else ""
+        return f"위험 {target_type}: {reason}{suffix}"

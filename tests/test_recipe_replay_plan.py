@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from sap_cli.dispatcher import DispatchContext, dispatch_command
+from sap_cli.auth.policy import AgentPolicy, DangerousTransaction, Policy, RelationBinding
 from sap_cli.recipe import Recipe, RecipeStep, RecipeStore
 
 
@@ -307,6 +308,53 @@ def test_replay_execute_blocks_non_sap_recipe_management_step(tmp_path: Path):
     assert result["stage"] == "preflight"
     assert result["preflight"]["issues"][0]["code"] == "disallowed_tool"
     assert result["report_called"] is False
+    assert sap.calls == []
+
+
+def test_replay_execute_preflight_exposes_dangerous_tcode_risk(tmp_path: Path):
+    store = _store(tmp_path)
+    store.save(Recipe(
+        id="dangerous-sm30",
+        description="SM30 실행",
+        steps=[RecipeStep(tool="sap_run", args={"tcode": "SM30"})],
+    ))
+    sap = _ReplaySap()
+    policy = Policy(
+        agents={
+            "standard": AgentPolicy(
+                relations=[RelationBinding(resource="tx:*", relation="operator")],
+            )
+        },
+        dangerous_transactions=[
+            DangerousTransaction(
+                tcode="SM30",
+                reason="테이블 직접 수정",
+                category="table_maintenance",
+                risk_level="critical",
+                preflight_code="dangerous_table_maintenance",
+            )
+        ],
+        active_agent="standard",
+    )
+
+    with (
+        patch("sap_cli.dispatcher._get_recipe_store", return_value=store),
+        patch("sap_cli.dispatcher._get_sap", return_value=sap),
+        patch("sap_cli.dispatcher.load_policy", return_value=policy),
+    ):
+        result = dispatch_command(
+            "recipe_replay_execute",
+            {"recipe_id": "dangerous-sm30"},
+            DispatchContext(source="mcp"),
+        )
+
+    issue = result["preflight"]["issues"][0]
+    assert result["status"] == "blocked"
+    assert issue["code"] == "dangerous_table_maintenance"
+    assert issue["risk"]["type"] == "transaction"
+    assert issue["risk"]["id"] == "SM30"
+    assert issue["risk"]["category"] == "table_maintenance"
+    assert issue["risk"]["auth_action"] == "approval_required"
     assert sap.calls == []
 
 

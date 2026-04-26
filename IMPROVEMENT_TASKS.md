@@ -1180,6 +1180,11 @@ precheck → dry-run plan → execute → verify → report
   - 지원 success criteria: `expected_tcode`, `expected_screen_number`/`expected_screen`, `title_contains`, `allowed_status_types`, `blocked_status_types`, `require_no_modal`.
   - `observation_scope=final|status|screen`으로 step별 관찰값 저장 범위를 선택할 수 있게 했다.
   - precondition/criteria 실패 유형이 replay 품질 메타의 `last_failure_type`과 실패 유형 집계에 반영된다.
+- [x] E-2 auth/preflight 위험 분류 세분화
+  - `DangerousTransaction` 정책에 `category`, `risk_level`, `auth_action`, `preflight_code`를 추가하고 기존 `reason` 문자열 호환을 유지했다.
+  - `DangerousReport` 정책 모델을 추가해 ABAP report/program 단위 위험 항목을 별도로 분류할 수 있게 했다.
+  - 기본 정책의 SM30/SE38/SU01/SE16/SM21 위험 항목을 table maintenance, ABAP report launcher, user administration, table data access, system log access 관점으로 세분화했다.
+  - replay execute preflight issue에 `risk` 메타데이터를 포함해 승인 필요 사유를 auth/preflight 코드로 자동 분류한다.
 
 ### 완료 기준
 
@@ -1189,6 +1194,7 @@ precheck → dry-run plan → execute → verify → report
   - replay execute 메타데이터가 recipe JSON에 누적되어 후속 품질 분석의 기반으로 사용 가능하다.
   - replay 품질 메타데이터가 검색 순위와 recipe 조회/list 응답에 반영된다.
   - `sap_recipe_list`는 compact replay 품질만 노출하고, 상세 집계는 `sap_recipe_show`/`sap_recipe_replay_plan`에서 확인한다.
+  - dangerous tcode/report는 auth/preflight에서 구조화된 risk category/code로 분류된다.
 
 ---
 

@@ -135,6 +135,41 @@ class AgentPolicy(BaseModel):
 class DangerousTransaction(BaseModel):
     tcode: str
     reason: str = ""
+    category: str = "sensitive_transaction"
+    risk_level: str = "high"
+    auth_action: str = "approval_required"
+    preflight_code: str = "dangerous_transaction"
+
+    def to_risk_metadata(self) -> dict[str, str]:
+        return {
+            "type": "transaction",
+            "id": self.tcode.upper(),
+            "reason": self.reason,
+            "category": self.category,
+            "risk_level": self.risk_level,
+            "auth_action": self.auth_action,
+            "preflight_code": self.preflight_code,
+        }
+
+
+class DangerousReport(BaseModel):
+    report: str
+    reason: str = ""
+    category: str = "sensitive_report"
+    risk_level: str = "high"
+    auth_action: str = "approval_required"
+    preflight_code: str = "dangerous_report"
+
+    def to_risk_metadata(self) -> dict[str, str]:
+        return {
+            "type": "report",
+            "id": self.report.upper(),
+            "reason": self.reason,
+            "category": self.category,
+            "risk_level": self.risk_level,
+            "auth_action": self.auth_action,
+            "preflight_code": self.preflight_code,
+        }
 
 
 class AuditConfig(BaseModel):
@@ -161,6 +196,7 @@ class Policy(BaseModel):
     agents: dict[str, AgentPolicy] = Field(default_factory=dict)
     relation_permissions: dict[str, list[str]] = Field(default_factory=dict)
     dangerous_transactions: list[DangerousTransaction] = Field(default_factory=list)
+    dangerous_reports: list[DangerousReport] = Field(default_factory=list)
     audit: AuditConfig = Field(default_factory=AuditConfig)
     transcript: TranscriptConfig = Field(default_factory=TranscriptConfig)
     session: SessionConfig = Field(default_factory=SessionConfig)
@@ -171,6 +207,12 @@ class Policy(BaseModel):
 
     def get_dangerous_tcodes(self) -> dict[str, str]:
         return {d.tcode.upper(): d.reason for d in self.dangerous_transactions}
+
+    def get_dangerous_transaction_details(self) -> dict[str, DangerousTransaction]:
+        return {d.tcode.upper(): d for d in self.dangerous_transactions}
+
+    def get_dangerous_report_details(self) -> dict[str, DangerousReport]:
+        return {d.report.upper(): d for d in self.dangerous_reports}
 
     def resolve_relation_permissions(self, relation: Relation) -> set[Permission]:
         custom = self.relation_permissions.get(relation.value)
