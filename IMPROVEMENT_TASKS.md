@@ -981,6 +981,41 @@ command
 
 ---
 
+## D-15. Connection/screen dispatch 분리
+
+### 이동 대상
+
+```text
+connect
+connections
+session
+screen
+modal
+_search_screen
+_collect_modal
+```
+
+### 완료 기준
+
+- [x] connection/screen command routing이 feature dispatcher를 통한다.
+- [x] `sap_cli.dispatcher` facade wrapper 유지
+- [x] `sap_cli.service.get_pool` monkeypatch 호환 유지
+- [x] command surface / connection 관련 테스트 통과
+
+### 진행 메모
+
+- `sap_cli/dispatchers/connection.py`를 추가해 `connect/connections/session/screen/modal` 구현을 이동했다.
+- `_search_screen` 실제 구현을 `search_screen()`으로, `_collect_modal` 실제 구현을 `collect_modal()`로 connection dispatcher에 분리했다.
+- 중앙 `_execute_command`는 `is_connection_command()`와 `dispatch_connection_command()`를 통해 connection/screen 명령군을 라우팅한다.
+- `sap_cli.dispatcher`에는 `_dispatch_connect`, `_dispatch_connections`, `_dispatch_session_info`, `_dispatch_screen`, `_dispatch_modal`, `_search_screen`, `_collect_modal` facade wrapper를 유지했다.
+- 기존 `_dispatch_connect`가 함수 내부에서 `sap_cli.service.get_pool`을 import하던 monkeypatch 호환을 유지하기 위해 `_get_connection_pool()` facade helper를 추가했다.
+- `sap_cli/dispatchers/__init__.py`에서도 connection dispatcher public surface를 re-export한다.
+- `dispatcher.py`는 1289줄에서 1223줄로 감소했다.
+- 검증: `uv run pytest tests/test_dispatcher.py tests/test_command_surface_consistency.py tests/test_mcp_server.py tests/test_session_pool.py tests/test_connection_stability.py` → 90 passed.
+- 검증: `uv run pytest` → 505 passed.
+
+---
+
 # Phase E: Recipe 운영 고도화
 
 목표: recipe를 실제 사내 운영 자산으로 만들기 위한 품질·검증·소유권 기반을 준비한다.

@@ -51,6 +51,11 @@ from .form import (
     dispatch_form_command,
     is_form_command,
 )
+from .connection import (
+    CONNECTION_COMMANDS,
+    dispatch_connection_command,
+    is_connection_command,
+)
 from .sap_actions import (
     SAP_ACTION_COMMANDS,
     dispatch_sap_action_command,
@@ -87,6 +92,9 @@ __all__ = [
     "FORM_COMMANDS",
     "dispatch_form_command",
     "is_form_command",
+    "CONNECTION_COMMANDS",
+    "dispatch_connection_command",
+    "is_connection_command",
     "SAP_ACTION_COMMANDS",
     "dispatch_sap_action_command",
     "is_sap_action_command",

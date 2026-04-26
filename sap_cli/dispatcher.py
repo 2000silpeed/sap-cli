@@ -122,6 +122,17 @@ from .dispatchers.form import (
     dispatch_learn as _dispatch_learn_impl,
     is_form_command,
 )
+from .dispatchers.connection import (
+    collect_modal as _collect_modal_impl,
+    dispatch_connect as _dispatch_connect_impl,
+    dispatch_connection_command,
+    dispatch_connections as _dispatch_connections_impl,
+    dispatch_modal as _dispatch_modal_impl,
+    dispatch_screen as _dispatch_screen_impl,
+    dispatch_session_info as _dispatch_session_info_impl,
+    is_connection_command,
+    search_screen as _search_screen_impl,
+)
 from .dispatchers.sap_actions import (
     dispatch_command_text as _dispatch_command_text_impl,
     dispatch_get as _dispatch_get_impl,
@@ -355,16 +366,16 @@ def _execute_command(
     ctx: DispatchContext,
     policy: Policy | None = None,
 ) -> dict[str, Any]:
-    if command == "connect":
-        return _dispatch_connect(args, ctx)
-    if command == "connections":
-        return _dispatch_connections(args, ctx)
-    if command == "session":
-        return _get_sap(ctx.slot_id).get_session_info().model_dump(mode="json")
-    if command == "screen":
-        return _dispatch_screen(args, ctx)
-    if command == "modal":
-        return _collect_modal(_get_sap(ctx.slot_id))
+    if is_connection_command(command):
+        return dispatch_connection_command(
+            command,
+            args,
+            ctx,
+            get_pool=_get_connection_pool,
+            get_sap=_get_sap,
+            sap_wrapper_factory=SapGuiWrapper,
+            with_post_action=_with_post_action,
+        )
     if is_sap_action_command(command):
         return dispatch_sap_action_command(
             command,
@@ -449,106 +460,27 @@ def resolve_mcp_call(
 
 
 def _dispatch_connect(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
-    from .service import get_pool
-
-    pool = get_pool()
-    sap = pool.get_or_create(ctx.slot_id, agent_name=ctx.agent_name)
-    conn_idx = int(args.get("connection", args.get("connection_index", 0)))
-    sess_idx = int(args.get("session", args.get("session_index", 0)))
-    system = args.get("system")
-    info = sap.connect(
-        connection_index=conn_idx,
-        session_index=sess_idx,
-        system=system,
-    )
-    pool.update_slot_connection(ctx.slot_id, conn_idx, sess_idx, system_id=system)
-    payload = {
-        "connected": True,
-        "slot_id": ctx.slot_id,
-        "session": info.model_dump(mode="json"),
-    }
-    return _with_post_action(payload, sap, "connect", ctx)
+    return _dispatch_connect_impl(args, ctx, _get_connection_pool, _with_post_action)
 
 
-def _dispatch_connections(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
-    sap = SapGuiWrapper()
-    return sap.list_connections()
+def _dispatch_connections(_args: dict[str, Any], _ctx: DispatchContext) -> dict[str, Any]:
+    return _dispatch_connections_impl(SapGuiWrapper)
+
+
+def _dispatch_session_info(_args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    return _dispatch_session_info_impl(ctx, _get_sap)
 
 
 def _dispatch_screen(args: dict[str, Any], ctx: DispatchContext | None = None) -> dict[str, Any]:
-    slot_id = ctx.slot_id if ctx else "ses0"
-    sap = _get_sap(slot_id)
-    screen = sap.get_screen()
-    search = args.get("search")
-    if search:
-        return _search_screen(screen, search)
-    if args.get("fields_only"):
-        result: dict[str, Any] = {
-            "transaction": screen.transaction,
-            "screen_number": screen.screen_number,
-            "fields": [field.model_dump(mode="json") for field in screen.fields],
-        }
-        if screen.tables:
-            result["tables"] = [t.model_dump(mode="json") for t in screen.tables]
-        return result
-    if args.get("actions_only"):
-        actions = screen.get_available_actions()
-        return {
-            "transaction": screen.transaction,
-            "screen_number": screen.screen_number,
-            "available_actions": [action.model_dump(mode="json") for action in actions],
-        }
-    data = screen.model_dump(mode="json")
-    data["hint"] = "온톨로지 조회 가능: sap_field_dependencies(필드 종속성), sap_document_flow(문서 흐름), sap_ontology_relationships(필드 위치)"
-    return data
+    return _dispatch_screen_impl(args, ctx, _get_sap)
+
+
+def _dispatch_modal(_args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    return _dispatch_modal_impl(ctx, _get_sap)
 
 
 def _search_screen(screen: Any, pattern: str) -> dict[str, Any]:
-    """화면 요소를 패턴으로 검색 (ID, 이름, 라벨, 텍스트 부분 일치)."""
-    p = pattern.lower()
-
-    def _match(text: str) -> bool:
-        return p in text.lower()
-
-    matched_fields = []
-    for f in screen.fields:
-        if any(_match(s) for s in [f.id, f.name, f.label, getattr(f, "value", ""),
-                                    getattr(f.semantic, "sap_field_name", ""),
-                                    getattr(f.semantic, "description", "")] +
-               getattr(f.semantic, "synonyms", [])):
-            matched_fields.append(f.model_dump(mode="json"))
-
-    matched_buttons = []
-    for b in screen.buttons:
-        if any(_match(s) for s in [b.id, b.name, b.text, b.tooltip]):
-            matched_buttons.append(b.model_dump(mode="json"))
-
-    matched_tabs = []
-    for t in screen.tabs:
-        if any(_match(s) for s in [t.id, t.name, t.text]):
-            matched_tabs.append(t.model_dump(mode="json"))
-
-    matched_tables = []
-    for t in screen.tables:
-        if any(_match(s) for s in [t.id, t.name]):
-            matched_tables.append(t.model_dump(mode="json"))
-
-    total = len(matched_fields) + len(matched_buttons) + len(matched_tabs) + len(matched_tables)
-    result: dict[str, Any] = {
-        "transaction": screen.transaction,
-        "screen_number": screen.screen_number,
-        "search": pattern,
-        "total_matches": total,
-    }
-    if matched_fields:
-        result["fields"] = matched_fields
-    if matched_buttons:
-        result["buttons"] = matched_buttons
-    if matched_tabs:
-        result["tabs"] = matched_tabs
-    if matched_tables:
-        result["tables"] = matched_tables
-    return result
+    return _search_screen_impl(screen, pattern)
 
 
 def _dispatch_record_step(
@@ -596,6 +528,12 @@ def _dispatch_table_read(args: dict[str, Any], ctx: DispatchContext) -> dict[str
 
 def _dispatch_command_text(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
     return _dispatch_command_text_impl(args, ctx, _get_sap, _with_post_action)
+
+
+def _get_connection_pool() -> Any:
+    from .service import get_pool
+
+    return get_pool()
 
 
 def _dispatch_table_select(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
@@ -1266,11 +1204,7 @@ def _enum_value(value: Any) -> Any:
 
 
 def _collect_modal(sap: SapGuiWrapper) -> dict[str, Any]:
-    has_modal = sap.has_modal()
-    payload: dict[str, Any] = {"has_modal": has_modal}
-    if has_modal:
-        payload["text"] = sap.get_modal_text()
-    return payload
+    return _collect_modal_impl(sap)
 
 
 # ---------------------------------------------------------------------------

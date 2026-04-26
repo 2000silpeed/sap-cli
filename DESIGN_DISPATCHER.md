@@ -239,6 +239,15 @@ uv run pytest tests/test_command_surface_consistency.py
 - `read_table` 기본 `max_rows=50`은 변경하지 않았다.
 - `dispatcher.py`는 1312줄에서 1289줄로 감소했다.
 
+## D-15 connection/screen 분리 진행 메모
+
+- `connect/connections/session/screen/modal` 구현을 신규 `sap_cli/dispatchers/connection.py`로 이동했다.
+- `_search_screen`과 `_collect_modal` 실제 구현도 connection dispatcher로 옮기고, 중앙 dispatcher에는 facade wrapper만 유지한다.
+- 중앙 `_execute_command`는 `is_connection_command()`와 `dispatch_connection_command()` 라우팅으로 connection/screen 명령군을 처리한다.
+- `connect`는 기존처럼 `sap_cli.service.get_pool` monkeypatch가 동작하도록 `_get_connection_pool()` facade helper를 통해 pool factory를 주입한다.
+- `sap_cli/dispatchers/__init__.py`에서도 connection dispatcher public surface를 re-export한다.
+- `dispatcher.py`는 1289줄에서 1223줄로 감소했다.
+
 ## D-2 진행 메모
 
 - `recipe_failure`, `recipe_enable`, `recipe_history`, `recipe_chain` 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.
