@@ -15,6 +15,11 @@ from .process import (
     dispatch_process_command,
     is_process_command,
 )
+from .ontology import (
+    ONTOLOGY_COMMANDS,
+    dispatch_ontology_command,
+    is_ontology_command,
+)
 from .session import (
     SESSION_COMMANDS,
     SESSION_SKIP_COMMANDS,
@@ -30,6 +35,9 @@ __all__ = [
     "PROCESS_COMMANDS",
     "dispatch_process_command",
     "is_process_command",
+    "ONTOLOGY_COMMANDS",
+    "dispatch_ontology_command",
+    "is_ontology_command",
     "SESSION_COMMANDS",
     "SESSION_SKIP_COMMANDS",
     "dispatch_session_command",

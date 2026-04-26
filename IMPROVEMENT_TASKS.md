@@ -692,8 +692,8 @@ _log_session_step
 
 ### 완료 기준
 
-- [ ] ontology/process 테스트 전체 통과
-- [ ] MCP ontology query 동작 회귀 없음
+- [x] ontology/process 테스트 전체 통과
+- [x] MCP ontology query 동작 회귀 없음
 
 ### 진행 메모
 
@@ -704,7 +704,12 @@ _log_session_step
 - `dispatcher.py`는 2295줄에서 2156줄로 감소했다.
 - 검증: `uv run pytest tests/test_process_executor.py tests/test_ontology_ask.py tests/test_ontology_mcp_query.py tests/test_ontology_store.py` → 96 passed.
 - 검증: `uv run pytest tests/test_dispatcher.py tests/test_command_surface_consistency.py tests/test_mcp_server.py tests/test_mcp_daemon.py` → 31 passed.
-- 남은 범위: ontology query/ask/relationships/dependencies/document flow/rebuild/annotate 분리.
+- 두 번째 작은 단계로 `sap_cli/dispatchers/ontology.py`를 추가해 `ontology_query/ask/relationships/field_dependencies/document_flow/rebuild/annotate` 실제 구현을 이동했다.
+- `sap_cli.dispatcher`에는 기존 `_dispatch_ontology_*`, `_dispatch_field_dependencies`, `_dispatch_document_flow`, `_dispatch_annotate*`, `_build_chain` private import 호환을 위한 thin wrapper를 유지했다.
+- 중앙 `_execute_command`는 `is_ontology_command()`와 `dispatch_ontology_command()`를 통해 ontology 명령군을 라우팅한다.
+- `sap_cli/dispatchers/__init__.py`에서도 ontology command public surface를 re-export한다.
+- `dispatcher.py`는 2156줄에서 1645줄로 감소했다.
+- 검증: `uv run pytest tests/test_process_executor.py tests/test_ontology_ask.py tests/test_ontology_mcp_query.py tests/test_ontology_store.py tests/test_dispatcher.py tests/test_command_surface_consistency.py tests/test_mcp_server.py tests/test_mcp_daemon.py` → 127 passed.
 
 ---
 

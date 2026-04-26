@@ -155,7 +155,10 @@ uv run pytest tests/test_command_surface_consistency.py
 - `sap_cli.dispatcher`에는 `_dispatch_process_*` wrapper를 유지해 기존 private import surface를 보존한다.
 - process dispatcher는 `get_store` 의존성을 facade에서 주입받으므로 기존 `sap_cli.dispatcher._get_store` monkeypatch 호환성을 유지한다.
 - `sap_cli/dispatchers/__init__.py`에서도 process command public surface를 re-export한다.
-- 남은 D-5 범위는 ontology query/ask/relationships/dependencies/document flow/rebuild/annotate 분리다.
+- 이어서 `ontology_query/ask/relationships/field_dependencies/document_flow/rebuild/annotate` 구현을 `sap_cli/dispatchers/ontology.py`로 이동했다.
+- `sap_cli.dispatcher`에는 `_dispatch_ontology_*`, `_dispatch_field_dependencies`, `_dispatch_document_flow`, `_dispatch_annotate*`, `_build_chain` wrapper를 유지해 기존 private import surface를 보존한다.
+- ontology dispatcher는 `get_store`, `get_recipe_store` 의존성을 facade에서 주입받으므로 기존 `sap_cli.dispatcher._get_store`/`_get_recipe_store` monkeypatch 호환성을 유지한다.
+- `sap_cli/dispatchers/__init__.py`에서도 ontology command public surface를 re-export한다.
 
 ## D-2 진행 메모
 
