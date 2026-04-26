@@ -1238,7 +1238,14 @@ sap data-status
 
 ### 완료 기준
 
-- [ ] 사용자가 `~/.sap_cli` 내부 상태를 쉽게 확인할 수 있다.
+- [x] 사용자가 `~/.sap_cli` 내부 상태를 쉽게 확인할 수 있다.
+
+### 2026-04-26 완료 메모
+
+- `sap data-dir` 명령을 추가해 `policy`, `recipes`, `macros`, `ontology`, `audit`, `transcripts`, `sessions`, `captures`의 기본 위치와 존재 여부를 JSON으로 확인할 수 있게 했다.
+- `sap data-status` 명령을 추가해 각 위치의 파일 수, 하위 디렉터리 수, 총 바이트, 마지막 수정 시각을 확인할 수 있게 했다.
+- 진단 명령은 디렉터리를 새로 만들지 않고 현재 상태만 읽는다.
+- `captures`는 현재 스크린샷 저장 구현의 기본 경로인 `~/.sap_cli/screenshots`로 매핑했다.
 
 ---
 

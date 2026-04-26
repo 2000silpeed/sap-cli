@@ -564,6 +564,22 @@ def recipe_delete(
 # Auth Diagnostic Commands
 # -------------------------------------------------------------------
 
+@app.command("data-dir")
+def data_dir() -> None:
+    """로컬 SAP CLI 데이터 위치를 출력."""
+    from .data_diagnostics import data_locations
+
+    _output_json(data_locations())
+
+
+@app.command("data-status")
+def data_status_cmd() -> None:
+    """로컬 SAP CLI 데이터 저장 상태(파일 수/용량)를 출력."""
+    from .data_diagnostics import data_status
+
+    _output_json(data_status())
+
+
 def _default_policy_path() -> Path:
     """load_policy()와 같은 기본 정책 파일 경로를 반환."""
     yaml_path = Path.home() / ".sap_cli" / "policy.yaml"
