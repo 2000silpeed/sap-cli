@@ -27,6 +27,18 @@ from .dispatchers.registry import (
     MCP_TOOL_TO_COMMAND,
     CommandDef,
 )
+from .dispatchers.process import (
+    dispatch_process_command,
+    dispatch_process_create as _dispatch_process_create_impl,
+    dispatch_process_delete as _dispatch_process_delete_impl,
+    dispatch_process_list as _dispatch_process_list_impl,
+    dispatch_process_path as _dispatch_process_path_impl,
+    dispatch_process_show as _dispatch_process_show_impl,
+    dispatch_process_start as _dispatch_process_start_impl,
+    dispatch_process_status as _dispatch_process_status_impl,
+    dispatch_process_step as _dispatch_process_step_impl,
+    is_process_command,
+)
 from .dispatchers.recipe import (
     collect_recipe_hints as _collect_recipe_hints_impl,
     dispatch_recipe_chain as _dispatch_recipe_chain_impl,
@@ -441,20 +453,8 @@ def _execute_command(
         return _dispatch_transcript_plan(args, policy)
     if command == "learn":
         return _dispatch_learn(ctx)
-    if command == "process_list":
-        return _dispatch_process_list()
-    if command == "process_show":
-        return _dispatch_process_show(args)
-    if command == "process_create":
-        return _dispatch_process_create(args)
-    if command == "process_delete":
-        return _dispatch_process_delete(args)
-    if command == "process_start":
-        return _dispatch_process_start(args)
-    if command == "process_step":
-        return _dispatch_process_step(args)
-    if command == "process_status":
-        return _dispatch_process_status()
+    if is_process_command(command):
+        return dispatch_process_command(command, args, get_store=_get_store)
     if command == "annotate":
         return _dispatch_annotate(args)
     if command == "annotate_dependency":
@@ -469,8 +469,6 @@ def _execute_command(
         return _dispatch_field_dependencies(args)
     if command == "document_flow":
         return _dispatch_document_flow(args)
-    if command == "process_path":
-        return _dispatch_process_path(args)
     if command == "ontology_rebuild":
         return _dispatch_ontology_rebuild()
     if command == "capture":
@@ -1220,126 +1218,31 @@ def _dispatch_annotate_dependency(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _dispatch_process_list() -> dict[str, Any]:
-    store = _get_store()
-    process_ids = store.list_processes()
-    processes = []
-    for pid in process_ids:
-        p = store.load_process(pid)
-        if p:
-            processes.append({
-                "id": p.id,
-                "name": p.name,
-                "module": p.module,
-                "steps_count": len(p.steps),
-                "tags": p.tags,
-            })
-    return {"processes": processes, "count": len(processes)}
+    return _dispatch_process_list_impl(_get_store)
 
 
 def _dispatch_process_show(args: dict[str, Any]) -> dict[str, Any]:
-    process_id = str(args["process_id"])
-    store = _get_store()
-    process = store.load_process(process_id)
-    if not process:
-        return {"error": True, "message": f"프로세스 '{process_id}'를 찾을 수 없습니다."}
-    return process.model_dump(mode="json")
+    return _dispatch_process_show_impl(args, _get_store)
 
 
 def _dispatch_process_create(args: dict[str, Any]) -> dict[str, Any]:
-    from .ontology.schema import BusinessProcess, DataFlow, ProcessStep
-
-    process_id = str(args["id"])
-    name = str(args["name"])
-    steps_raw = args.get("steps", [])
-    data_flows_raw = args.get("data_flows", [])
-
-    steps = [ProcessStep(**s) for s in steps_raw]
-    data_flows = [DataFlow(**d) for d in data_flows_raw]
-
-    process = BusinessProcess(
-        id=process_id,
-        name=name,
-        module=str(args.get("module", "")),
-        description=str(args.get("description", "")),
-        steps=steps,
-        data_flows=data_flows,
-        tags=args.get("tags", []),
-    )
-    errors = process.validate_integrity()
-    if errors:
-        return {"error": True, "message": "프로세스 무결성 검증 실패", "errors": errors}
-    store = _get_store()
-    path = store.save_process(process)
-    return {"saved": True, "process_id": process.id, "path": str(path)}
+    return _dispatch_process_create_impl(args, _get_store)
 
 
 def _dispatch_process_delete(args: dict[str, Any]) -> dict[str, Any]:
-    process_id = str(args["process_id"])
-    deleted = _get_store().delete_process(process_id)
-    return {"deleted": deleted, "process_id": process_id}
-
-
-_active_executor: Any = None  # ProcessExecutor | None
+    return _dispatch_process_delete_impl(args, _get_store)
 
 
 def _dispatch_process_start(args: dict[str, Any]) -> dict[str, Any]:
-    global _active_executor
-    from .ontology.process_executor import ProcessExecutor
-
-    process_id = str(args["process_id"])
-    store = _get_store()
-    process = store.load_process(process_id)
-    if not process:
-        return {"error": True, "message": f"프로세스 '{process_id}'를 찾을 수 없습니다."}
-
-    _active_executor = ProcessExecutor(process)
-    _active_executor.start()
-    return _active_executor.get_status()
+    return _dispatch_process_start_impl(args, _get_store)
 
 
 def _dispatch_process_step(args: dict[str, Any]) -> dict[str, Any]:
-    global _active_executor
-    if _active_executor is None:
-        return {"error": True, "message": "실행 중인 프로세스가 없습니다. process_start를 먼저 호출하세요."}
-
-    step_number = int(args["step_number"])
-    status = str(args.get("status", "success"))
-    outputs = args.get("outputs", {}) or {}
-    error = str(args.get("error", ""))
-
-    if status == "skipped":
-        try:
-            _active_executor.skip_step(step_number, error)
-        except ValueError as e:
-            return {"error": True, "message": str(e)}
-    else:
-        _active_executor.complete_step(
-            step_number, outputs=outputs, status=status, error=error,
-        )
-
-    remaining = [
-        s for s in _active_executor.process.steps
-        if s.step_number > step_number
-        and not any(r.step_number == s.step_number for r in _active_executor.execution.step_results)
-    ]
-
-    result = _active_executor.get_status()
-
-    if not remaining:
-        has_error = any(r.status == "error" for r in _active_executor.execution.step_results)
-        final_status = "failed" if has_error else "completed"
-        path = _active_executor.finish(final_status)
-        result["saved_to"] = str(path)
-        result["status"] = final_status
-        _active_executor = None
-
-    return result
+    return _dispatch_process_step_impl(args)
 
 
 def _dispatch_process_status() -> dict[str, Any]:
-    if _active_executor is None:
-        return {"error": True, "message": "실행 중인 프로세스가 없습니다."}
-    return _active_executor.get_status()
+    return _dispatch_process_status_impl()
 
 
 def _dispatch_fill(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
@@ -1580,49 +1483,7 @@ def _dispatch_ontology_rebuild() -> dict[str, Any]:
 
 
 def _dispatch_process_path(args: dict[str, Any]) -> dict[str, Any]:
-    """두 트랜잭션 간 문서 흐름 경로 탐색 (BFS)."""
-    from .ontology.graph import OntologyGraph
-
-    from_tcode = args.get("from_tcode", "")
-    to_tcode = args.get("to_tcode", "")
-    if not from_tcode or not to_tcode:
-        return {"error": True, "message": "from_tcode와 to_tcode가 필요합니다."}
-
-    store = _get_store()
-    graph = OntologyGraph(store)
-    graph.build_from_store()
-
-    path = graph.get_process_path(from_tcode, to_tcode)
-    if path is None:
-        return {
-            "error": True,
-            "message": f"{from_tcode} → {to_tcode} 경로를 찾을 수 없습니다. 문서 흐름 데이터를 --rebuild로 구축했는지 확인하세요.",
-        }
-
-    # 경로의 각 엣지에 대한 상세 정보 추가
-    edges_detail = []
-    flow = store.load_document_flow()
-    flow_map = {(e.source_tcode, e.target_tcode): e for e in flow.edges}
-    for i in range(len(path) - 1):
-        edge = flow_map.get((path[i], path[i + 1]))
-        if edge:
-            edges_detail.append({
-                "from": path[i],
-                "to": path[i + 1],
-                "linking_field": edge.linking_field,
-                "flow_type": edge.flow_type.value,
-                "confidence": edge.confidence,
-            })
-        else:
-            edges_detail.append({"from": path[i], "to": path[i + 1]})
-
-    return {
-        "from": from_tcode.upper(),
-        "to": to_tcode.upper(),
-        "path": path,
-        "path_display": " → ".join(path),
-        "steps": edges_detail,
-    }
+    return _dispatch_process_path_impl(args, _get_store)
 
 
 def _flatten_tree_nodes(nodes: list) -> list:

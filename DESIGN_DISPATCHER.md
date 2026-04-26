@@ -148,6 +148,15 @@ uv run pytest tests/test_command_surface_consistency.py
 - session dispatcher는 session store, recipe store, ontology link, SAP wrapper 의존성을 facade에서 주입받으므로 기존 monkeypatch 기반 테스트 호환성을 유지한다.
 - session → recipe suggestion 회귀 테스트 포함 확인: `tests/test_recipe_autosuggest.py`, `tests/test_session*.py`.
 
+## D-5 process 분리 진행 메모
+
+- D-5의 첫 작은 단계로 process dispatch를 ontology dispatch보다 먼저 분리했다.
+- `process_list/show/create/delete/start/step/status/path` 구현을 `sap_cli/dispatchers/process.py`로 이동했다.
+- `sap_cli.dispatcher`에는 `_dispatch_process_*` wrapper를 유지해 기존 private import surface를 보존한다.
+- process dispatcher는 `get_store` 의존성을 facade에서 주입받으므로 기존 `sap_cli.dispatcher._get_store` monkeypatch 호환성을 유지한다.
+- `sap_cli/dispatchers/__init__.py`에서도 process command public surface를 re-export한다.
+- 남은 D-5 범위는 ontology query/ask/relationships/dependencies/document flow/rebuild/annotate 분리다.
+
 ## D-2 진행 메모
 
 - `recipe_failure`, `recipe_enable`, `recipe_history`, `recipe_chain` 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.
