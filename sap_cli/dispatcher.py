@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +52,16 @@ from .dispatchers.ontology import (
     dispatch_ontology_relationships as _dispatch_ontology_relationships_impl,
     is_ontology_command,
 )
+from .dispatchers.macro import (
+    dispatch_macro_command,
+    dispatch_macro_control as _dispatch_macro_control_impl,
+    dispatch_macro_delete as _dispatch_macro_delete_impl,
+    dispatch_macro_list as _dispatch_macro_list_impl,
+    dispatch_macro_play as _dispatch_macro_play_impl,
+    dispatch_macro_show as _dispatch_macro_show_impl,
+    is_macro_command,
+    utc_to_local as _utc_to_local_impl,
+)
 from .dispatchers.recipe import (
     collect_recipe_hints as _collect_recipe_hints_impl,
     dispatch_recipe_chain as _dispatch_recipe_chain_impl,
@@ -88,7 +97,6 @@ from .dispatchers.session import (
     is_session_command,
     log_session_step as _log_session_step_impl,
 )
-from .macro.player import MacroPlayer
 from .ontology.store import OntologyStore
 from .service import (
     execute_sap_action as _execute_sap_action,
@@ -434,16 +442,16 @@ def _execute_command(
         return _collect_modal(_get_sap(ctx.slot_id))
     if command == "record_step":
         return _dispatch_record_step(args, ctx)
-    if command == "macro_control":
-        return _dispatch_macro_control(args)
-    if command == "macro_play":
-        return _dispatch_macro_play(args, ctx)
-    if command == "macro_list":
-        return _dispatch_macro_list(args)
-    if command == "macro_show":
-        return _dispatch_macro_show(args)
-    if command == "macro_delete":
-        return _dispatch_macro_delete(args)
+    if is_macro_command(command):
+        return dispatch_macro_command(
+            command,
+            args,
+            ctx,
+            get_recorder=_get_recorder,
+            get_macro_store=_get_macro_store,
+            get_sap=_get_sap,
+            with_post_action=_with_post_action,
+        )
     if command == "table_select":
         sap = _get_sap(ctx.slot_id)
         element_id = str(args["element_id"])
@@ -659,131 +667,30 @@ def _dispatch_record_step(
 
 
 def _dispatch_macro_control(args: dict[str, Any]) -> dict[str, Any]:
-    command = str(args["command"])
-    recorder = _get_recorder()
-
-    if command == "start":
-        macro_name = str(args.get("name", "unnamed"))
-        recorder.start(macro_name)
-        return {"recording": True, "name": macro_name}
-
-    if command == "finish":
-        store = _get_macro_store()
-        macro_name = args.get("name") or recorder._name
-        description = str(args.get("description", ""))
-        variables = args.get("variables")
-        macro = recorder.finish(
-            name=macro_name,
-            description=description,
-            variables=variables,
-        )
-        path = store.save(macro)
-        return {
-            "saved": True,
-            "macro_id": macro.id,
-            "name": macro.name,
-            "steps_count": len(macro.steps),
-            "variables": [value.model_dump(mode="json") for value in macro.variables],
-            "path": str(path),
-        }
-
-    if command == "cancel":
-        recorder.cancel()
-        return {"cancelled": True}
-
-    if command == "status":
-        steps = recorder.current_steps
-        return {
-            "recording": recorder.is_recording,
-            "steps_count": len(steps),
-            "steps": [
-                {
-                    "step_number": step.step_number,
-                    "action": step.action.value,
-                    "target_id": step.target_id,
-                    "value": step.value,
-                }
-                for step in steps
-            ],
-        }
-
-    if command == "undo":
-        removed = recorder.undo_last()
-        if removed:
-            return {
-                "undone": True,
-                "removed_step": removed.step_number,
-                "action": removed.action.value,
-                "remaining_steps": len(recorder.current_steps),
-            }
-        return {"undone": False, "message": "취소할 단계가 없습니다."}
-
-    raise ValueError(f"알 수 없는 명령: {command}")
+    return _dispatch_macro_control_impl(args, _get_recorder, _get_macro_store)
 
 
 def _dispatch_macro_play(
     args: dict[str, Any],
     ctx: DispatchContext,
 ) -> dict[str, Any]:
-    store = _get_macro_store()
-    macro_id = str(args["macro_id"])
-    macro = store.load(macro_id)
-    if not macro:
-        raise ValueError(f"매크로 '{macro_id}'를 찾을 수 없습니다.")
-
-    variables = args.get("variables", {}) or {}
-    sap = _get_sap(ctx.slot_id)
-    player = MacroPlayer(sap)
-
-    if args.get("dry_run"):
-        return player.dry_run(macro, variables).model_dump(mode="json")
-
-    payload = player.play(macro, variables).model_dump(mode="json")
-    return _with_post_action(payload, sap, "macro_play", ctx)
+    return _dispatch_macro_play_impl(args, ctx, _get_macro_store, _get_sap, _with_post_action)
 
 
 def _dispatch_macro_list(args: dict[str, Any]) -> dict[str, Any]:
-    store = _get_macro_store()
-    tcode = args.get("tcode")
-    if tcode:
-        macros = store.find_by_tcode(str(tcode))
-        return {
-            "macros": [macro.model_dump(mode="json") for macro in macros],
-            "count": len(macros),
-        }
-    macros = store.list_macros()
-    return {"macros": macros, "count": len(macros)}
+    return _dispatch_macro_list_impl(args, _get_macro_store)
 
 
 def _utc_to_local(iso_str: str) -> str:
-    """UTC ISO 문자열을 유저 로컬 타임존으로 변환."""
-    if not iso_str:
-        return iso_str
-    try:
-        dt = datetime.fromisoformat(iso_str)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone().isoformat()
-    except (ValueError, TypeError):
-        return iso_str
+    return _utc_to_local_impl(iso_str)
 
 
 def _dispatch_macro_show(args: dict[str, Any]) -> dict[str, Any]:
-    store = _get_macro_store()
-    macro_id = str(args["macro_id"])
-    macro = store.load(macro_id)
-    if not macro:
-        return {"error": True, "message": f"매크로 '{macro_id}'를 찾을 수 없습니다."}
-    data = macro.model_dump(mode="json")
-    data["created_at"] = _utc_to_local(data.get("created_at", ""))
-    data["updated_at"] = _utc_to_local(data.get("updated_at", ""))
-    return data
+    return _dispatch_macro_show_impl(args, _get_macro_store)
 
 
 def _dispatch_macro_delete(args: dict[str, Any]) -> dict[str, Any]:
-    macro_id = str(args["macro_id"])
-    deleted = _get_macro_store().delete(macro_id)
-    return {"deleted": deleted, "macro_id": macro_id}
+    return _dispatch_macro_delete_impl(args, _get_macro_store)
 
 
 def _dispatch_ontology_ask(args: dict[str, Any]) -> dict[str, Any]:

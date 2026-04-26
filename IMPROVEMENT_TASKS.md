@@ -713,6 +713,35 @@ _log_session_step
 
 ---
 
+## D-6. Macro dispatch 분리
+
+### 이동 대상
+
+```text
+_dispatch_macro_control
+_dispatch_macro_play
+_dispatch_macro_list
+_dispatch_macro_show
+_dispatch_macro_delete
+_utc_to_local
+```
+
+### 완료 기준
+
+- [x] macro 관련 command routing이 feature dispatcher를 통한다.
+- [x] `sap_cli.dispatcher` private import/monkeypatch 호환 wrapper 유지
+- [x] command surface / MCP drift 테스트 통과
+
+### 진행 메모
+
+- `sap_cli/dispatchers/macro.py`를 추가해 macro record/play/list/show/delete 실제 구현을 이동했다.
+- `sap_cli.dispatcher`에는 기존 `_dispatch_macro_*`, `_utc_to_local` private import 호환을 위한 thin wrapper를 유지했다.
+- 중앙 `_execute_command`는 `is_macro_command()`와 `dispatch_macro_command()`를 통해 macro 명령군을 라우팅한다.
+- macro dispatcher는 recorder, macro store, SAP wrapper, post-action hook 의존성을 facade에서 주입받으므로 기존 `sap_cli.dispatcher._get_recorder`/`_get_macro_store`/`_get_sap` monkeypatch 호환성을 유지한다.
+- `sap_cli/dispatchers/__init__.py`에서도 macro command public surface를 re-export한다.
+
+---
+
 # Phase E: Recipe 운영 고도화
 
 목표: recipe를 실제 사내 운영 자산으로 만들기 위한 품질·검증·소유권 기반을 준비한다.
@@ -972,6 +1001,7 @@ ADT는 강력하지만 인증/권한/시스템 설정 의존성이 추가된다.
 3. D-3 registry 분리
 4. D-4 session dispatch 분리
 5. D-5 ontology/process dispatch 분리
+6. D-6 macro dispatch 분리
 
 완료 기준:
 

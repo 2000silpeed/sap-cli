@@ -160,6 +160,14 @@ uv run pytest tests/test_command_surface_consistency.py
 - ontology dispatcher는 `get_store`, `get_recipe_store` 의존성을 facade에서 주입받으므로 기존 `sap_cli.dispatcher._get_store`/`_get_recipe_store` monkeypatch 호환성을 유지한다.
 - `sap_cli/dispatchers/__init__.py`에서도 ontology command public surface를 re-export한다.
 
+## D-6 macro 분리 진행 메모
+
+- `macro_control/play/list/show/delete` 구현과 `_utc_to_local` helper를 `sap_cli/dispatchers/macro.py`로 이동했다.
+- `sap_cli.dispatcher`에는 `_dispatch_macro_*`, `_utc_to_local` wrapper를 유지해 기존 private import surface를 보존한다.
+- 중앙 `_execute_command`는 `is_macro_command()`와 `dispatch_macro_command()`를 통해 macro 명령군을 라우팅한다.
+- macro dispatcher는 recorder, macro store, SAP wrapper, post-action hook 의존성을 facade에서 주입받으므로 기존 monkeypatch 기반 테스트 호환성을 유지한다.
+- `sap_cli/dispatchers/__init__.py`에서도 macro command public surface를 re-export한다.
+
 ## D-2 진행 메모
 
 - `recipe_failure`, `recipe_enable`, `recipe_history`, `recipe_chain` 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.

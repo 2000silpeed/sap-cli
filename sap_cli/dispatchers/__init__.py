@@ -15,6 +15,11 @@ from .process import (
     dispatch_process_command,
     is_process_command,
 )
+from .macro import (
+    MACRO_COMMANDS,
+    dispatch_macro_command,
+    is_macro_command,
+)
 from .ontology import (
     ONTOLOGY_COMMANDS,
     dispatch_ontology_command,
@@ -35,6 +40,9 @@ __all__ = [
     "PROCESS_COMMANDS",
     "dispatch_process_command",
     "is_process_command",
+    "MACRO_COMMANDS",
+    "dispatch_macro_command",
+    "is_macro_command",
     "ONTOLOGY_COMMANDS",
     "dispatch_ontology_command",
     "is_ontology_command",
