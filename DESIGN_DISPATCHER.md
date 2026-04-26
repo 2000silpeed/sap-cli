@@ -144,4 +144,6 @@ uv run pytest tests/test_command_surface_consistency.py
 - `recipe_query` wrapper는 dispatcher module의 `_get_recipe_store`를, `recipe_pending` wrapper는 `_get_session_store`를 implementation에 주입하므로 기존 monkeypatch 테스트 호환성을 유지한다.
 - 추가로 `recipe_version_up` 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.
 - `recipe_version_up` wrapper는 dispatcher module의 `_get_recipe_store`, `_unlink_recipe_from_ontology`, `_link_recipe_to_ontology`를 implementation에 주입하므로 기존 helper monkeypatch 호환성을 유지한다.
-- 현재 남은 큰 recipe 구현은 `recipe_save` 및 ontology-link helper 계열이다. helper 이동은 monkeypatch 영향이 커서 별도 작은 단계로 진행한다.
+- 추가로 `recipe_save` 구현과 recipe helper 계열(`_get_recipe_store`, `_collect_recipe_hints`, `_extract_recipe_tcodes`, `_unlink_recipe_from_ontology`, `_delete_recipe_with_links`, `_link_recipe_to_ontology`)의 실제 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.
+- `sap_cli.dispatcher`에는 기존 private import/monkeypatch 호환을 위한 facade wrapper만 남겼다. wrapper가 dispatcher module의 helper 이름을 implementation에 주입하므로 기존 monkeypatch 테스트 호환성을 유지한다.
+- 이 시점에서 recipe 기능 수정 시 우선 `sap_cli/dispatchers/recipe.py`를 보면 되는 상태가 되었고, `dispatcher.py`는 recipe facade/호환 wrapper와 중앙 라우팅만 담당한다.

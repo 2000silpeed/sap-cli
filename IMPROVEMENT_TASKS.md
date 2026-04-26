@@ -588,7 +588,7 @@ _dispatch_recipe_pending
 
 - [x] recipe 관련 테스트 전체 통과
 - [x] dispatcher.py 줄 수 감소
-- [ ] recipe 기능 수정 시 recipe dispatcher만 보면 된다.
+- [x] recipe 기능 수정 시 recipe dispatcher만 보면 된다.
 
 ### 진행 메모
 
@@ -611,6 +611,11 @@ _dispatch_recipe_pending
 - `recipe_version_up` wrapper는 dispatcher module의 `_get_recipe_store`, `_unlink_recipe_from_ontology`, `_link_recipe_to_ontology`를 implementation에 주입하므로 기존 helper monkeypatch 호환성을 유지한다.
 - `dispatcher.py`는 2894줄에서 2864줄로 추가 감소했다.
 - recipe 관련 테스트 통과 확인: `146 passed`.
+- 여섯 번째 작은 단계로 `recipe_save` 실제 구현과 recipe helper 계열(`_get_recipe_store`, `_collect_recipe_hints`, `_extract_recipe_tcodes`, `_unlink_recipe_from_ontology`, `_delete_recipe_with_links`, `_link_recipe_to_ontology`) 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.
+- `sap_cli.dispatcher`에는 기존 private import/monkeypatch 호환용 wrapper를 유지하고, wrapper가 현재 module의 helper 이름을 implementation에 주입하므로 기존 테스트의 monkeypatch 동작을 유지한다.
+- `dispatcher.py`는 2864줄에서 2529줄로 추가 감소했다.
+- recipe 관련 테스트 통과 확인: `146 passed`.
+- D-2 완료 기준 3개를 모두 충족했다.
 
 ---
 
