@@ -110,6 +110,12 @@ from .dispatchers.transcript import (
     make_ontology_store as _make_ontology_store_impl,
     is_transcript_command,
 )
+from .dispatchers.capture import (
+    dispatch_capture as _dispatch_capture_impl,
+    dispatch_capture_command,
+    dispatch_capture_list as _dispatch_capture_list_impl,
+    is_capture_command,
+)
 from .ontology.store import OntologyStore
 from .service import (
     execute_sap_action as _execute_sap_action,
@@ -494,10 +500,8 @@ def _execute_command(
         return dispatch_process_command(command, args, get_store=_get_store)
     if command == "fill":
         return _dispatch_fill(args, ctx)
-    if command == "capture":
-        return _dispatch_capture(args, ctx)
-    if command == "capture_list":
-        return _dispatch_capture_list(args)
+    if is_capture_command(command):
+        return dispatch_capture_command(command, args, ctx, get_sap=_get_sap)
     if is_recipe_command(command):
         return dispatch_recipe_command(command, args, _RECIPE_HANDLERS)
     if is_session_command(command):
@@ -919,47 +923,11 @@ def _truncate_tree_depth(node, remaining_depth: int):
 
 
 def _dispatch_capture(args: dict[str, Any], ctx: DispatchContext | None = None) -> dict[str, Any]:
-    """현재 SAP GUI 화면 스크린샷 캡처."""
-    from .screenshot import capture_sap_window, capture_for_step
-
-    slot_id = ctx.slot_id if ctx else "ses0"
-    sap = _get_sap(slot_id)
-    info = sap.get_session_info()
-    label = args.get("label") or ""
-    output = args.get("output")
-
-    session = sap._session  # COM 세션 → 정확한 윈도우 핸들 획득용
-
-    if output:
-        path = capture_sap_window(output, session=session)
-    else:
-        path = capture_for_step(
-            tcode=info.transaction,
-            step_number=0,
-            screen_number=info.screen_number,
-            label=label or "manual",
-            session=session,
-        )
-
-    if path is None:
-        raise RuntimeError("스크린샷 캡처에 실패했습니다.")
-
-    return {
-        "captured": True,
-        "path": str(path),
-        "transaction": info.transaction,
-        "screen_number": info.screen_number,
-        "label": label,
-    }
+    return _dispatch_capture_impl(args, ctx, _get_sap)
 
 
 def _dispatch_capture_list(args: dict[str, Any]) -> dict[str, Any]:
-    """저장된 스크린샷 목록 조회."""
-    from .screenshot import list_screenshots
-
-    tcode = args.get("tcode")
-    shots = list_screenshots(tcode)
-    return {"screenshots": shots, "count": len(shots)}
+    return _dispatch_capture_list_impl(args)
 
 
 def _get_recipe_store():

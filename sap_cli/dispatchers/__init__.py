@@ -41,6 +41,11 @@ from .transcript import (
     dispatch_transcript_command,
     is_transcript_command,
 )
+from .capture import (
+    CAPTURE_COMMANDS,
+    dispatch_capture_command,
+    is_capture_command,
+)
 
 __all__ = [
     "COMMAND_REGISTRY",
@@ -66,4 +71,7 @@ __all__ = [
     "TRANSCRIPT_COMMANDS",
     "dispatch_transcript_command",
     "is_transcript_command",
+    "CAPTURE_COMMANDS",
+    "dispatch_capture_command",
+    "is_capture_command",
 ]

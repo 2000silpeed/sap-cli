@@ -797,6 +797,34 @@ _make_ontology_store
 
 ---
 
+## D-9. Capture dispatch 분리
+
+### 이동 대상
+
+```text
+_dispatch_capture
+_dispatch_capture_list
+```
+
+### 완료 기준
+
+- [x] capture 관련 command routing이 feature dispatcher를 통한다.
+- [x] `sap_cli.dispatcher` private import/monkeypatch 호환 wrapper 유지
+- [x] command surface / dispatcher 테스트 통과
+
+### 진행 메모
+
+- `sap_cli/dispatchers/capture.py`를 추가해 `capture/capture_list` 실제 구현을 이동했다.
+- `sap_cli.dispatcher`에는 기존 `_dispatch_capture`, `_dispatch_capture_list` private import 호환을 위한 thin wrapper를 유지했다.
+- 중앙 `_execute_command`는 `is_capture_command()`와 `dispatch_capture_command()`를 통해 capture 명령군을 라우팅한다.
+- capture dispatcher는 SAP wrapper factory 의존성을 facade에서 주입받으므로 기존 `sap_cli.dispatcher._get_sap` monkeypatch 호환성을 유지한다.
+- `sap_cli/dispatchers/__init__.py`에서도 capture command public surface를 re-export한다.
+- `dispatcher.py`는 1483줄에서 1451줄로 감소했다.
+- 검증: `uv run pytest tests/test_command_surface_consistency.py tests/test_dispatcher.py` → 17 passed.
+- 검증: `uv run pytest` → 505 passed.
+
+---
+
 # Phase E: Recipe 운영 고도화
 
 목표: recipe를 실제 사내 운영 자산으로 만들기 위한 품질·검증·소유권 기반을 준비한다.
