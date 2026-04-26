@@ -28,6 +28,7 @@ class RecipeStep(BaseModel):
     tool: str
     args: dict[str, Any] = Field(default_factory=dict)
     hint: str = ""
+    precondition: dict[str, Any] = Field(default_factory=dict)
 
 
 class Recipe(BaseModel):

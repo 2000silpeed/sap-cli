@@ -34,6 +34,7 @@ RECIPE_COMMANDS: frozenset[str] = frozenset(
         "recipe_version_up",
         "recipe_history",
         "recipe_chain",
+        "recipe_replay_plan",
     }
 )
 
@@ -114,6 +115,93 @@ def dispatch_recipe_history(
     }
 
 
+def dispatch_recipe_replay_plan(
+    args: dict[str, Any],
+    get_recipe_store: RecipeStoreFactory,
+) -> dict[str, Any]:
+    """Return a safe, non-mutating recipe replay validation plan.
+
+    This is the first E-2 surface: it does not execute SAP actions.  It gives
+    the caller a structured precheck, dry-run plan, post-execution verification
+    checklist, and explicit success/failure reporting instructions.
+    """
+    from ..recipe import efficiency_score
+
+    store = get_recipe_store()
+    recipe_id = str(args["recipe_id"])
+    recipe = store.load(recipe_id)
+    if recipe is None:
+        return {"error": True, "message": f"레시피 '{recipe_id}'를 찾을 수 없습니다."}
+
+    current_tcode = str(args.get("current_tcode", "") or "")
+    current_screen = str(args.get("current_screen", "") or "")
+    allow_disabled = bool(args.get("allow_disabled", False))
+    precheck = _build_replay_precheck(
+        recipe,
+        current_tcode=current_tcode,
+        current_screen=current_screen,
+        allow_disabled=allow_disabled,
+    )
+    dry_run_plan = _execution_plan(recipe)
+
+    return {
+        "recipe_id": recipe.id,
+        "description": recipe.description,
+        "context": recipe.context,
+        "version": recipe.version,
+        "disabled": recipe.disabled,
+        "disabled_reason": recipe.disabled_reason,
+        "success_count": recipe.success_count,
+        "failure_count": recipe.failure_count,
+        "quality_score": efficiency_score(recipe),
+        "flow": ["precheck", "dry_run_plan", "execute", "verify", "report"],
+        "precheck": precheck,
+        "dry_run_plan": dry_run_plan,
+        "execute": {
+            "mode": "manual_tool_calls",
+            "allowed": precheck["status"] != "blocked",
+            "instruction": (
+                "blocked가 아니면 dry_run_plan의 tool/args를 순서대로 호출하세요. "
+                "각 단계 전 precondition이 있으면 현재 화면/상태와 맞는지 확인하세요."
+            ),
+        },
+        "verify": {
+            "required_observations": ["sap_status", "sap_modal", "sap_screen_summary"],
+            "success_criteria": [
+                "마지막 SAP status가 오류/중단 상태가 아님",
+                "예상치 못한 modal dialog가 남아있지 않음",
+                "screen_summary가 recipe 목적의 완료 화면 또는 다음 정상 화면과 일치함",
+            ],
+            "instruction": (
+                "실행 후 sap_status, sap_modal, 필요 시 sap_screen을 확인해 완료 여부를 판단하세요."
+            ),
+        },
+        "report": {
+            "on_success": {
+                "tool": "sap_recipe_success",
+                "args": {"recipe_id": recipe.id},
+            },
+            "on_failure": {
+                "tool": "sap_recipe_failure",
+                "args": {
+                    "recipe_id": recipe.id,
+                    "reason": "실패 단계/관찰된 status/modal/screen_summary를 요약",
+                },
+                "auto_call_candidate": True,
+                "note": (
+                    "향후 execute 래퍼가 도입되면 verify 실패 시 자동 호출 가능. "
+                    "현재는 안전상 호출자가 실패를 확인한 뒤 명시적으로 호출합니다."
+                ),
+            },
+        },
+        "instruction": (
+            "이 응답은 실행하지 않는 replay 검증 계획입니다. precheck를 검토하고, "
+            "dry_run_plan 실행 후 verify 관찰값에 따라 sap_recipe_success 또는 "
+            "sap_recipe_failure를 반드시 호출하세요."
+        ),
+    }
+
+
 def dispatch_recipe_chain(
     args: dict[str, Any],
     get_recipe_store: RecipeStoreFactory,
@@ -173,8 +261,137 @@ def _execution_plan(recipe: Any) -> list[dict[str, Any]]:
         }
         if step.hint:
             plan_step["hint"] = step.hint
+        if getattr(step, "precondition", None):
+            plan_step["precondition"] = step.precondition
         plan.append(plan_step)
     return plan
+
+
+def _step_tcode(step: Any) -> str:
+    """Return a normalized tcode implied by a recipe step, if any."""
+    tool = getattr(step, "tool", "")
+    args = getattr(step, "args", {}) or {}
+    if tool == "sap_run" and args.get("tcode"):
+        return str(args["tcode"]).upper().strip()
+    if tool == "sap_command" and args.get("cmd"):
+        cmd = str(args["cmd"]).strip()
+        if cmd.startswith("/n") or cmd.startswith("/o"):
+            return cmd[2:].upper().strip()
+    return ""
+
+
+def _normalize_tcode(value: str) -> str:
+    normalized = str(value).upper().strip()
+    if normalized.startswith("/N") or normalized.startswith("/O"):
+        return normalized[2:].strip()
+    return normalized
+
+
+def _starts_with_navigation_to(recipe: Any, tcode: str) -> bool:
+    if not recipe.steps or not tcode:
+        return False
+    return _step_tcode(recipe.steps[0]) == _normalize_tcode(tcode)
+
+
+def _collect_step_preconditions(recipe: Any) -> list[dict[str, Any]]:
+    preconditions = []
+    for i, step in enumerate(recipe.steps):
+        if getattr(step, "precondition", None):
+            preconditions.append({
+                "order": i + 1,
+                "tool": step.tool,
+                "precondition": step.precondition,
+            })
+    return preconditions
+
+
+def _build_replay_precheck(
+    recipe: Any,
+    *,
+    current_tcode: str = "",
+    current_screen: str = "",
+    allow_disabled: bool = False,
+) -> dict[str, Any]:
+    """Build a non-mutating precheck summary for recipe replay."""
+    seq = [_normalize_tcode(t) for t in list(recipe.tcode_sequence or []) if str(t).strip()]
+    if not seq:
+        # Legacy recipes may not have tcode_sequence populated.
+        seq = [_step_tcode(step) for step in recipe.steps if _step_tcode(step)]
+    required_start_tcode = seq[0] if seq else ""
+    normalized_current_tcode = _normalize_tcode(current_tcode)
+    issues: list[dict[str, Any]] = []
+    checks: list[dict[str, Any]] = []
+
+    if recipe.disabled and not allow_disabled:
+        issues.append({
+            "code": "recipe_disabled",
+            "severity": "blocker",
+            "message": "비활성화된 레시피입니다. sap_recipe_enable 또는 recipe 수정 후 재검증하세요.",
+        })
+
+    if required_start_tcode:
+        if not normalized_current_tcode:
+            checks.append({
+                "name": "start_tcode",
+                "status": "unknown",
+                "expected": required_start_tcode,
+                "actual": "",
+                "message": "current_tcode가 제공되지 않아 현재 트랜잭션 일치 여부를 확인하지 못했습니다.",
+            })
+        elif normalized_current_tcode == required_start_tcode:
+            checks.append({
+                "name": "start_tcode",
+                "status": "ok",
+                "expected": required_start_tcode,
+                "actual": normalized_current_tcode,
+                "message": "현재 tcode가 레시피 시작 조건과 일치합니다.",
+            })
+        elif _starts_with_navigation_to(recipe, required_start_tcode):
+            checks.append({
+                "name": "start_tcode",
+                "status": "will_navigate",
+                "expected": required_start_tcode,
+                "actual": normalized_current_tcode,
+                "message": "현재 tcode는 다르지만 첫 단계가 필요한 tcode로 이동합니다.",
+            })
+        else:
+            issues.append({
+                "code": "start_tcode_mismatch",
+                "severity": "warning",
+                "expected": required_start_tcode,
+                "actual": normalized_current_tcode,
+                "message": "현재 tcode가 레시피 시작 tcode와 다릅니다. 실행 전 화면 이동이 필요할 수 있습니다.",
+            })
+    else:
+        checks.append({
+            "name": "start_tcode",
+            "status": "not_declared",
+            "message": "레시피에서 시작 tcode를 추론하지 못했습니다.",
+        })
+
+    if current_screen:
+        checks.append({
+            "name": "current_screen",
+            "status": "captured",
+            "actual": current_screen,
+            "message": "호출자가 제공한 현재 화면 식별자를 replay report에 포함합니다.",
+        })
+
+    status = "ready"
+    if any(i["severity"] == "blocker" for i in issues):
+        status = "blocked"
+    elif issues or any(c["status"] in {"unknown", "not_declared"} for c in checks):
+        status = "needs_review"
+
+    return {
+        "status": status,
+        "required_start_tcode": required_start_tcode,
+        "current_tcode": normalized_current_tcode,
+        "current_screen": current_screen,
+        "checks": checks,
+        "issues": issues,
+        "step_preconditions": _collect_step_preconditions(recipe),
+    }
 
 
 def get_recipe_store() -> Any:

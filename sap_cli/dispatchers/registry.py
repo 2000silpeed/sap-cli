@@ -133,6 +133,13 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "recipe_chain": CommandDef(
         "sap_recipe_chain_search", Permission.READ, category="recipe", risk_level="low"
     ),
+    "recipe_replay_plan": CommandDef(
+        "sap_recipe_replay_plan",
+        Permission.READ,
+        expose_cli=False,
+        category="recipe",
+        risk_level="low",
+    ),
     "session_start": CommandDef(
         "sap_session_start",
         Permission.WRITE,

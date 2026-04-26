@@ -102,6 +102,7 @@ TOOL_PERMISSION_MAP: dict[str, Permission] = {
     "sap_recipe_version_up": Permission.WRITE,
     "sap_recipe_history": Permission.READ,
     "sap_recipe_chain_search": Permission.READ,
+    "sap_recipe_replay_plan": Permission.READ,
     "sap_session_start": Permission.WRITE,
     "sap_session_end": Permission.WRITE,
     "sap_session_list": Permission.READ,

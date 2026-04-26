@@ -32,6 +32,7 @@ DISPATCHER_ONLY_TOOLS = {
 # 대부분 agent/daemon/MCP 자동화 흐름에서 쓰는 write/admin 계열 recipe 관리와
 # session lifecycle API다. read-only recipe 조회 명령은 Phase B-2에서 CLI에 노출했다.
 MCP_ONLY_COMMANDS = {
+    "recipe_replay_plan",
     "recipe_version_up",
     "session_approve",
     "session_candidates",
@@ -199,6 +200,7 @@ def test_rebac_enforcing_exposes_recent_mcp_tools_by_permission_level():
     assert "sap_tree_read" in viewer_tools
     assert "sap_recipe_query" in viewer_tools
     assert "sap_recipe_pending" in viewer_tools
+    assert "sap_recipe_replay_plan" in viewer_tools
     assert "sap_session_candidates" in viewer_tools
 
     assert "sap_fill_fields" not in viewer_tools

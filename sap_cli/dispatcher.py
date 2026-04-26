@@ -72,6 +72,7 @@ from .dispatchers.recipe import (
     dispatch_recipe_list as _dispatch_recipe_list_impl,
     dispatch_recipe_pending as _dispatch_recipe_pending_impl,
     dispatch_recipe_query as _dispatch_recipe_query_impl,
+    dispatch_recipe_replay_plan as _dispatch_recipe_replay_plan_impl,
     dispatch_recipe_save as _dispatch_recipe_save_impl,
     dispatch_recipe_search as _dispatch_recipe_search_impl,
     dispatch_recipe_show as _dispatch_recipe_show_impl,
@@ -808,6 +809,11 @@ def _dispatch_recipe_query(args: dict[str, Any]) -> dict[str, Any]:
     return _dispatch_recipe_query_impl(args, _get_recipe_store)
 
 
+def _dispatch_recipe_replay_plan(args: dict[str, Any]) -> dict[str, Any]:
+    """레시피 replay 전 precheck/dry-run/verify/report 계획을 생성."""
+    return _dispatch_recipe_replay_plan_impl(args, _get_recipe_store)
+
+
 def _dispatch_recipe_pending(args: dict[str, Any]) -> dict[str, Any]:
     """미승인 candidate 세션 요약. 자동 제안된 레시피 후보를 한눈에 보여준다."""
     return _dispatch_recipe_pending_impl(args, _get_session_store)
@@ -827,6 +833,7 @@ _RECIPE_HANDLERS = {
     "recipe_version_up": _dispatch_recipe_version_up,
     "recipe_history": _dispatch_recipe_history,
     "recipe_chain": _dispatch_recipe_chain,
+    "recipe_replay_plan": _dispatch_recipe_replay_plan,
 }
 
 

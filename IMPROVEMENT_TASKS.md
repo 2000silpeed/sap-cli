@@ -1126,6 +1126,8 @@ _enum_value
 
 ## E-2. Recipe replay 검증 플로우 설계
 
+상태: 진행 중 — `sap_recipe_replay_plan` 1차 도입 완료.
+
 ### 목표
 
 recipe를 바로 실행하기보다 아래 흐름을 지원한다.
@@ -1136,15 +1138,25 @@ precheck → dry-run plan → execute → verify → report
 
 ### 작업
 
-- [ ] recipe step precondition 모델 검토
-- [ ] 현재 화면/tcode가 recipe 시작 조건과 맞는지 확인
-- [ ] 실행 전 예상 단계 출력
-- [ ] 실행 후 status/modal/screen_summary로 검증
-- [ ] 실패 시 `sap_recipe_failure` 자동 호출 가능성 검토
+- [x] recipe step precondition 모델 검토
+  - `RecipeStep.precondition: dict[str, Any]` optional 필드를 추가했다.
+  - 기존 JSON은 default `{}`로 로드되어 역호환된다.
+- [x] 현재 화면/tcode가 recipe 시작 조건과 맞는지 확인
+  - `sap_recipe_replay_plan(recipe_id, current_tcode?, current_screen?)`에서 시작 tcode를 비교한다.
+  - 레시피 첫 단계가 해당 tcode로 이동하면 `will_navigate`로 안전하게 안내한다.
+- [x] 실행 전 예상 단계 출력
+  - `dry_run_plan`에 `tool`, `args`, `hint`, `precondition`을 순서대로 노출한다.
+- [x] 실행 후 status/modal/screen_summary로 검증
+  - `verify.required_observations = [sap_status, sap_modal, sap_screen_summary]`와 성공 기준을 반환한다.
+- [x] 실패 시 `sap_recipe_failure` 자동 호출 가능성 검토
+  - `report.on_failure.auto_call_candidate=true`와 실패 보고 payload를 반환한다.
+  - 현재는 안전상 자동 실행하지 않고, 향후 execute 래퍼가 도입되면 verify 실패 시 자동 호출하도록 확장한다.
 
 ### 완료 기준
 
 - [ ] recipe 실행의 성공/실패가 자동으로 품질 관리에 반영된다.
+  - 1차 완료: replay 계획에 success/failure 보고 경로를 표준화했다.
+  - 남은 작업: 실제 execute 래퍼에서 verify 결과에 따라 자동 호출 연결.
 
 ---
 
