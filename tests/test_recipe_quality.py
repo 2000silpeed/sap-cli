@@ -14,6 +14,7 @@ from sap_cli.recipe import (
     RecipeStep,
     RecipeStore,
     efficiency_score,
+    replay_quality_summary,
     should_auto_disable,
 )
 
@@ -106,6 +107,60 @@ class TestQualityScore:
         results = store.find_by_tcode("VA01")
 
         assert [r.id for r in results][:2] == ["va01-reliable", "va01-flaky"]
+
+    def test_replay_success_and_speed_boost_quality_score(self, store: RecipeStore):
+        stable = _save(store, "va01-replay-stable", success=3, failure=0)
+        slow_failed = _save(store, "va01-replay-slow-failed", success=3, failure=0)
+
+        store.record_replay_execution(
+            stable.id,
+            status="success",
+            execution_ms=1_000,
+            system_name="TST",
+            client="100",
+        )
+        store.record_replay_execution(
+            slow_failed.id,
+            status="failed",
+            execution_ms=60_000,
+            failure_type="sap_status_error",
+            system_name="TST",
+            client="100",
+        )
+
+        stable = store.load(stable.id)
+        slow_failed = store.load(slow_failed.id)
+        assert stable is not None
+        assert slow_failed is not None
+        assert replay_quality_summary(stable)["success_rate"] == 1.0
+        assert replay_quality_summary(slow_failed)["success_rate"] == 0.0
+        assert efficiency_score(stable) > efficiency_score(slow_failed)
+
+    def test_query_tiebreak_uses_replay_quality_metadata(self, store: RecipeStore):
+        _save(store, "va01-replay-failed", success=3, failure=0)
+        _save(store, "va01-replay-success", success=3, failure=0)
+        store.record_replay_execution(
+            "va01-replay-failed",
+            status="failed",
+            execution_ms=60_000,
+            failure_type="unexpected_modal",
+            system_name="TST",
+            client="100",
+        )
+        store.record_replay_execution(
+            "va01-replay-success",
+            status="success",
+            execution_ms=1_000,
+            system_name="TST",
+            client="100",
+        )
+
+        results = store.query_for_ai(tcode="VA01")
+
+        assert [r.id for _, r in results][:2] == [
+            "va01-replay-success",
+            "va01-replay-failed",
+        ]
 
 
 class TestAutoDisableThreshold:

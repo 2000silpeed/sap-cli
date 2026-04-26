@@ -126,7 +126,7 @@ def dispatch_recipe_replay_plan(
     the caller a structured precheck, dry-run plan, post-execution verification
     checklist, and explicit success/failure reporting instructions.
     """
-    from ..recipe import efficiency_score
+    from ..recipe import efficiency_score, replay_quality_summary
 
     store = get_recipe_store()
     recipe_id = str(args["recipe_id"])
@@ -155,6 +155,7 @@ def dispatch_recipe_replay_plan(
         "success_count": recipe.success_count,
         "failure_count": recipe.failure_count,
         "quality_score": efficiency_score(recipe),
+        "replay_quality": replay_quality_summary(recipe),
         "flow": ["precheck", "dry_run_plan", "execute", "verify", "report"],
         "precheck": precheck,
         "dry_run_plan": dry_run_plan,
@@ -408,7 +409,7 @@ def collect_recipe_hints(
     limit: int = 3,
 ) -> dict[str, Any] | None:
     """Collect safe recipe candidates to attach to sap_run responses."""
-    from ..recipe import efficiency_score
+    from ..recipe import efficiency_score, replay_quality_summary
 
     if not tcode:
         return None
@@ -429,6 +430,7 @@ def collect_recipe_hints(
             "step_count": len(r.steps),
             "success_count": r.success_count,
             "quality_score": efficiency_score(r),
+            "replay_quality": replay_quality_summary(r),
         }
         if len(seq) > 1:
             item["tcode_sequence"] = seq
@@ -812,6 +814,8 @@ def dispatch_recipe_search(
     get_recipe_store: RecipeStoreFactory,
 ) -> dict[str, Any]:
     """Search recipes and expand a single match into an executable plan."""
+    from ..recipe import efficiency_score, replay_quality_summary
+
     store = get_recipe_store()
     query = str(args["query"])
     results = store.search(query)
@@ -826,6 +830,8 @@ def dispatch_recipe_search(
             "description": r.description,
             "context": r.context,
             "success_count": r.success_count,
+            "quality_score": efficiency_score(r),
+            "replay_quality": replay_quality_summary(r),
             "execution_plan": _execution_plan(r),
             "instruction": (
                 f"레시피 '{r.id}'가 검색되었습니다. "
@@ -845,6 +851,8 @@ def dispatch_recipe_search(
             "keywords": r.keywords,
             "step_count": len(r.steps),
             "success_count": r.success_count,
+            "quality_score": efficiency_score(r),
+            "replay_quality": replay_quality_summary(r),
         })
     return {
         "query": query,
@@ -860,6 +868,8 @@ def dispatch_recipe_show(
     get_recipe_store: RecipeStoreFactory,
 ) -> dict[str, Any]:
     """Return a recipe as an executable plan."""
+    from ..recipe import efficiency_score, replay_quality_summary
+
     store = get_recipe_store()
     recipe_id = str(args["recipe_id"])
     r = store.load(recipe_id)
@@ -871,6 +881,9 @@ def dispatch_recipe_show(
         "description": r.description,
         "context": r.context,
         "success_count": r.success_count,
+        "failure_count": r.failure_count,
+        "quality_score": efficiency_score(r),
+        "replay_quality": replay_quality_summary(r),
         "execution_plan": _execution_plan(r),
         "instruction": (
             f"레시피 '{r.id}'의 상세 실행 계획입니다. "
@@ -971,7 +984,7 @@ def dispatch_recipe_query(
     get_recipe_store: RecipeStoreFactory,
 ) -> dict[str, Any]:
     """Query recipes by tcode and/or keywords for automatic AI reference."""
-    from ..recipe import efficiency_score
+    from ..recipe import efficiency_score, replay_quality_summary
 
     store = get_recipe_store()
     tcode = args.get("tcode")
@@ -1002,6 +1015,7 @@ def dispatch_recipe_query(
             "context": r.context,
             "success_count": r.success_count,
             "quality_score": efficiency_score(r),
+            "replay_quality": replay_quality_summary(r),
             "execution_plan": _execution_plan(r),
             "instruction": (
                 f"레시피 '{r.id}'가 검색되었습니다. "
@@ -1021,6 +1035,7 @@ def dispatch_recipe_query(
             "step_count": len(r.steps),
             "success_count": r.success_count,
             "quality_score": efficiency_score(r),
+            "replay_quality": replay_quality_summary(r),
             "relevance_score": score,
         })
     return {

@@ -1166,6 +1166,11 @@ precheck → dry-run plan → execute → verify → report
   - `Recipe`에 replay 전용 평균/마지막 실행 시간, 마지막 상태, 마지막 실패 유형을 저장한다.
   - `sap_session.system_name/client`를 관찰값에 포함하고 system/client별 success/failed 집계를 저장한다.
   - verify 실패는 첫 issue code(`sap_status_error`, `unexpected_modal` 등)를 실패 유형으로 분류해 누적한다.
+- [x] E-2 후속 품질 메타 활용 개선
+  - `efficiency_score()`가 replay 평균 실행 시간과 system/client별 replay 성공률을 작은 가중치로 반영한다.
+  - `search`, `query_for_ai`, `find_by_tcode`, `find_chain`, `find_similar`의 기존 품질 점수 기반 tie-break가 replay 품질 메타를 자동 활용한다.
+  - `sap_recipe_search`, `sap_recipe_query`, `sap_recipe_show`, `sap_recipe_list`, `sap_recipe_replay_plan` 응답에 `replay_quality` 요약을 노출한다.
+  - replay 품질 요약은 실행 횟수, 평균/마지막 실행 시간, 마지막 상태/실패 유형, 성공률, 속도 점수, 실패 유형 집계, system/client별 집계를 포함한다.
 
 ### 완료 기준
 
@@ -1173,6 +1178,7 @@ precheck → dry-run plan → execute → verify → report
   - replay 계획에 success/failure 보고 경로를 표준화했다.
   - 실제 execute 래퍼에서 verify 결과에 따라 자동 success/failure 호출을 연결했다.
   - replay execute 메타데이터가 recipe JSON에 누적되어 후속 품질 분석의 기반으로 사용 가능하다.
+  - replay 품질 메타데이터가 검색 순위와 recipe 조회/list 응답에 반영된다.
 
 ---
 

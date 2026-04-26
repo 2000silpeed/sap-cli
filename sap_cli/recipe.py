@@ -146,6 +146,8 @@ class RecipeStore:
                 "failure_count": r.failure_count,
                 "disabled": r.disabled,
                 "disabled_reason": r.disabled_reason,
+                "quality_score": efficiency_score(r),
+                "replay_quality": replay_quality_summary(r),
             })
         return results
 
@@ -568,6 +570,52 @@ def _success_rate(recipe: Recipe) -> float:
     return recipe.success_count / total
 
 
+def replay_success_rate(recipe: Recipe) -> float | None:
+    """Return aggregate replay success rate, or None when no replay data exists."""
+    total = 0
+    success = 0
+    for scope in recipe.replay_system_client_stats.values():
+        try:
+            scope_total = int(scope.get("total", 0))
+            scope_success = int(scope.get("success", 0))
+        except (TypeError, ValueError):
+            continue
+        total += max(scope_total, 0)
+        success += max(scope_success, 0)
+    if total <= 0:
+        return None
+    return min(max(success / total, 0.0), 1.0)
+
+
+def replay_speed_score(recipe: Recipe) -> float | None:
+    """Score replay average execution time as 0..1 where faster is better."""
+    if recipe.replay_execution_count <= 0 or recipe.replay_average_execution_ms <= 0:
+        return None
+    avg_ms = max(float(recipe.replay_average_execution_ms), 1.0)
+    # 0s≈1.0, 30s≈0.5, 60s+≈0.0.  SAP GUI steps can be slow, so keep this gentle.
+    return round(max(0.0, 1.0 - (avg_ms / 60000.0)), 4)
+
+
+def replay_quality_summary(recipe: Recipe) -> dict[str, Any]:
+    """Compact replay quality metadata for search/list/show responses."""
+    success_rate = replay_success_rate(recipe)
+    speed_score = replay_speed_score(recipe)
+    summary: dict[str, Any] = {
+        "execution_count": recipe.replay_execution_count,
+        "average_execution_ms": recipe.replay_average_execution_ms,
+        "last_execution_ms": recipe.replay_last_execution_ms,
+        "last_status": recipe.replay_last_status,
+        "last_failure_type": recipe.replay_last_failure_type,
+        "success_rate": round(success_rate, 4) if success_rate is not None else None,
+        "speed_score": speed_score,
+    }
+    if recipe.replay_failure_type_counts:
+        summary["failure_type_counts"] = recipe.replay_failure_type_counts
+    if recipe.replay_system_client_stats:
+        summary["system_client_stats"] = recipe.replay_system_client_stats
+    return summary
+
+
 def _recent_timestamp_score(timestamp: float, *, now: float | None = None) -> float:
     """최근 timestamp일수록 높은 0.0~1.0 점수."""
     if timestamp <= 0:
@@ -590,7 +638,7 @@ def efficiency_score(recipe: Recipe) -> float:
     """레시피 품질 점수.
 
     단계 적음(+), 누적 성공(+), 최근 성공률(+), context 풍부함(+), 최신(+),
-    마지막 성공 시각(+), 마지막 실패 시각(-), disabled(-)를 반영한다.
+    마지막 성공 시각(+), 마지막 실패 시각(-), replay 품질(+/-), disabled(-)를 반영한다.
     """
     now = time.time()
     step_score = 1.0 / (1 + len(recipe.steps))
@@ -601,6 +649,9 @@ def efficiency_score(recipe: Recipe) -> float:
     last_success_score = _recent_timestamp_score(recipe.last_succeeded_at, now=now)
     recent_failure_penalty = _recent_timestamp_score(recipe.last_failed_at, now=now)
     disabled_penalty = 0.40 if recipe.disabled else 0.0
+    replay_rate = replay_success_rate(recipe)
+    replay_rate_score = 0.0 if replay_rate is None else (replay_rate - 0.5)
+    replay_speed = replay_speed_score(recipe) or 0.0
     raw_score = (
         step_score * 0.35
         + success_score * 0.10
@@ -608,6 +659,8 @@ def efficiency_score(recipe: Recipe) -> float:
         + context_score * 0.10
         + recency_score * 0.05
         + last_success_score * 0.10
+        + replay_rate_score * 0.08
+        + replay_speed * 0.04
         - recent_failure_penalty * 0.15
         - disabled_penalty
     )

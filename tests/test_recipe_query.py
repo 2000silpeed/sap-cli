@@ -170,6 +170,7 @@ class TestDispatchRecipeQuery:
         assert result["exact_match"] is True
         assert result["recipe_id"] == "SOLO_recipe"
         assert "quality_score" in result
+        assert "replay_quality" in result
         assert "execution_plan" in result
         assert len(result["execution_plan"]) == 3
         assert result["execution_plan"][0]["tool"] == "sap_run"
@@ -188,7 +189,31 @@ class TestDispatchRecipeQuery:
         assert len(result["recipes"]) == 2
         assert result["recipes"][0]["relevance_score"] >= result["recipes"][1]["relevance_score"]
         assert "quality_score" in result["recipes"][0]
+        assert "replay_quality" in result["recipes"][0]
         assert "hint" in result
+
+    def test_show_and_list_expose_replay_quality_meta(self, tmp_path: Path):
+        from sap_cli.dispatcher import _dispatch_recipe_list, _dispatch_recipe_show
+
+        store = RecipeStore(store_dir=tmp_path / "recipes")
+        store.save(_make_recipe("VA01_replay_meta", tcode="VA01"))
+        store.record_replay_execution(
+            "VA01_replay_meta",
+            status="success",
+            execution_ms=1234,
+            system_name="TST",
+            client="100",
+        )
+
+        with patch("sap_cli.dispatcher._get_recipe_store", return_value=store):
+            shown = _dispatch_recipe_show({"recipe_id": "VA01_replay_meta"})
+            listed = _dispatch_recipe_list()
+
+        assert shown["quality_score"] > 0
+        assert shown["replay_quality"]["execution_count"] == 1
+        assert shown["replay_quality"]["success_rate"] == 1.0
+        assert listed["recipes"][0]["quality_score"] > 0
+        assert listed["recipes"][0]["replay_quality"]["average_execution_ms"] == 1234
 
     def test_no_match(self, tmp_path: Path):
         from sap_cli.dispatcher import _dispatch_recipe_query
