@@ -1126,7 +1126,7 @@ _enum_value
 
 ## E-2. Recipe replay 검증 플로우 설계
 
-상태: 진행 중 — `sap_recipe_replay_plan` 1차 및 `sap_recipe_replay_execute` 실행 래퍼 도입 완료.
+상태: 진행 중 — `sap_recipe_replay_plan` 1차 및 `sap_recipe_replay_execute` 실행 래퍼와 replay 품질 메타 1차 도입 완료.
 
 ### 목표
 
@@ -1161,12 +1161,18 @@ precheck → dry-run plan → execute → verify → report
   - verify 성공 시 `sap_recipe_success`를 자동 호출한다.
   - 실행 오류/권한 거부/approval 필요/verify 실패 시 `sap_recipe_failure`를 자동 호출한다.
   - `auto_report=false`로 자동 카운터 갱신을 끌 수 있게 했다.
+- [x] E-2 후속 품질 메타 1차 개선
+  - replay execute 전체 실행 시간(`execution_ms`)과 step별 실행 시간(`executed_steps[].execution_ms`)을 응답에 포함한다.
+  - `Recipe`에 replay 전용 평균/마지막 실행 시간, 마지막 상태, 마지막 실패 유형을 저장한다.
+  - `sap_session.system_name/client`를 관찰값에 포함하고 system/client별 success/failed 집계를 저장한다.
+  - verify 실패는 첫 issue code(`sap_status_error`, `unexpected_modal` 등)를 실패 유형으로 분류해 누적한다.
 
 ### 완료 기준
 
 - [x] recipe 실행의 성공/실패가 자동으로 품질 관리에 반영된다.
   - replay 계획에 success/failure 보고 경로를 표준화했다.
   - 실제 execute 래퍼에서 verify 결과에 따라 자동 success/failure 호출을 연결했다.
+  - replay execute 메타데이터가 recipe JSON에 누적되어 후속 품질 분석의 기반으로 사용 가능하다.
 
 ---
 

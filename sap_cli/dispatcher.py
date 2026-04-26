@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -847,6 +848,7 @@ def _dispatch_recipe_replay_execute(
     _policy: Policy | None,
 ) -> dict[str, Any]:
     """Execute a recipe replay plan with automatic verification and reporting."""
+    started_at = time.perf_counter()
     recipe_id = str(args["recipe_id"])
     plan = _dispatch_recipe_replay_plan({
         "recipe_id": recipe_id,
@@ -894,6 +896,7 @@ def _dispatch_recipe_replay_execute(
         order = step["order"]
         command = step["command"]
         step_args = step["args"]
+        step_started_at = time.perf_counter()
         try:
             result = dispatch_command(command, step_args, step_ctx)
         except ApprovalRequiredError as exc:
@@ -906,6 +909,8 @@ def _dispatch_recipe_replay_execute(
                 reason,
                 ctx,
                 auto_report=bool(args.get("auto_report", True)),
+                execution_ms=_elapsed_ms(started_at),
+                failure_type="approval_required",
             )
         except PermissionDeniedError as exc:
             reason = f"step {order} permission denied: {exc}"
@@ -917,6 +922,8 @@ def _dispatch_recipe_replay_execute(
                 reason,
                 ctx,
                 auto_report=bool(args.get("auto_report", True)),
+                execution_ms=_elapsed_ms(started_at),
+                failure_type="permission_denied",
             )
         except Exception as exc:
             reason = f"step {order} execution error: {exc}"
@@ -928,12 +935,15 @@ def _dispatch_recipe_replay_execute(
                 reason,
                 ctx,
                 auto_report=bool(args.get("auto_report", True)),
+                execution_ms=_elapsed_ms(started_at),
+                failure_type="execution_error",
             )
         executed_steps.append({
             "order": order,
             "tool": step["tool"],
             "command": command,
             "args": step_args,
+            "execution_ms": _elapsed_ms(step_started_at),
             "result": result,
         })
 
@@ -943,36 +953,55 @@ def _dispatch_recipe_replay_execute(
         allow_modal=bool(args.get("allow_modal", False)),
     )
     auto_report = bool(args.get("auto_report", True))
+    execution_ms = _elapsed_ms(started_at)
     if verify["status"] != "ok":
+        failure_type = _classify_recipe_replay_failure(verify)
         reason = "verify failed: " + "; ".join(issue["message"] for issue in verify["issues"])
         failure_report = (
             _dispatch_recipe_failure({"recipe_id": recipe_id, "reason": reason})
             if auto_report
             else None
         )
+        replay_metrics = _record_recipe_replay_metrics(
+            recipe_id,
+            status="failed",
+            execution_ms=execution_ms,
+            observations=observations,
+            failure_type=failure_type,
+        )
         return {
             "recipe_id": recipe_id,
             "status": "failed",
             "stage": "verify",
+            "execution_ms": execution_ms,
             "plan": plan,
             "executed_steps": executed_steps,
             "observations": observations,
             "verify": verify,
             "report_called": auto_report,
             "report": failure_report,
+            "replay_metrics": replay_metrics,
         }
 
     success_report = _dispatch_recipe_success({"recipe_id": recipe_id}) if auto_report else None
+    replay_metrics = _record_recipe_replay_metrics(
+        recipe_id,
+        status="success",
+        execution_ms=execution_ms,
+        observations=observations,
+    )
     return {
         "recipe_id": recipe_id,
         "status": "success",
         "stage": "report" if auto_report else "verify",
+        "execution_ms": execution_ms,
         "plan": plan,
         "executed_steps": executed_steps,
         "observations": observations,
         "verify": verify,
         "report_called": auto_report,
         "report": success_report,
+        "replay_metrics": replay_metrics,
     }
 
 
@@ -1048,29 +1077,42 @@ def _recipe_replay_failed(
     ctx: DispatchContext,
     *,
     auto_report: bool,
+    execution_ms: int = 0,
+    failure_type: str = "",
 ) -> dict[str, Any]:
     observations = _collect_recipe_replay_observations(ctx)
+    failure_type = failure_type or stage
     failure_report = (
         _dispatch_recipe_failure({"recipe_id": recipe_id, "reason": reason})
         if auto_report
         else None
     )
+    replay_metrics = _record_recipe_replay_metrics(
+        recipe_id,
+        status="failed",
+        execution_ms=execution_ms,
+        observations=observations,
+        failure_type=failure_type,
+    )
     return {
         "recipe_id": recipe_id,
         "status": "failed",
         "stage": stage,
+        "execution_ms": execution_ms,
         "plan": plan,
         "executed_steps": executed_steps,
         "observations": observations,
         "verify": {"status": "failed", "issues": [{"code": stage, "message": reason}]},
         "report_called": auto_report,
         "report": failure_report,
+        "replay_metrics": replay_metrics,
     }
 
 
 def _collect_recipe_replay_observations(ctx: DispatchContext) -> dict[str, Any]:
     sap = _get_sap(ctx.slot_id)
     observations: dict[str, Any] = {
+        "sap_session": sap.get_session_info().model_dump(mode="json"),
         "sap_status": sap.get_status().model_dump(mode="json"),
         "sap_modal": _collect_modal(sap),
     }
@@ -1108,6 +1150,48 @@ def _verify_recipe_replay_observations(
     return {
         "status": "ok" if not issues else "failed",
         "issues": issues,
+    }
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return max(int((time.perf_counter() - started_at) * 1000), 0)
+
+
+def _classify_recipe_replay_failure(verify: dict[str, Any]) -> str:
+    issues = verify.get("issues", []) or []
+    if not issues:
+        return "unknown"
+    first = issues[0] or {}
+    return str(first.get("code") or "unknown")
+
+
+def _record_recipe_replay_metrics(
+    recipe_id: str,
+    *,
+    status: str,
+    execution_ms: int,
+    observations: dict[str, Any],
+    failure_type: str = "",
+) -> dict[str, Any] | None:
+    session = observations.get("sap_session", {}) or {}
+    recipe = _get_recipe_store().record_replay_execution(
+        recipe_id,
+        status=status,
+        execution_ms=execution_ms,
+        failure_type=failure_type,
+        system_name=str(session.get("system_name", "")),
+        client=str(session.get("client", "")),
+    )
+    if recipe is None:
+        return None
+    return {
+        "replay_execution_count": recipe.replay_execution_count,
+        "replay_average_execution_ms": recipe.replay_average_execution_ms,
+        "replay_last_execution_ms": recipe.replay_last_execution_ms,
+        "replay_last_status": recipe.replay_last_status,
+        "replay_last_failure_type": recipe.replay_last_failure_type,
+        "replay_failure_type_counts": recipe.replay_failure_type_counts,
+        "replay_system_client_stats": recipe.replay_system_client_stats,
     }
 
 

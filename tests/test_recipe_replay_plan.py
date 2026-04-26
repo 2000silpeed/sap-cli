@@ -71,6 +71,8 @@ class _ReplaySap:
             "transaction": self.transaction,
             "screen_number": self.screen_number,
             "session_id": "ses[0]",
+            "system_name": "TST",
+            "client": "100",
         })
 
     def get_status(self):
@@ -232,9 +234,19 @@ def test_replay_execute_runs_steps_and_auto_reports_success(tmp_path: Path):
 
     assert result["status"] == "success"
     assert result["verify"]["status"] == "ok"
+    assert result["execution_ms"] >= 0
     assert result["report_called"] is True
     assert result["report"]["success_count"] == 1
+    assert result["replay_metrics"]["replay_execution_count"] == 1
+    assert result["replay_metrics"]["replay_last_status"] == "success"
+    assert result["replay_metrics"]["replay_system_client_stats"]["TST/100"]["success"] == 1
+    assert all(step["execution_ms"] >= 0 for step in result["executed_steps"])
     assert [call[0] for call in sap.calls] == ["run", "set", "press"]
+    saved = store.load("va01-execute")
+    assert saved is not None
+    assert saved.replay_execution_count == 1
+    assert saved.replay_average_execution_ms >= 0
+    assert saved.replay_system_client_stats["TST/100"]["success"] == 1
 
 
 def test_replay_execute_verify_failure_auto_reports_failure(tmp_path: Path):
@@ -262,6 +274,14 @@ def test_replay_execute_verify_failure_auto_reports_failure(tmp_path: Path):
     assert result["verify"]["issues"][0]["code"] == "sap_status_error"
     assert result["report_called"] is True
     assert result["report"]["failure_count"] == 1
+    assert result["replay_metrics"]["replay_last_status"] == "failed"
+    assert result["replay_metrics"]["replay_last_failure_type"] == "sap_status_error"
+    assert result["replay_metrics"]["replay_failure_type_counts"]["sap_status_error"] == 1
+    assert result["replay_metrics"]["replay_system_client_stats"]["TST/100"]["failed"] == 1
+    saved = store.load("va01-fail")
+    assert saved is not None
+    assert saved.replay_failure_type_counts["sap_status_error"] == 1
+    assert saved.replay_system_client_stats["TST/100"]["last_failure_type"] == "sap_status_error"
 
 
 def test_replay_execute_blocks_non_sap_recipe_management_step(tmp_path: Path):

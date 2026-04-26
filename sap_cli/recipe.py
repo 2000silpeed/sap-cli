@@ -45,6 +45,13 @@ class Recipe(BaseModel):
     last_failed_at: float = 0.0
     disabled: bool = False
     disabled_reason: str = ""
+    replay_execution_count: int = 0
+    replay_average_execution_ms: float = 0.0
+    replay_last_execution_ms: int = 0
+    replay_last_status: str = ""
+    replay_last_failure_type: str = ""
+    replay_failure_type_counts: dict[str, int] = Field(default_factory=dict)
+    replay_system_client_stats: dict[str, dict[str, Any]] = Field(default_factory=dict)
     version: int = 1
     previous_version_archive: str = ""
     tcode_sequence: list[str] = Field(default_factory=list)
@@ -191,6 +198,58 @@ class RecipeStore:
             rate = recipe.failure_count / total
             base = f"auto: failure_rate={rate:.2f} ({recipe.failure_count}/{total})"
             recipe.disabled_reason = f"{base} | {reason}" if reason else base
+        self.save(recipe)
+        return recipe
+
+    def record_replay_execution(
+        self,
+        recipe_id: str,
+        *,
+        status: str,
+        execution_ms: int,
+        failure_type: str = "",
+        system_name: str = "",
+        client: str = "",
+    ) -> Recipe | None:
+        """Replay execute 품질 메타데이터를 누적 저장한다.
+
+        success_count/failure_count는 기존 sap_recipe_success/failure 경로가 관리하므로
+        여기서는 replay 전용 실행 시간, 실패 유형, system/client별 결과만 갱신한다.
+        """
+        recipe = self.load(recipe_id)
+        if recipe is None:
+            return None
+
+        execution_ms = max(int(execution_ms), 0)
+        previous_count = max(recipe.replay_execution_count, 0)
+        previous_avg = max(float(recipe.replay_average_execution_ms), 0.0)
+        recipe.replay_execution_count = previous_count + 1
+        recipe.replay_average_execution_ms = round(
+            ((previous_avg * previous_count) + execution_ms) / recipe.replay_execution_count,
+            2,
+        )
+        recipe.replay_last_execution_ms = execution_ms
+        recipe.replay_last_status = status
+        recipe.replay_last_failure_type = failure_type if status != "success" else ""
+
+        if status != "success":
+            key = failure_type or "unknown"
+            recipe.replay_failure_type_counts[key] = (
+                int(recipe.replay_failure_type_counts.get(key, 0)) + 1
+            )
+
+        scope_key = _system_client_key(system_name, client)
+        scope = dict(recipe.replay_system_client_stats.get(scope_key, {}))
+        scope["system_name"] = system_name or "unknown"
+        scope["client"] = client or "unknown"
+        scope["total"] = int(scope.get("total", 0)) + 1
+        scope[status] = int(scope.get(status, 0)) + 1
+        scope["last_status"] = status
+        scope["last_execution_ms"] = execution_ms
+        if failure_type:
+            scope["last_failure_type"] = failure_type
+        recipe.replay_system_client_stats[scope_key] = scope
+
         self.save(recipe)
         return recipe
 
@@ -457,6 +516,12 @@ def _extract_tcode_sequence(steps: list[RecipeStep]) -> tuple[str, ...]:
             if val:
                 seq.append(val)
     return tuple(seq)
+
+
+def _system_client_key(system_name: str, client: str) -> str:
+    system = (system_name or "unknown").strip() or "unknown"
+    mandt = (client or "unknown").strip() or "unknown"
+    return f"{system}/{mandt}"
 
 
 def _jaccard(a: set[str], b: set[str]) -> float:
