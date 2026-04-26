@@ -663,8 +663,16 @@ _log_session_step
 
 ### 완료 기준
 
-- [ ] session 관련 테스트 전체 통과
-- [ ] session → recipe suggestion 흐름 회귀 없음
+- [x] session 관련 테스트 전체 통과
+- [x] session → recipe suggestion 흐름 회귀 없음
+
+### 진행 메모
+
+- `sap_cli/dispatchers/session.py`를 추가해 session start/end/list/show/candidates/approve 및 session step logging 구현을 이동했다.
+- `sap_cli.dispatcher`에는 기존 private import/monkeypatch 호환을 위한 thin wrapper를 유지했다.
+- 중앙 `_execute_command`는 `is_session_command()`와 `dispatch_session_command()`를 통해 session 명령군을 라우팅한다.
+- `sap_cli/dispatchers/__init__.py`에서도 session command public surface를 re-export한다.
+- 검증: `uv run pytest tests/test_recipe_autosuggest.py tests/test_session*.py` → 150 passed.
 
 ---
 

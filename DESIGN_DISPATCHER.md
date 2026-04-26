@@ -141,6 +141,13 @@ uv run pytest tests/test_command_surface_consistency.py
 - MCP `TOOL_DEFINITIONS` 자동 생성은 설계대로 진행하지 않았다.
 - registry drift 핵심 테스트 통과 확인: `tests/test_command_surface_consistency.py`.
 
+## D-4 session 분리 진행 메모
+
+- session lifecycle dispatch 및 session step logging 구현을 `sap_cli/dispatchers/session.py`로 이동했다.
+- `sap_cli.dispatcher`에는 `_dispatch_session_*`, `_log_session_step` wrapper를 유지해 기존 private import surface를 보존한다.
+- session dispatcher는 session store, recipe store, ontology link, SAP wrapper 의존성을 facade에서 주입받으므로 기존 monkeypatch 기반 테스트 호환성을 유지한다.
+- session → recipe suggestion 회귀 테스트 포함 확인: `tests/test_recipe_autosuggest.py`, `tests/test_session*.py`.
+
 ## D-2 진행 메모
 
 - `recipe_failure`, `recipe_enable`, `recipe_history`, `recipe_chain` 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.
