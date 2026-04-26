@@ -363,6 +363,8 @@ def _execute_command(
     ctx: DispatchContext,
     policy: Policy | None = None,
 ) -> dict[str, Any]:
+    if command == "recipe_replay_execute":
+        return _dispatch_recipe_replay_execute(args, ctx, policy)
     if is_connection_command(command):
         return dispatch_connection_command(
             command,
@@ -812,6 +814,301 @@ def _dispatch_recipe_query(args: dict[str, Any]) -> dict[str, Any]:
 def _dispatch_recipe_replay_plan(args: dict[str, Any]) -> dict[str, Any]:
     """레시피 replay 전 precheck/dry-run/verify/report 계획을 생성."""
     return _dispatch_recipe_replay_plan_impl(args, _get_recipe_store)
+
+
+_ALLOWED_REPLAY_STEP_COMMANDS: frozenset[str] = frozenset(
+    {
+        "command",
+        "fill",
+        "get",
+        "modal",
+        "press",
+        "run",
+        "screen",
+        "set",
+        "status",
+        "table",
+        "table_doubleclick",
+        "table_select",
+        "tree",
+        "tree_collapse",
+        "tree_doubleclick",
+        "tree_expand",
+        "tree_press",
+        "tree_select",
+        "vkey",
+    }
+)
+
+
+def _dispatch_recipe_replay_execute(
+    args: dict[str, Any],
+    ctx: DispatchContext,
+    _policy: Policy | None,
+) -> dict[str, Any]:
+    """Execute a recipe replay plan with automatic verification and reporting."""
+    recipe_id = str(args["recipe_id"])
+    plan = _dispatch_recipe_replay_plan({
+        "recipe_id": recipe_id,
+        "current_tcode": args.get("current_tcode", ""),
+        "current_screen": args.get("current_screen", ""),
+        "allow_disabled": bool(args.get("allow_disabled", False)),
+    })
+    if plan.get("error"):
+        return plan
+    if not plan.get("execute", {}).get("allowed", False):
+        return {
+            "recipe_id": recipe_id,
+            "status": "blocked",
+            "stage": "precheck",
+            "plan": plan,
+            "executed_steps": [],
+            "report_called": False,
+            "message": "precheck가 blocked 상태라 recipe replay를 실행하지 않았습니다.",
+        }
+
+    preflight = _preflight_recipe_replay_steps(plan.get("dry_run_plan", []), ctx)
+    if preflight["status"] != "ok":
+        return {
+            "recipe_id": recipe_id,
+            "status": "blocked",
+            "stage": "preflight",
+            "plan": plan,
+            "preflight": preflight,
+            "executed_steps": [],
+            "report_called": False,
+            "message": "step 권한/approval/risk 검사를 통과하지 못해 실행하지 않았습니다.",
+        }
+
+    executed_steps: list[dict[str, Any]] = []
+    step_ctx = DispatchContext(
+        source=ctx.source,
+        agent_name=ctx.agent_name,
+        enforce_auth=ctx.enforce_auth,
+        include_post_action_context=ctx.include_post_action_context,
+        include_screen_summary=False,
+        session_id=ctx.session_id,
+        slot_id=ctx.slot_id,
+    )
+    for step in preflight["steps"]:
+        order = step["order"]
+        command = step["command"]
+        step_args = step["args"]
+        try:
+            result = dispatch_command(command, step_args, step_ctx)
+        except ApprovalRequiredError as exc:
+            reason = f"step {order} approval required: {exc.reason}"
+            return _recipe_replay_failed(
+                recipe_id,
+                "approval_required",
+                plan,
+                executed_steps,
+                reason,
+                ctx,
+                auto_report=bool(args.get("auto_report", True)),
+            )
+        except PermissionDeniedError as exc:
+            reason = f"step {order} permission denied: {exc}"
+            return _recipe_replay_failed(
+                recipe_id,
+                "permission_denied",
+                plan,
+                executed_steps,
+                reason,
+                ctx,
+                auto_report=bool(args.get("auto_report", True)),
+            )
+        except Exception as exc:
+            reason = f"step {order} execution error: {exc}"
+            return _recipe_replay_failed(
+                recipe_id,
+                "execution_error",
+                plan,
+                executed_steps,
+                reason,
+                ctx,
+                auto_report=bool(args.get("auto_report", True)),
+            )
+        executed_steps.append({
+            "order": order,
+            "tool": step["tool"],
+            "command": command,
+            "args": step_args,
+            "result": result,
+        })
+
+    observations = _collect_recipe_replay_observations(ctx)
+    verify = _verify_recipe_replay_observations(
+        observations,
+        allow_modal=bool(args.get("allow_modal", False)),
+    )
+    auto_report = bool(args.get("auto_report", True))
+    if verify["status"] != "ok":
+        reason = "verify failed: " + "; ".join(issue["message"] for issue in verify["issues"])
+        failure_report = (
+            _dispatch_recipe_failure({"recipe_id": recipe_id, "reason": reason})
+            if auto_report
+            else None
+        )
+        return {
+            "recipe_id": recipe_id,
+            "status": "failed",
+            "stage": "verify",
+            "plan": plan,
+            "executed_steps": executed_steps,
+            "observations": observations,
+            "verify": verify,
+            "report_called": auto_report,
+            "report": failure_report,
+        }
+
+    success_report = _dispatch_recipe_success({"recipe_id": recipe_id}) if auto_report else None
+    return {
+        "recipe_id": recipe_id,
+        "status": "success",
+        "stage": "report" if auto_report else "verify",
+        "plan": plan,
+        "executed_steps": executed_steps,
+        "observations": observations,
+        "verify": verify,
+        "report_called": auto_report,
+        "report": success_report,
+    }
+
+
+def _preflight_recipe_replay_steps(
+    dry_run_plan: list[dict[str, Any]],
+    ctx: DispatchContext,
+) -> dict[str, Any]:
+    steps: list[dict[str, Any]] = []
+    issues: list[dict[str, Any]] = []
+    for raw_step in dry_run_plan:
+        tool = str(raw_step.get("tool", ""))
+        command = MCP_TOOL_TO_COMMAND.get(tool, tool if tool in COMMAND_REGISTRY else "")
+        order = int(raw_step.get("order", len(steps) + 1))
+        if not command:
+            issues.append({
+                "order": order,
+                "tool": tool,
+                "code": "unknown_tool",
+                "message": f"알 수 없는 recipe step tool입니다: {tool}",
+            })
+            continue
+        if command not in _ALLOWED_REPLAY_STEP_COMMANDS:
+            issues.append({
+                "order": order,
+                "tool": tool,
+                "command": command,
+                "code": "disallowed_tool",
+                "message": "recipe replay execute에서 허용되지 않은 step tool입니다.",
+            })
+            continue
+        step_args = dict(raw_step.get("args", {}) or {})
+        tool_name = COMMAND_REGISTRY[command].tool_name
+        authz, _ = _evaluate_authorization(tool_name, step_args, ctx)
+        if not authz.allowed:
+            issues.append({
+                "order": order,
+                "tool": tool,
+                "command": command,
+                "code": "permission_denied",
+                "message": authz.reason,
+            })
+            continue
+        if authz.approval_required:
+            issues.append({
+                "order": order,
+                "tool": tool,
+                "command": command,
+                "code": "approval_required",
+                "message": authz.approval_reason,
+            })
+            continue
+        steps.append({
+            "order": order,
+            "tool": tool,
+            "command": command,
+            "args": step_args,
+        })
+    return {
+        "status": "ok" if not issues else "blocked",
+        "step_count": len(dry_run_plan),
+        "approved_step_count": len(steps),
+        "steps": steps,
+        "issues": issues,
+    }
+
+
+def _recipe_replay_failed(
+    recipe_id: str,
+    stage: str,
+    plan: dict[str, Any],
+    executed_steps: list[dict[str, Any]],
+    reason: str,
+    ctx: DispatchContext,
+    *,
+    auto_report: bool,
+) -> dict[str, Any]:
+    observations = _collect_recipe_replay_observations(ctx)
+    failure_report = (
+        _dispatch_recipe_failure({"recipe_id": recipe_id, "reason": reason})
+        if auto_report
+        else None
+    )
+    return {
+        "recipe_id": recipe_id,
+        "status": "failed",
+        "stage": stage,
+        "plan": plan,
+        "executed_steps": executed_steps,
+        "observations": observations,
+        "verify": {"status": "failed", "issues": [{"code": stage, "message": reason}]},
+        "report_called": auto_report,
+        "report": failure_report,
+    }
+
+
+def _collect_recipe_replay_observations(ctx: DispatchContext) -> dict[str, Any]:
+    sap = _get_sap(ctx.slot_id)
+    observations: dict[str, Any] = {
+        "sap_status": sap.get_status().model_dump(mode="json"),
+        "sap_modal": _collect_modal(sap),
+    }
+    try:
+        observations["sap_screen_summary"] = _collect_screen_summary(sap)
+    except Exception as exc:  # pragma: no cover - defensive SAP GUI path
+        observations["sap_screen_summary_error"] = str(exc)
+    return observations
+
+
+def _verify_recipe_replay_observations(
+    observations: dict[str, Any],
+    *,
+    allow_modal: bool = False,
+) -> dict[str, Any]:
+    issues: list[dict[str, Any]] = []
+    status = observations.get("sap_status", {}) or {}
+    status_type = str(status.get("type", "")).upper()
+    if status_type in {"E", "A"}:
+        issues.append({
+            "code": "sap_status_error",
+            "message": f"SAP status type={status_type}: {status.get('message', '')}",
+        })
+    modal = observations.get("sap_modal", {}) or {}
+    if modal.get("has_modal") and not allow_modal:
+        issues.append({
+            "code": "unexpected_modal",
+            "message": f"예상치 못한 modal dialog가 남아있습니다: {modal.get('text', '')}",
+        })
+    if "sap_screen_summary" not in observations:
+        issues.append({
+            "code": "screen_summary_unavailable",
+            "message": "screen_summary를 수집하지 못했습니다.",
+        })
+    return {
+        "status": "ok" if not issues else "failed",
+        "issues": issues,
+    }
 
 
 def _dispatch_recipe_pending(args: dict[str, Any]) -> dict[str, Any]:

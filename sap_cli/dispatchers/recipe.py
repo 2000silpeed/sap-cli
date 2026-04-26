@@ -35,6 +35,7 @@ RECIPE_COMMANDS: frozenset[str] = frozenset(
         "recipe_history",
         "recipe_chain",
         "recipe_replay_plan",
+        "recipe_replay_execute",
     }
 )
 

@@ -32,6 +32,7 @@ DISPATCHER_ONLY_TOOLS = {
 # 대부분 agent/daemon/MCP 자동화 흐름에서 쓰는 write/admin 계열 recipe 관리와
 # session lifecycle API다. read-only recipe 조회 명령은 Phase B-2에서 CLI에 노출했다.
 MCP_ONLY_COMMANDS = {
+    "recipe_replay_execute",
     "recipe_replay_plan",
     "recipe_version_up",
     "session_approve",
@@ -207,6 +208,7 @@ def test_rebac_enforcing_exposes_recent_mcp_tools_by_permission_level():
     assert "sap_fill_fields" in operator_tools
     assert "sap_annotate_field" in operator_tools
     assert "sap_recipe_failure" in operator_tools
+    assert "sap_recipe_replay_execute" in operator_tools
     assert "sap_recipe_version_up" in operator_tools
 
     assert "sap_recipe_enable" not in operator_tools
@@ -215,4 +217,5 @@ def test_rebac_enforcing_exposes_recent_mcp_tools_by_permission_level():
     assert "sap_session_approve" in supervisor_tools
 
     assert TOOL_PERMISSION_MAP["sap_fill_fields"] == Permission.WRITE
+    assert TOOL_PERMISSION_MAP["sap_recipe_replay_execute"] == Permission.WRITE
     assert TOOL_PERMISSION_MAP["sap_recipe_enable"] == Permission.ADMIN

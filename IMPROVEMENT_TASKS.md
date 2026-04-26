@@ -1126,7 +1126,7 @@ _enum_value
 
 ## E-2. Recipe replay 검증 플로우 설계
 
-상태: 진행 중 — `sap_recipe_replay_plan` 1차 도입 완료.
+상태: 진행 중 — `sap_recipe_replay_plan` 1차 및 `sap_recipe_replay_execute` 실행 래퍼 도입 완료.
 
 ### 목표
 
@@ -1150,13 +1150,23 @@ precheck → dry-run plan → execute → verify → report
   - `verify.required_observations = [sap_status, sap_modal, sap_screen_summary]`와 성공 기준을 반환한다.
 - [x] 실패 시 `sap_recipe_failure` 자동 호출 가능성 검토
   - `report.on_failure.auto_call_candidate=true`와 실패 보고 payload를 반환한다.
-  - 현재는 안전상 자동 실행하지 않고, 향후 execute 래퍼가 도입되면 verify 실패 시 자동 호출하도록 확장한다.
+- [x] 실제 recipe execute 래퍼 1차 구현
+  - `sap_recipe_replay_execute(recipe_id, current_tcode?, current_screen?)`를 추가했다.
+  - 내부적으로 replay plan을 생성하고 precheck가 blocked이면 실행하지 않는다.
+  - 각 step 실행 전 MCP tool→dispatcher command를 해석하고 허용된 SAP action/form/read step만 통과시킨다.
+  - step별 권한/approval/risk preflight를 통과하지 못하면 실행 전 blocked 처리한다.
+  - 실행 후 `sap_status`, `sap_modal`, `sap_screen_summary`를 자동 수집한다.
+  - status type `E`/`A` 또는 예상치 못한 modal이 있으면 verify 실패로 판단한다.
+- [x] 성공/실패 자동 품질 반영
+  - verify 성공 시 `sap_recipe_success`를 자동 호출한다.
+  - 실행 오류/권한 거부/approval 필요/verify 실패 시 `sap_recipe_failure`를 자동 호출한다.
+  - `auto_report=false`로 자동 카운터 갱신을 끌 수 있게 했다.
 
 ### 완료 기준
 
-- [ ] recipe 실행의 성공/실패가 자동으로 품질 관리에 반영된다.
-  - 1차 완료: replay 계획에 success/failure 보고 경로를 표준화했다.
-  - 남은 작업: 실제 execute 래퍼에서 verify 결과에 따라 자동 호출 연결.
+- [x] recipe 실행의 성공/실패가 자동으로 품질 관리에 반영된다.
+  - replay 계획에 success/failure 보고 경로를 표준화했다.
+  - 실제 execute 래퍼에서 verify 결과에 따라 자동 success/failure 호출을 연결했다.
 
 ---
 

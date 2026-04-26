@@ -869,6 +869,41 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_recipe_replay_execute",
+        "description": (
+            "레시피 replay 계획을 실제로 실행합니다. 실행 전 precheck와 step별 권한/approval/risk 검사를 수행하고, "
+            "허용된 SAP action/form/read step만 순서대로 호출합니다. 실행 후 sap_status, sap_modal, sap_screen_summary를 "
+            "자동 수집해 검증하며, 성공 시 sap_recipe_success를 자동 호출하고 실패 시 sap_recipe_failure를 자동 호출합니다."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "recipe_id": {"type": "string", "description": "실행할 레시피 ID"},
+                "current_tcode": {
+                    "type": "string",
+                    "description": "현재 SAP tcode (선택). 제공하면 레시피 시작 tcode와 비교합니다.",
+                },
+                "current_screen": {
+                    "type": "string",
+                    "description": "현재 화면 번호/요약 식별자 (선택). precheck/report 컨텍스트에 포함합니다.",
+                },
+                "allow_disabled": {
+                    "type": "boolean",
+                    "description": "true이면 disabled 레시피도 blocked 처리하지 않고 실행을 허용합니다.",
+                },
+                "allow_modal": {
+                    "type": "boolean",
+                    "description": "true이면 실행 후 modal dialog가 남아 있어도 verify 실패로 보지 않습니다.",
+                },
+                "auto_report": {
+                    "type": "boolean",
+                    "description": "false이면 success/failure 카운터를 자동 기록하지 않습니다. 기본값은 true입니다.",
+                },
+            },
+            "required": ["recipe_id"],
+        },
+    },
+    {
         "name": "sap_recipe_failure",
         "description": (
             "레시피 실행이 실패했음을 기록합니다. sap_recipe_search/show로 가져온 레시피의 단계를 따라 실행했는데 "
