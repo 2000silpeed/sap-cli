@@ -1285,6 +1285,8 @@ sap data-clean
 
 ## G-1. Windows SAP 실기 검증 체크리스트 작성
 
+상태: 완료
+
 ### 파일 후보
 
 ```text
@@ -1313,8 +1315,14 @@ WINDOWS_SAP_VERIFICATION.md
 
 ### 완료 기준
 
-- [ ] 사내 PC에서 그대로 따라할 수 있는 검증 문서가 있다.
-- [ ] 각 실패 케이스별 확인 포인트가 있다.
+- [x] 사내 PC에서 그대로 따라할 수 있는 검증 문서가 있다.
+- [x] 각 실패 케이스별 확인 포인트가 있다.
+
+### 2026-04-26 완료 메모
+
+- `WINDOWS_SAP_VERIFICATION.md`를 추가해 Windows + SAP GUI COM 실기 검증 절차를 독립 문서로 정리했다.
+- `sap connect`, `sap connections`, `sap screen`, `sap run MM03`, `sap fill`, `sap get`, `sap status`, `sap table`, `sap tree`, `sap capture`, macro, session, recipe, MCP, daemon, multi-session slot 검증 항목을 포함했다.
+- 각 항목별 기대 결과와 실패 시 확인 포인트를 기록해 사내 PC에서 그대로 따라하며 PASS/FAIL/PARTIAL/SKIP으로 판정할 수 있게 했다.
 
 ---
 
