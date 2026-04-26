@@ -1,0 +1,149 @@
+name: Windows SAP GUI 실기 검증 결과
+description: Windows + SAP GUI COM 환경에서 sap_cli 실기 검증 결과를 기록합니다.
+title: "[Windows SAP Verification] "
+labels:
+  - verification
+  - windows
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `WINDOWS_SAP_VERIFICATION.md`를 기준으로 검증한 결과를 기록합니다.
+
+        업무 데이터, 계정명, 내부 서버명, 고객명 등 민감정보는 마스킹해 주세요.
+
+  - type: input
+    id: verification_date
+    attributes:
+      label: 검증 일시
+      description: 예) 2026-04-26 14:30 KST
+      placeholder: "YYYY-MM-DD HH:mm TZ"
+    validations:
+      required: true
+
+  - type: input
+    id: commit
+    attributes:
+      label: sap_cli commit
+      description: 검증한 sap_cli 커밋 해시를 입력하세요.
+      placeholder: "예: 725597f"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: final_result
+    attributes:
+      label: 최종 판정
+      options:
+        - PASS - 운영 전 차단 이슈 없음
+        - PARTIAL - 핵심 기능은 가능하나 후속 확인 필요
+        - FAIL - 운영 전 차단 이슈 있음
+        - SKIP - 환경/권한 부족으로 주요 검증 미수행
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 환경 정보
+      description: 민감정보는 마스킹하고 버전/권한/GUI 설정 중심으로 적어 주세요.
+      value: |
+        - PC/OS:
+        - SAP GUI 버전:
+        - SAP SID/Client:
+        - Python 버전:
+        - 설치 방식:
+        - SAP GUI Scripting 클라이언트 활성화 여부:
+        - SAP GUI Scripting 서버 허용 여부:
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: 결과 요약
+      value: |
+        - PASS:
+        - FAIL:
+        - PARTIAL:
+        - SKIP:
+        - 운영 전 차단 이슈: 있음/없음
+    validations:
+      required: true
+
+  - type: textarea
+    id: checklist
+    attributes:
+      label: 항목별 결과
+      description: 각 항목은 PASS/FAIL/PARTIAL/SKIP 중 하나로 기록하세요.
+      value: |
+        - 5.1 sap connect:
+        - 5.2 sap connections:
+        - 5.3 sap screen:
+        - 5.4 sap status:
+        - 6.x MM03 run/fill/get/status:
+        - 7.x table control:
+        - 8.x ALV Grid:
+        - 9.x tree:
+        - 10.x capture:
+        - 11.x macro record/play:
+        - 12.x session start/end:
+        - 13.x recipe suggestion/replay:
+        - 14.x MCP 연결:
+        - 15.x daemon 모드:
+        - 16.x multi-session slot:
+    validations:
+      required: true
+
+  - type: textarea
+    id: failures
+    attributes:
+      label: 실패/부분 성공 상세
+      description: 재현 명령, 실제 결과, 기대 결과, 로그/스크린샷 위치를 기록하세요.
+      value: |
+        ## 이슈 1
+        - 항목:
+        - 결과: FAIL/PARTIAL
+        - 재현 명령:
+        - 기대 결과:
+        - 실제 결과:
+        - 상태바 메시지:
+        - modal 여부:
+        - 스크린/필드 증거:
+        - 임시 우회 방법:
+
+  - type: dropdown
+    id: likely_cause
+    attributes:
+      label: 주된 원인 분류
+      options:
+        - 없음 - 모두 통과
+        - 환경 - Windows/Python/pywin32/SAP GUI 설치 문제
+        - SAP GUI 설정 - scripting/보안 팝업/테마 문제
+        - SAP 권한 - tcode/table/object 권한 부족
+        - SAP 화면 차이 - 커스텀 dynpro/variant/언어/테마 차이
+        - sap_cli 버그 - 재현 가능한 CLI/COM 처리 문제
+        - 판단 보류 - 추가 로그 필요
+    validations:
+      required: true
+
+  - type: textarea
+    id: attachments
+    attributes:
+      label: 첨부/증거
+      description: 민감정보를 제거한 로그, JSON 출력, 스크린샷, capture 파일 경로를 남기세요.
+      value: |
+        - 로그:
+        - JSON 출력:
+        - 스크린샷:
+        - capture:
+
+  - type: textarea
+    id: followups
+    attributes:
+      label: 후속 조치
+      value: |
+        - [ ] 운영 전 차단 이슈 해결
+        - [ ] 재검증 필요 항목 정리
+        - [ ] sap_cli 버그 이슈 분리
+        - [ ] 문서/체크리스트 보완

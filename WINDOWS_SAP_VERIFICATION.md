@@ -86,6 +86,11 @@ sap --help
 - `PARTIAL`: 핵심 기능은 동작하지만 일부 필드/컨트롤 누락
 - `SKIP`: 권한/시스템/데이터 부재로 미수행
 
+전체 검증 결과를 공유할 때는 아래 템플릿 중 하나를 사용한다.
+
+- 복사용 Markdown 리포트: `WINDOWS_SAP_VERIFICATION_REPORT_TEMPLATE.md`
+- GitHub Issue Form: `.github/ISSUE_TEMPLATE/windows-sap-verification.yml`
+
 기록 예시:
 
 ```text
@@ -537,6 +542,8 @@ sap slots
 ---
 
 ## 18. 최종 보고 양식
+
+상세 리포트는 `WINDOWS_SAP_VERIFICATION_REPORT_TEMPLATE.md`를 복사해 작성한다. GitHub에서 결과를 수집하는 경우 `Windows SAP GUI 실기 검증 결과` Issue Form을 사용한다.
 
 ```text
 검증 일시:

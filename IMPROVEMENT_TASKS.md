@@ -1337,6 +1337,29 @@ WINDOWS_SAP_VERIFICATION.md
 - `sap connect`, `sap connections`, `sap screen`, `sap run MM03`, `sap fill`, `sap get`, `sap status`, `sap table`, `sap tree`, `sap capture`, macro, session, recipe, MCP, daemon, multi-session slot 검증 항목을 포함했다.
 - 각 항목별 기대 결과와 실패 시 확인 포인트를 기록해 사내 PC에서 그대로 따라하며 PASS/FAIL/PARTIAL/SKIP으로 판정할 수 있게 했다.
 
+## G-2. Windows SAP 실기 검증 결과 수집 템플릿 추가
+
+상태: 완료
+
+### 파일
+
+```text
+WINDOWS_SAP_VERIFICATION_REPORT_TEMPLATE.md
+.github/ISSUE_TEMPLATE/windows-sap-verification.yml
+```
+
+### 완료 기준
+
+- [x] Windows 실기 검증 결과를 복사해 제출할 Markdown 리포트 템플릿이 있다.
+- [x] GitHub Issue Form으로 환경/결과/실패 상세/원인 분류/후속 조치를 구조화해 받을 수 있다.
+- [x] `WINDOWS_SAP_VERIFICATION.md`에서 결과 제출 템플릿을 안내한다.
+
+### 2026-04-26 완료 메모
+
+- `WINDOWS_SAP_VERIFICATION_REPORT_TEMPLATE.md`를 추가해 PASS/FAIL/PARTIAL/SKIP 요약, 항목별 결과, 실패 상세, 원인 분류, 증거 파일, 후속 조치를 일관된 형식으로 남길 수 있게 했다.
+- `.github/ISSUE_TEMPLATE/windows-sap-verification.yml`을 추가해 Windows + SAP GUI COM 실기 검증 결과를 GitHub 이슈로 구조화해 수집할 수 있게 했다.
+- 민감정보 마스킹 안내와 환경/SAP 권한/화면 차이/sap_cli 버그 원인 분류를 포함했다.
+
 ---
 
 # Phase H: 장기 확장 준비
