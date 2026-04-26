@@ -1079,28 +1079,48 @@ _enum_value
 
 ## E-1. Recipe 품질 점수 개선
 
+### 진행 메모 (2026-04-26)
+
+- `Recipe.last_succeeded_at` 필드를 추가하고 legacy JSON 기본값 호환을 확인했다.
+- `sap_recipe_success`/`RecipeStore.increment_success()`가 성공 횟수와 함께 마지막 성공 시각을 기록하도록 개선했다.
+- `efficiency_score()`를 품질 점수로 확장했다.
+  - 단계 수, 누적 성공 횟수, context 길이, 최신성은 유지
+  - 최근 성공률, 마지막 성공 시각, 마지막 실패 시각 penalty, disabled penalty를 추가 반영
+- `search`, `query_for_ai`, `find_by_tcode`, `find_chain`, `find_similar` 정렬에서 동점 시 `quality_score`를 우선 사용하도록 변경했다.
+- `sap_recipe_query`와 `recipe_hints` 응답에 `quality_score`를 노출했다.
+- 관련 테스트를 추가했다.
+  - 성공률이 높은 recipe가 누적 성공만 많은 flaky recipe보다 우선됨
+  - 최근 실패 recipe penalty
+  - disabled recipe penalty
+  - 성공 기록 시 `last_succeeded_at` 갱신
+  - query/hints 응답 `quality_score` 노출
+
 ### 현재
 
 `efficiency_score()`는 다음 요소를 사용한다.
 
 - 단계 수
 - 성공 횟수
+- 최근 성공률
 - context 길이
 - 최신성
+- 마지막 성공 시각
+- 마지막 실패 시각 penalty
+- disabled 여부 penalty
 
 ### 개선 후보
 
-- [ ] 최근 성공률
-- [ ] 마지막 성공 시각
-- [ ] 마지막 실패 시각
+- [x] 최근 성공률
+- [x] 마지막 성공 시각
+- [x] 마지막 실패 시각
 - [ ] 평균 실행 시간
 - [ ] 특정 SAP system/client 성공 여부
 - [ ] 실패 사유 유형
-- [ ] disabled 여부 penalty
+- [x] disabled 여부 penalty
 
 ### 완료 기준
 
-- [ ] 검색 결과에서 실제로 더 믿을 수 있는 recipe가 상위에 온다.
+- [x] 검색 결과에서 실제로 더 믿을 수 있는 recipe가 상위에 온다.
 
 ---
 

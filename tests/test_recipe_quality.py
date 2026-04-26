@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 
 import pytest
 
@@ -12,6 +13,7 @@ from sap_cli.recipe import (
     Recipe,
     RecipeStep,
     RecipeStore,
+    efficiency_score,
     should_auto_disable,
 )
 
@@ -42,6 +44,7 @@ class TestSchema:
         assert r.failure_count == 0
         assert r.disabled is False
         assert r.disabled_reason == ""
+        assert r.last_succeeded_at == 0.0
         assert r.last_failed_at == 0.0
 
     def test_legacy_json_loads(self, store: RecipeStore, tmp_path: Path):
@@ -54,6 +57,55 @@ class TestSchema:
         assert r is not None
         assert r.failure_count == 0
         assert r.disabled is False
+        assert r.last_succeeded_at == 0.0
+
+
+class TestQualityScore:
+    def test_success_rate_boosts_more_reliable_recipe(self, store: RecipeStore):
+        reliable = _save(store, "va01-reliable", success=4, failure=0)
+        flaky = _save(store, "va01-flaky", success=10, failure=10)
+
+        assert efficiency_score(reliable) > efficiency_score(flaky)
+
+    def test_recent_failure_penalizes_recipe(self, store: RecipeStore):
+        clean = _save(store, "va01-clean", success=5, failure=0)
+        recently_failed = _save(store, "va01-recent-fail", success=5, failure=1)
+        recently_failed.last_failed_at = time.time()
+        store.save(recently_failed)
+
+        assert efficiency_score(clean) > efficiency_score(recently_failed)
+
+    def test_disabled_penalty_applies_when_included(self, store: RecipeStore):
+        active = _save(store, "va01-active", success=1, failure=0)
+        disabled = _save(store, "va01-disabled", success=10, failure=0, disabled=True)
+
+        assert efficiency_score(active) > efficiency_score(disabled)
+
+    def test_increment_success_records_last_succeeded_at(self, store: RecipeStore):
+        _save(store, "va01-success", success=0)
+
+        store.increment_success("va01-success")
+
+        r = store.load("va01-success")
+        assert r is not None
+        assert r.success_count == 1
+        assert r.last_succeeded_at > 0
+
+    def test_query_tiebreak_uses_quality_score(self, store: RecipeStore):
+        _save(store, "va01-flaky", success=10, failure=10)
+        _save(store, "va01-reliable", success=4, failure=0)
+
+        results = store.query_for_ai(tcode="VA01")
+
+        assert [r.id for _, r in results][:2] == ["va01-reliable", "va01-flaky"]
+
+    def test_find_by_tcode_orders_by_quality_score(self, store: RecipeStore):
+        _save(store, "va01-flaky", success=10, failure=10)
+        _save(store, "va01-reliable", success=4, failure=0)
+
+        results = store.find_by_tcode("VA01")
+
+        assert [r.id for r in results][:2] == ["va01-reliable", "va01-flaky"]
 
 
 class TestAutoDisableThreshold:

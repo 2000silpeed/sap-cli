@@ -40,6 +40,7 @@ class Recipe(BaseModel):
     updated_at: float = Field(default_factory=time.time)
     success_count: int = 0
     failure_count: int = 0
+    last_succeeded_at: float = 0.0
     last_failed_at: float = 0.0
     disabled: bool = False
     disabled_reason: str = ""
@@ -166,13 +167,14 @@ class RecipeStore:
             if score > 0:
                 results.append((score, r))
 
-        results.sort(key=lambda x: (-x[0], -x[1].success_count))
+        results.sort(key=lambda x: (-x[0], -efficiency_score(x[1]), -x[1].success_count))
         return [r for _, r in results]
 
     def increment_success(self, recipe_id: str) -> None:
         recipe = self.load(recipe_id)
         if recipe:
             recipe.success_count += 1
+            recipe.last_succeeded_at = time.time()
             self.save(recipe)
 
     def report_failure(self, recipe_id: str, reason: str = "") -> Recipe | None:
@@ -326,8 +328,8 @@ class RecipeStore:
                 results.append(r)
             elif match == "any" and (targets & seq):
                 results.append(r)
-        # cross-tcode 우선 (시퀀스가 길수록 위로), 그다음 success
-        results.sort(key=lambda r: (-len(self._tcode_seq(r)), -r.success_count))
+        # cross-tcode 우선 (시퀀스가 길수록 위로), 그다음 품질 점수
+        results.sort(key=lambda r: (-len(self._tcode_seq(r)), -efficiency_score(r), -r.success_count))
         return results
 
     def find_by_tcode(self, tcode: str, include_disabled: bool = False) -> list[Recipe]:
@@ -347,7 +349,7 @@ class RecipeStore:
             )
             if linked or tcode_upper in r.id.upper():
                 results.append(r)
-        results.sort(key=lambda r: -r.success_count)
+        results.sort(key=lambda r: (-efficiency_score(r), -r.success_count))
         return results
 
     def query_for_ai(
@@ -391,7 +393,7 @@ class RecipeStore:
             if score > 0:
                 results.append((score, r))
 
-        results.sort(key=lambda x: (-x[0], -x[1].success_count))
+        results.sort(key=lambda x: (-x[0], -efficiency_score(x[1]), -x[1].success_count))
         return results
 
     def _load_all(self) -> list[Recipe]:
@@ -434,7 +436,7 @@ class RecipeStore:
             )
             if sim >= threshold:
                 results.append((sim, r))
-        results.sort(key=lambda x: (-x[0], -x[1].success_count))
+        results.sort(key=lambda x: (-x[0], -efficiency_score(x[1]), -x[1].success_count))
         return results
 
 
@@ -489,16 +491,54 @@ def _compute_similarity(
     return round(kw_score * 0.35 + tcode_score * 0.35 + word_score * 0.30, 3)
 
 
+def _success_rate(recipe: Recipe) -> float:
+    total = recipe.success_count + recipe.failure_count
+    if total <= 0:
+        return 0.5
+    return recipe.success_count / total
+
+
+def _recent_timestamp_score(timestamp: float, *, now: float | None = None) -> float:
+    """최근 timestamp일수록 높은 0.0~1.0 점수."""
+    if timestamp <= 0:
+        return 0.0
+    current = time.time() if now is None else now
+    age_seconds = max(current - timestamp, 0.0)
+    age_days = age_seconds / 86400.0
+    if age_days <= 7:
+        return 1.0
+    if age_days <= 30:
+        return 0.75
+    if age_days <= 90:
+        return 0.45
+    if age_days <= 365:
+        return 0.15
+    return 0.0
+
+
 def efficiency_score(recipe: Recipe) -> float:
-    """레시피 효율성 점수. 단계 적음(+), success_count 높음(+), context 풍부함(+), 최신(+)."""
+    """레시피 품질 점수.
+
+    단계 적음(+), 누적 성공(+), 최근 성공률(+), context 풍부함(+), 최신(+),
+    마지막 성공 시각(+), 마지막 실패 시각(-), disabled(-)를 반영한다.
+    """
+    now = time.time()
     step_score = 1.0 / (1 + len(recipe.steps))
     success_score = min(recipe.success_count / 10.0, 1.0)
+    success_rate_score = _success_rate(recipe)
     context_score = min(len(recipe.context) / 500.0, 1.0)
-    recency_score = min(max(recipe.updated_at, 0) / 1e10, 1.0)
-    return round(
+    recency_score = _recent_timestamp_score(recipe.updated_at, now=now)
+    last_success_score = _recent_timestamp_score(recipe.last_succeeded_at, now=now)
+    recent_failure_penalty = _recent_timestamp_score(recipe.last_failed_at, now=now)
+    disabled_penalty = 0.40 if recipe.disabled else 0.0
+    raw_score = (
         step_score * 0.35
-        + success_score * 0.35
-        + context_score * 0.20
-        + recency_score * 0.10,
-        4,
+        + success_score * 0.10
+        + success_rate_score * 0.30
+        + context_score * 0.10
+        + recency_score * 0.05
+        + last_success_score * 0.10
+        - recent_failure_penalty * 0.15
+        - disabled_penalty
     )
+    return round(max(raw_score, 0.0), 4)

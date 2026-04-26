@@ -269,6 +269,7 @@ class TestCollectRecipeHints:
         assert hints["available"] == 2
         assert len(hints["candidates"]) == 2
         assert hints["candidates"][0]["id"] == "va01-a"  # success_count 높은 순
+        assert "quality_score" in hints["candidates"][0]
         assert "instruction" in hints
 
     def test_returns_none_when_no_recipes(self, tmp_path: Path):

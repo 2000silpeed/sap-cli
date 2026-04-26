@@ -169,6 +169,7 @@ class TestDispatchRecipeQuery:
         assert result["count"] == 1
         assert result["exact_match"] is True
         assert result["recipe_id"] == "SOLO_recipe"
+        assert "quality_score" in result
         assert "execution_plan" in result
         assert len(result["execution_plan"]) == 3
         assert result["execution_plan"][0]["tool"] == "sap_run"
@@ -186,6 +187,7 @@ class TestDispatchRecipeQuery:
         assert result["exact_match"] is False
         assert len(result["recipes"]) == 2
         assert result["recipes"][0]["relevance_score"] >= result["recipes"][1]["relevance_score"]
+        assert "quality_score" in result["recipes"][0]
         assert "hint" in result
 
     def test_no_match(self, tmp_path: Path):

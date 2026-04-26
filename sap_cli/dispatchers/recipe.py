@@ -190,6 +190,8 @@ def collect_recipe_hints(
     limit: int = 3,
 ) -> dict[str, Any] | None:
     """Collect safe recipe candidates to attach to sap_run responses."""
+    from ..recipe import efficiency_score
+
     if not tcode:
         return None
     try:
@@ -208,6 +210,7 @@ def collect_recipe_hints(
             "description": r.description,
             "step_count": len(r.steps),
             "success_count": r.success_count,
+            "quality_score": efficiency_score(r),
         }
         if len(seq) > 1:
             item["tcode_sequence"] = seq
@@ -750,6 +753,8 @@ def dispatch_recipe_query(
     get_recipe_store: RecipeStoreFactory,
 ) -> dict[str, Any]:
     """Query recipes by tcode and/or keywords for automatic AI reference."""
+    from ..recipe import efficiency_score
+
     store = get_recipe_store()
     tcode = args.get("tcode")
     keywords = args.get("keywords")
@@ -778,6 +783,7 @@ def dispatch_recipe_query(
             "description": r.description,
             "context": r.context,
             "success_count": r.success_count,
+            "quality_score": efficiency_score(r),
             "execution_plan": _execution_plan(r),
             "instruction": (
                 f"레시피 '{r.id}'가 검색되었습니다. "
@@ -796,6 +802,7 @@ def dispatch_recipe_query(
             "keywords": r.keywords,
             "step_count": len(r.steps),
             "success_count": r.success_count,
+            "quality_score": efficiency_score(r),
             "relevance_score": score,
         })
     return {
