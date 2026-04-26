@@ -882,6 +882,37 @@ table_doubleclick
 
 ---
 
+## D-12. Tree action dispatch 분리
+
+### 이동 대상
+
+```text
+tree_select
+tree_doubleclick
+tree_expand
+tree_collapse
+tree_press
+```
+
+### 완료 기준
+
+- [x] tree action 관련 command routing이 feature dispatcher를 통한다.
+- [x] `sap_cli.dispatcher` facade wrapper 유지
+- [x] command surface / dispatcher 테스트 통과
+
+### 진행 메모
+
+- 기존 `sap_cli/dispatchers/sap_actions.py`에 `tree_select/tree_doubleclick/tree_expand/tree_collapse/tree_press` 실제 구현을 추가 이동했다.
+- 중앙 `_execute_command`에서 tree action inline 구현을 제거하고, 기존 `is_sap_action_command()` / `dispatch_sap_action_command()` 라우팅으로 통합했다.
+- `sap_cli.dispatcher`에는 `_dispatch_tree_select`, `_dispatch_tree_doubleclick`, `_dispatch_tree_expand`, `_dispatch_tree_collapse`, `_dispatch_tree_press` facade wrapper를 추가했다.
+- `tree` 읽기 구현과 `_flatten_tree_nodes`/`_find_tree_node`/`_truncate_tree_depth` helper는 아직 중앙 dispatcher에 유지했다.
+- `read_table` 기본 `max_rows=50`은 변경하지 않았다.
+- `dispatcher.py`는 1385줄에서 1378줄로 감소했다.
+- 검증: `uv run pytest tests/test_command_surface_consistency.py tests/test_dispatcher.py` → 17 passed.
+- 검증: `uv run pytest` → 505 passed.
+
+---
+
 # Phase E: Recipe 운영 고도화
 
 목표: recipe를 실제 사내 운영 자산으로 만들기 위한 품질·검증·소유권 기반을 준비한다.

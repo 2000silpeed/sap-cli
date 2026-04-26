@@ -127,6 +127,11 @@ from .dispatchers.sap_actions import (
     dispatch_sap_action_command,
     dispatch_table_doubleclick as _dispatch_table_doubleclick_impl,
     dispatch_table_select as _dispatch_table_select_impl,
+    dispatch_tree_collapse as _dispatch_tree_collapse_impl,
+    dispatch_tree_doubleclick as _dispatch_tree_doubleclick_impl,
+    dispatch_tree_expand as _dispatch_tree_expand_impl,
+    dispatch_tree_press as _dispatch_tree_press_impl,
+    dispatch_tree_select as _dispatch_tree_select_impl,
     is_sap_action_command,
 )
 from .ontology.store import OntologyStore
@@ -431,38 +436,6 @@ def _execute_command(
             "node_count": sum(1 for _ in _flatten_tree_nodes(nodes)),
             "nodes": [n.model_dump(mode="json", exclude_none=True) for n in nodes],
         }
-    if command == "tree_select":
-        sap = _get_sap(ctx.slot_id)
-        sap.tree_select_node(str(args["element_id"]), str(args["node_key"]))
-        payload = {"action": "select", "element_id": args["element_id"], "node_key": args["node_key"]}
-        return _with_post_action(payload, sap, command, ctx)
-    if command == "tree_doubleclick":
-        sap = _get_sap(ctx.slot_id)
-        sap.tree_double_click_node(str(args["element_id"]), str(args["node_key"]))
-        payload = {"action": "doubleclick", "element_id": args["element_id"], "node_key": args["node_key"]}
-        return _with_post_action(payload, sap, command, ctx)
-    if command == "tree_expand":
-        sap = _get_sap(ctx.slot_id)
-        sap.tree_expand_node(str(args["element_id"]), str(args["node_key"]))
-        return {"action": "expand", "element_id": args["element_id"], "node_key": args["node_key"]}
-    if command == "tree_collapse":
-        sap = _get_sap(ctx.slot_id)
-        sap.tree_collapse_node(str(args["element_id"]), str(args["node_key"]))
-        return {"action": "collapse", "element_id": args["element_id"], "node_key": args["node_key"]}
-    if command == "tree_press":
-        sap = _get_sap(ctx.slot_id)
-        used_col = sap.tree_press_button(
-            str(args["element_id"]), str(args["node_key"]), str(args.get("column", "")))
-        cached = sap._tree_action_cache.get(str(args["element_id"]), {})
-        payload: dict[str, Any] = {
-            "action": "press",
-            "element_id": args["element_id"],
-            "node_key": args["node_key"],
-            "used_column": used_col,
-        }
-        if cached:
-            payload["discovered_columns"] = cached
-        return _with_post_action(payload, sap, command, ctx)
     if command == "command":
         sap = _get_sap(ctx.slot_id)
         command_text = str(args["cmd"])
@@ -677,6 +650,26 @@ def _dispatch_table_select(args: dict[str, Any], ctx: DispatchContext) -> dict[s
 
 def _dispatch_table_doubleclick(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
     return _dispatch_table_doubleclick_impl(args, ctx, _get_sap, _with_post_action)
+
+
+def _dispatch_tree_select(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    return _dispatch_tree_select_impl(args, ctx, _get_sap, _with_post_action)
+
+
+def _dispatch_tree_doubleclick(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    return _dispatch_tree_doubleclick_impl(args, ctx, _get_sap, _with_post_action)
+
+
+def _dispatch_tree_expand(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    return _dispatch_tree_expand_impl(args, ctx, _get_sap)
+
+
+def _dispatch_tree_collapse(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    return _dispatch_tree_collapse_impl(args, ctx, _get_sap)
+
+
+def _dispatch_tree_press(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
+    return _dispatch_tree_press_impl(args, ctx, _get_sap, _with_post_action)
 
 
 def _dispatch_macro_control(args: dict[str, Any]) -> dict[str, Any]:

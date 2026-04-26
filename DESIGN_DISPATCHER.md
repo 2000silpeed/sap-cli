@@ -212,6 +212,15 @@ uv run pytest tests/test_command_surface_consistency.py
 - `sap_cli/dispatchers/__init__.py`에서도 SAP action command public surface를 re-export한다.
 - `dispatcher.py`는 1399줄에서 1385줄로 감소했다.
 
+## D-12 tree action 분리 진행 메모
+
+- `tree_select/tree_doubleclick/tree_expand/tree_collapse/tree_press` 구현을 기존 `sap_cli/dispatchers/sap_actions.py`로 이동했다.
+- 중앙 `_execute_command`에서 tree action inline 구현을 제거하고, `is_sap_action_command()`와 `dispatch_sap_action_command()` 라우팅으로 통합했다.
+- `sap_cli.dispatcher`에는 `_dispatch_tree_*` wrapper를 추가해 facade compatibility를 유지한다.
+- `tree` 읽기 구현과 tree read helper는 아직 중앙 dispatcher에 남겨 다음 작은 분리 대상으로 유지한다.
+- `read_table` 기본 `max_rows=50`은 변경하지 않았다.
+- `dispatcher.py`는 1385줄에서 1378줄로 감소했다.
+
 ## D-2 진행 메모
 
 - `recipe_failure`, `recipe_enable`, `recipe_history`, `recipe_chain` 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.
