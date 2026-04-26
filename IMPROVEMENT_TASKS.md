@@ -1260,13 +1260,22 @@ sap data-clean
 
 ### 작업
 
-- [ ] recipe/ontology/macro 백업 tar/zip 생성
-- [ ] transcript/audit/session 오래된 로그 정리 정책 설계
-- [ ] 삭제 전 dry-run 옵션 제공
+- [x] recipe/ontology/macro 백업 tar/zip 생성
+- [x] transcript/audit/session 오래된 로그 정리 정책 설계
+- [x] 삭제 전 dry-run 옵션 제공
 
 ### 완료 기준
 
-- [ ] 운영 데이터가 누적되어도 관리 가능하다.
+- [x] 운영 데이터가 누적되어도 관리 가능하다.
+
+### 2026-04-26 완료 메모
+
+- `sap data-backup` 명령을 추가해 `recipes`, `macros`, `ontology(knowledge)` 데이터를 기본 ZIP 또는 `--format tar` tar.gz 아카이브로 백업할 수 있게 했다.
+- 백업 기본 위치는 `~/.sap_cli/backups/sap-cli-data-backup-YYYYMMDD-HHMMSS.zip`이며, `--output`으로 출력 경로를 지정할 수 있다.
+- 백업 아카이브에는 `backup_manifest.json`을 포함해 생성 시각, 데이터 루트, 카테고리별 포함 파일 수를 기록한다.
+- `sap data-clean` 명령을 추가해 `audit`, `transcripts`, `sessions`의 오래된 파일을 정리 대상으로 계산한다.
+- 정리 기본 정책은 `--older-than-days 30`, 기본 dry-run이며 실제 삭제는 `--apply`를 명시해야 한다.
+- `--category audit --category transcripts --category sessions` 방식으로 정리 범위를 제한할 수 있고, 정리 후 빈 하위 디렉터리는 제거한다.
 
 ---
 

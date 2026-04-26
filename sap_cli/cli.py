@@ -580,6 +580,54 @@ def data_status_cmd() -> None:
     _output_json(data_status())
 
 
+@app.command("data-backup")
+def data_backup_cmd(
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="백업 아카이브 출력 경로"),
+    archive_format: str = typer.Option("zip", "--format", help="백업 형식: zip 또는 tar"),
+) -> None:
+    """recipes/macros/ontology 데이터를 zip 또는 tar.gz로 백업."""
+    from .data_diagnostics import data_backup
+
+    try:
+        _output_json(data_backup(output=output, archive_format=archive_format))
+    except ValueError as e:
+        _handle_error(e)
+
+
+@app.command("data-clean")
+def data_clean_cmd(
+    older_than_days: int = typer.Option(
+        30,
+        "--older-than-days",
+        help="이 일수보다 오래된 audit/transcript/session 파일을 정리 대상으로 선택",
+    ),
+    dry_run: bool = typer.Option(
+        True,
+        "--dry-run/--apply",
+        help="기본은 삭제하지 않고 대상만 출력. 실제 삭제하려면 --apply 사용",
+    ),
+    category: Optional[list[str]] = typer.Option(
+        None,
+        "--category",
+        "-c",
+        help="정리 대상 카테고리(audit, transcripts, sessions). 반복 지정 가능",
+    ),
+) -> None:
+    """오래된 audit/transcript/session 파일을 dry-run 또는 실제 삭제."""
+    from .data_diagnostics import data_clean
+
+    try:
+        _output_json(
+            data_clean(
+                older_than_days=older_than_days,
+                dry_run=dry_run,
+                categories=category or None,
+            )
+        )
+    except ValueError as e:
+        _handle_error(e)
+
+
 def _default_policy_path() -> Path:
     """load_policy()와 같은 기본 정책 파일 경로를 반환."""
     yaml_path = Path.home() / ".sap_cli" / "policy.yaml"
