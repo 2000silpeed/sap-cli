@@ -882,6 +882,19 @@ def _dispatch_recipe_replay_execute(
             "message": "step 권한/approval/risk 검사를 통과하지 못해 실행하지 않았습니다.",
         }
 
+    success_criteria = _normalize_recipe_success_criteria(args.get("success_criteria", {}))
+    observation_scope = str(args.get("observation_scope", "final") or "final").lower()
+    if observation_scope not in {"final", "status", "screen"}:
+        return {
+            "recipe_id": recipe_id,
+            "status": "blocked",
+            "stage": "preflight",
+            "plan": plan,
+            "executed_steps": [],
+            "report_called": False,
+            "message": "observation_scope는 final/status/screen 중 하나여야 합니다.",
+        }
+
     executed_steps: list[dict[str, Any]] = []
     step_ctx = DispatchContext(
         source=ctx.source,
@@ -896,6 +909,26 @@ def _dispatch_recipe_replay_execute(
         order = step["order"]
         command = step["command"]
         step_args = step["args"]
+        precondition_result = _check_recipe_step_precondition(
+            step.get("precondition", {}),
+            step_ctx,
+            order=order,
+        )
+        if precondition_result["status"] != "ok":
+            reason = "precondition failed: " + "; ".join(
+                issue["message"] for issue in precondition_result["issues"]
+            )
+            return _recipe_replay_failed(
+                recipe_id,
+                "precondition",
+                plan,
+                executed_steps,
+                reason,
+                ctx,
+                auto_report=bool(args.get("auto_report", True)),
+                execution_ms=_elapsed_ms(started_at),
+                failure_type=_classify_recipe_replay_failure(precondition_result),
+            )
         step_started_at = time.perf_counter()
         try:
             result = dispatch_command(command, step_args, step_ctx)
@@ -938,19 +971,26 @@ def _dispatch_recipe_replay_execute(
                 execution_ms=_elapsed_ms(started_at),
                 failure_type="execution_error",
             )
-        executed_steps.append({
+        executed_step = {
             "order": order,
             "tool": step["tool"],
             "command": command,
             "args": step_args,
             "execution_ms": _elapsed_ms(step_started_at),
             "result": result,
-        })
+        }
+        if observation_scope in {"status", "screen"}:
+            executed_step["observations"] = _collect_recipe_replay_observations(
+                ctx,
+                include_screen_summary=observation_scope == "screen",
+            )
+        executed_steps.append(executed_step)
 
     observations = _collect_recipe_replay_observations(ctx)
     verify = _verify_recipe_replay_observations(
         observations,
         allow_modal=bool(args.get("allow_modal", False)),
+        success_criteria=success_criteria,
     )
     auto_report = bool(args.get("auto_report", True))
     execution_ms = _elapsed_ms(started_at)
@@ -974,6 +1014,8 @@ def _dispatch_recipe_replay_execute(
             "status": "failed",
             "stage": "verify",
             "execution_ms": execution_ms,
+            "success_criteria": success_criteria,
+            "observation_scope": observation_scope,
             "plan": plan,
             "executed_steps": executed_steps,
             "observations": observations,
@@ -995,6 +1037,8 @@ def _dispatch_recipe_replay_execute(
         "status": "success",
         "stage": "report" if auto_report else "verify",
         "execution_ms": execution_ms,
+        "success_criteria": success_criteria,
+        "observation_scope": observation_scope,
         "plan": plan,
         "executed_steps": executed_steps,
         "observations": observations,
@@ -1058,6 +1102,7 @@ def _preflight_recipe_replay_steps(
             "tool": tool,
             "command": command,
             "args": step_args,
+            "precondition": dict(raw_step.get("precondition", {}) or {}),
         })
     return {
         "status": "ok" if not issues else "blocked",
@@ -1109,35 +1154,187 @@ def _recipe_replay_failed(
     }
 
 
-def _collect_recipe_replay_observations(ctx: DispatchContext) -> dict[str, Any]:
+def _collect_recipe_replay_observations(
+    ctx: DispatchContext,
+    *,
+    include_screen_summary: bool = True,
+) -> dict[str, Any]:
     sap = _get_sap(ctx.slot_id)
     observations: dict[str, Any] = {
         "sap_session": sap.get_session_info().model_dump(mode="json"),
         "sap_status": sap.get_status().model_dump(mode="json"),
         "sap_modal": _collect_modal(sap),
     }
-    try:
-        observations["sap_screen_summary"] = _collect_screen_summary(sap)
-    except Exception as exc:  # pragma: no cover - defensive SAP GUI path
-        observations["sap_screen_summary_error"] = str(exc)
+    if include_screen_summary:
+        try:
+            observations["sap_screen_summary"] = _collect_screen_summary(sap)
+        except Exception as exc:  # pragma: no cover - defensive SAP GUI path
+            observations["sap_screen_summary_error"] = str(exc)
     return observations
+
+
+def _normalize_recipe_success_criteria(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+    criteria = dict(raw)
+    for key in ("allowed_status_types", "blocked_status_types"):
+        value = criteria.get(key)
+        if isinstance(value, str):
+            criteria[key] = [
+                item.strip().upper()
+                for item in value.split(",")
+                if item.strip()
+            ]
+    return criteria
+
+
+def _actual_tcode_from_observations(observations: dict[str, Any]) -> str:
+    session = observations.get("sap_session", {}) or {}
+    screen = observations.get("sap_screen_summary", {}) or {}
+    return str(session.get("transaction") or screen.get("transaction") or "").upper().strip()
+
+
+def _actual_screen_number_from_observations(observations: dict[str, Any]) -> str:
+    session = observations.get("sap_session", {}) or {}
+    screen = observations.get("sap_screen_summary", {}) or {}
+    return str(session.get("screen_number") or screen.get("screen_number") or "").strip()
+
+
+def _screen_title_from_observations(observations: dict[str, Any]) -> str:
+    screen = observations.get("sap_screen_summary", {}) or {}
+    return str(screen.get("title") or "")
+
+
+def _check_recipe_step_precondition(
+    precondition: dict[str, Any],
+    ctx: DispatchContext,
+    *,
+    order: int,
+) -> dict[str, Any]:
+    if not precondition:
+        return {"status": "ok", "issues": []}
+
+    observations = _collect_recipe_replay_observations(ctx)
+    issues: list[dict[str, Any]] = []
+
+    expected_tcode = str(
+        precondition.get("tcode") or precondition.get("transaction") or ""
+    ).upper().strip()
+    if expected_tcode:
+        actual_tcode = _actual_tcode_from_observations(observations)
+        if actual_tcode != expected_tcode:
+            issues.append({
+                "code": "precondition_tcode_mismatch",
+                "order": order,
+                "expected": expected_tcode,
+                "actual": actual_tcode,
+                "message": (
+                    f"step {order} precondition tcode 불일치: "
+                    f"expected={expected_tcode}, actual={actual_tcode}"
+                ),
+            })
+
+    expected_screen = str(
+        precondition.get("screen_number") or precondition.get("screen") or ""
+    ).strip()
+    if expected_screen:
+        actual_screen = _actual_screen_number_from_observations(observations)
+        if actual_screen != expected_screen:
+            issues.append({
+                "code": "precondition_screen_mismatch",
+                "order": order,
+                "expected": expected_screen,
+                "actual": actual_screen,
+                "message": (
+                    f"step {order} precondition screen 불일치: "
+                    f"expected={expected_screen}, actual={actual_screen}"
+                ),
+            })
+
+    expected_program = str(precondition.get("program") or "").strip()
+    if expected_program:
+        screen = observations.get("sap_screen_summary", {}) or {}
+        actual_program = str(screen.get("program") or "").strip()
+        if actual_program != expected_program:
+            issues.append({
+                "code": "precondition_program_mismatch",
+                "order": order,
+                "expected": expected_program,
+                "actual": actual_program,
+                "message": (
+                    f"step {order} precondition program 불일치: "
+                    f"expected={expected_program}, actual={actual_program}"
+                ),
+            })
+
+    title_contains = str(
+        precondition.get("title_contains") or precondition.get("screen_contains") or ""
+    ).strip()
+    if title_contains:
+        actual_title = _screen_title_from_observations(observations)
+        if title_contains.lower() not in actual_title.lower():
+            issues.append({
+                "code": "precondition_title_mismatch",
+                "order": order,
+                "expected": title_contains,
+                "actual": actual_title,
+                "message": (
+                    f"step {order} precondition title 불일치: "
+                    f"'{title_contains}'를 찾지 못했습니다."
+                ),
+            })
+
+    if bool(precondition.get("modal_absent", False)):
+        modal = observations.get("sap_modal", {}) or {}
+        if modal.get("has_modal"):
+            issues.append({
+                "code": "precondition_modal_present",
+                "order": order,
+                "message": f"step {order} precondition 실패: modal dialog가 열려 있습니다.",
+            })
+
+    return {
+        "status": "ok" if not issues else "failed",
+        "issues": issues,
+        "observations": observations,
+    }
 
 
 def _verify_recipe_replay_observations(
     observations: dict[str, Any],
     *,
     allow_modal: bool = False,
+    success_criteria: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     issues: list[dict[str, Any]] = []
+    criteria = success_criteria or {}
     status = observations.get("sap_status", {}) or {}
     status_type = str(status.get("type", "")).upper()
-    if status_type in {"E", "A"}:
+    blocked_status_types = {
+        str(item).upper()
+        for item in criteria.get("blocked_status_types", ["E", "A"])
+    }
+    allowed_status_types = {
+        str(item).upper()
+        for item in criteria.get("allowed_status_types", [])
+        if str(item).strip()
+    }
+    if allowed_status_types and status_type not in allowed_status_types:
+        issues.append({
+            "code": "sap_status_not_allowed",
+            "message": (
+                f"SAP status type={status_type}가 "
+                f"allowed_status_types={sorted(allowed_status_types)}에 없습니다."
+            ),
+        })
+    elif status_type in blocked_status_types:
         issues.append({
             "code": "sap_status_error",
             "message": f"SAP status type={status_type}: {status.get('message', '')}",
         })
     modal = observations.get("sap_modal", {}) or {}
-    if modal.get("has_modal") and not allow_modal:
+    require_no_modal = bool(criteria.get("require_no_modal", True))
+    if modal.get("has_modal") and require_no_modal and not allow_modal:
         issues.append({
             "code": "unexpected_modal",
             "message": f"예상치 못한 modal dialog가 남아있습니다: {modal.get('text', '')}",
@@ -1146,6 +1343,38 @@ def _verify_recipe_replay_observations(
         issues.append({
             "code": "screen_summary_unavailable",
             "message": "screen_summary를 수집하지 못했습니다.",
+        })
+    expected_tcode = str(criteria.get("expected_tcode") or "").upper().strip()
+    if expected_tcode and _actual_tcode_from_observations(observations) != expected_tcode:
+        issues.append({
+            "code": "expected_tcode_mismatch",
+            "expected": expected_tcode,
+            "actual": _actual_tcode_from_observations(observations),
+            "message": (
+                "최종 tcode가 기대값과 다릅니다: "
+                f"expected={expected_tcode}, actual={_actual_tcode_from_observations(observations)}"
+            ),
+        })
+    expected_screen = str(
+        criteria.get("expected_screen_number") or criteria.get("expected_screen") or ""
+    ).strip()
+    if expected_screen and _actual_screen_number_from_observations(observations) != expected_screen:
+        issues.append({
+            "code": "expected_screen_mismatch",
+            "expected": expected_screen,
+            "actual": _actual_screen_number_from_observations(observations),
+            "message": (
+                "최종 screen이 기대값과 다릅니다: "
+                f"expected={expected_screen}, actual={_actual_screen_number_from_observations(observations)}"
+            ),
+        })
+    title_contains = str(criteria.get("title_contains") or "").strip()
+    if title_contains and title_contains.lower() not in _screen_title_from_observations(observations).lower():
+        issues.append({
+            "code": "expected_title_mismatch",
+            "expected": title_contains,
+            "actual": _screen_title_from_observations(observations),
+            "message": f"최종 화면 title에서 '{title_contains}'를 찾지 못했습니다.",
         })
     return {
         "status": "ok" if not issues else "failed",

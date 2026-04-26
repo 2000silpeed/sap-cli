@@ -1171,6 +1171,13 @@ precheck → dry-run plan → execute → verify → report
   - `search`, `query_for_ai`, `find_by_tcode`, `find_chain`, `find_similar`의 기존 품질 점수 기반 tie-break가 replay 품질 메타를 자동 활용한다.
   - `sap_recipe_search`, `sap_recipe_query`, `sap_recipe_show`, `sap_recipe_list`, `sap_recipe_replay_plan` 응답에 `replay_quality` 요약을 노출한다.
   - replay 품질 요약은 실행 횟수, 평균/마지막 실행 시간, 마지막 상태/실패 유형, 성공률, 속도 점수, 실패 유형 집계, system/client별 집계를 포함한다.
+- [x] E-2 replay execute 고도화 1차
+  - `sap_recipe_replay_execute`가 step 실행 직전 `precondition`을 실제 SAP 관찰값과 비교한다.
+  - 지원 precondition: `tcode`/`transaction`, `screen_number`/`screen`, `program`, `title_contains`/`screen_contains`, `modal_absent`.
+  - `success_criteria` 입력으로 최종 검증 기준을 커스터마이징할 수 있게 했다.
+  - 지원 success criteria: `expected_tcode`, `expected_screen_number`/`expected_screen`, `title_contains`, `allowed_status_types`, `blocked_status_types`, `require_no_modal`.
+  - `observation_scope=final|status|screen`으로 step별 관찰값 저장 범위를 선택할 수 있게 했다.
+  - precondition/criteria 실패 유형이 replay 품질 메타의 `last_failure_type`과 실패 유형 집계에 반영된다.
 
 ### 완료 기준
 

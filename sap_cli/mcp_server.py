@@ -899,6 +899,21 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "type": "boolean",
                     "description": "false이면 success/failure 카운터를 자동 기록하지 않습니다. 기본값은 true입니다.",
                 },
+                "success_criteria": {
+                    "type": "object",
+                    "description": (
+                        "실행 후 검증 기준 커스터마이징. 예: expected_tcode, expected_screen_number, "
+                        "title_contains, allowed_status_types, blocked_status_types, require_no_modal."
+                    ),
+                },
+                "observation_scope": {
+                    "type": "string",
+                    "description": (
+                        "step별 관찰값 저장 범위. final(기본)=최종 관찰값만, "
+                        "status=각 step 후 session/status/modal, screen=각 step 후 screen_summary까지 포함."
+                    ),
+                    "enum": ["final", "status", "screen"],
+                },
             },
             "required": ["recipe_id"],
         },

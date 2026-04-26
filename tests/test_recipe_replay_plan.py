@@ -308,3 +308,101 @@ def test_replay_execute_blocks_non_sap_recipe_management_step(tmp_path: Path):
     assert result["preflight"]["issues"][0]["code"] == "disallowed_tool"
     assert result["report_called"] is False
     assert sap.calls == []
+
+
+def test_replay_execute_checks_step_precondition_before_execution(tmp_path: Path):
+    store = _store(tmp_path)
+    store.save(Recipe(
+        id="precondition-mismatch",
+        description="현재 화면 조건 검사",
+        steps=[
+            RecipeStep(
+                tool="sap_set_field",
+                args={"element_id": "F1", "value": "1000"},
+                precondition={"tcode": "VA01", "screen_number": "0101"},
+            ),
+        ],
+    ))
+    sap = _ReplaySap()
+    sap.transaction = "MM03"
+    sap.screen_number = "0200"
+
+    with (
+        patch("sap_cli.dispatcher._get_recipe_store", return_value=store),
+        patch("sap_cli.dispatcher._get_sap", return_value=sap),
+    ):
+        result = dispatch_command(
+            "recipe_replay_execute",
+            {"recipe_id": "precondition-mismatch", "auto_report": False},
+            DispatchContext(source="mcp", enforce_auth=False),
+        )
+
+    assert result["status"] == "failed"
+    assert result["stage"] == "precondition"
+    assert result["verify"]["issues"][0]["code"] == "precondition"
+    assert result["replay_metrics"]["replay_last_failure_type"] == "precondition_tcode_mismatch"
+    assert sap.calls == []
+
+
+def test_replay_execute_applies_custom_success_criteria(tmp_path: Path):
+    store = _store(tmp_path)
+    store.save(Recipe(
+        id="criteria-fail",
+        description="성공 기준 커스터마이징",
+        steps=[RecipeStep(tool="sap_run", args={"tcode": "VA01"})],
+    ))
+    sap = _ReplaySap()
+
+    with (
+        patch("sap_cli.dispatcher._get_recipe_store", return_value=store),
+        patch("sap_cli.dispatcher._get_sap", return_value=sap),
+    ):
+        result = dispatch_command(
+            "recipe_replay_execute",
+            {
+                "recipe_id": "criteria-fail",
+                "current_tcode": "VA01",
+                "success_criteria": {
+                    "expected_tcode": "VA02",
+                    "allowed_status_types": ["S"],
+                    "expected_screen_number": "0101",
+                },
+            },
+            DispatchContext(source="mcp", enforce_auth=False),
+        )
+
+    assert result["status"] == "failed"
+    assert result["verify"]["issues"][0]["code"] == "expected_tcode_mismatch"
+    assert result["success_criteria"]["expected_tcode"] == "VA02"
+    assert result["replay_metrics"]["replay_last_failure_type"] == "expected_tcode_mismatch"
+
+
+def test_replay_execute_can_store_step_observations_by_scope(tmp_path: Path):
+    store = _store(tmp_path)
+    store.save(Recipe(
+        id="step-observations",
+        description="step 관찰값 저장",
+        steps=[RecipeStep(tool="sap_run", args={"tcode": "VA01"})],
+    ))
+    sap = _ReplaySap()
+
+    with (
+        patch("sap_cli.dispatcher._get_recipe_store", return_value=store),
+        patch("sap_cli.dispatcher._get_sap", return_value=sap),
+    ):
+        result = dispatch_command(
+            "recipe_replay_execute",
+            {
+                "recipe_id": "step-observations",
+                "current_tcode": "VA01",
+                "observation_scope": "status",
+            },
+            DispatchContext(source="mcp", enforce_auth=False),
+        )
+
+    assert result["status"] == "success"
+    assert result["observation_scope"] == "status"
+    step_observations = result["executed_steps"][0]["observations"]
+    assert "sap_status" in step_observations
+    assert "sap_modal" in step_observations
+    assert "sap_screen_summary" not in step_observations
