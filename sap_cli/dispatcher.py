@@ -133,6 +133,15 @@ from .dispatchers.connection import (
     is_connection_command,
     search_screen as _search_screen_impl,
 )
+from .dispatchers.post_action import (
+    POST_ACTION_COMMANDS,
+    collect_post_action as _collect_post_action_impl,
+    collect_screen_summary as _collect_screen_summary_impl,
+    enum_value as _enum_value_impl,
+    summarize_action as _summarize_action_impl,
+    summarize_field as _summarize_field_impl,
+    with_post_action as _with_post_action_impl,
+)
 from .dispatchers.sap_actions import (
     dispatch_command_text as _dispatch_command_text_impl,
     dispatch_get as _dispatch_get_impl,
@@ -167,19 +176,6 @@ from .service import (
     map_action as _map_action,
 )
 
-
-POST_ACTION_COMMANDS = {
-    "connect",
-    "run",
-    "set",
-    "press",
-    "vkey",
-    "command",
-    "record_step",
-    "macro_play",
-    "table_select",
-    "table_doubleclick",
-}
 
 TRANSCRIPT_OMIT_COMMANDS = {
     "transcript_query",
@@ -1116,20 +1112,14 @@ def _with_post_action(
     command: str,
     ctx: DispatchContext,
 ) -> dict[str, Any]:
-    if ctx.include_post_action_context and command in POST_ACTION_COMMANDS:
-        payload["post_action"] = _collect_post_action(
-            sap,
-            include_screen_summary=ctx.include_screen_summary,
-        )
-
-    post_action = payload.get("post_action")
-    if post_action:
-        session = post_action.get("session", {})
-        status = post_action.get("status", {})
-        payload.setdefault("transaction", session.get("transaction"))
-        payload.setdefault("screen_number", session.get("screen_number"))
-        payload.setdefault("status", status)
-    return payload
+    return _with_post_action_impl(
+        payload,
+        sap,
+        command,
+        ctx,
+        POST_ACTION_COMMANDS,
+        _collect_post_action,
+    )
 
 
 def _collect_post_action(
@@ -1137,70 +1127,28 @@ def _collect_post_action(
     *,
     include_screen_summary: bool = False,
 ) -> dict[str, Any]:
-    payload = {
-        "session": sap.get_session_info().model_dump(mode="json"),
-        "status": sap.get_status().model_dump(mode="json"),
-        "modal": _collect_modal(sap),
-    }
-    if include_screen_summary:
-        try:
-            payload["screen_summary"] = _collect_screen_summary(sap)
-        except Exception as exc:  # pragma: no cover - defensive path
-            payload["screen_summary_error"] = str(exc)
-    return payload
+    return _collect_post_action_impl(
+        sap,
+        include_screen_summary=include_screen_summary,
+        collect_modal=_collect_modal,
+        collect_screen_summary=_collect_screen_summary,
+    )
 
 
 def _collect_screen_summary(sap: SapGuiWrapper) -> dict[str, Any]:
-    screen = sap.get_screen()
-    changeable_fields = screen.get_changeable_fields()
-    required_fields = [field for field in changeable_fields if getattr(field, "required", False)]
-    available_actions = screen.get_available_actions()
-    return {
-        "transaction": screen.transaction,
-        "screen_number": screen.screen_number,
-        "program": screen.program,
-        "title": screen.title,
-        "field_count": len(screen.fields),
-        "changeable_field_count": len(changeable_fields),
-        "required_field_count": len(required_fields),
-        "button_count": len(screen.buttons),
-        "tab_count": len(screen.tabs),
-        "table_count": len(screen.tables),
-        "changeable_fields": [_summarize_field(field) for field in changeable_fields[:8]],
-        "required_fields": [_summarize_field(field) for field in required_fields[:5]],
-        "available_actions": [_summarize_action(action) for action in available_actions[:10]],
-    }
+    return _collect_screen_summary_impl(sap)
 
 
 def _summarize_field(field: Any) -> dict[str, Any]:
-    payload = {"id": str(getattr(field, "id", ""))}
-    if name := getattr(field, "name", ""):
-        payload["name"] = name
-    if label := getattr(field, "label", ""):
-        payload["label"] = label
-    if field_type := _enum_value(getattr(field, "type", None)):
-        payload["type"] = field_type
-    if value := getattr(field, "value", ""):
-        payload["value"] = value
-    if getattr(field, "required", False):
-        payload["required"] = True
-    return payload
+    return _summarize_field_impl(field)
 
 
 def _summarize_action(action: Any) -> dict[str, Any]:
-    payload = {
-        "type": _enum_value(getattr(action, "action_type", "")),
-        "target_id": str(getattr(action, "target_id", "")),
-    }
-    if label := getattr(action, "target_label", ""):
-        payload["label"] = label
-    if description := getattr(action, "description", ""):
-        payload["description"] = description
-    return payload
+    return _summarize_action_impl(action)
 
 
 def _enum_value(value: Any) -> Any:
-    return getattr(value, "value", value)
+    return _enum_value_impl(value)
 
 
 def _collect_modal(sap: SapGuiWrapper) -> dict[str, Any]:

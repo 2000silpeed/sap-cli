@@ -1016,6 +1016,40 @@ _collect_modal
 
 ---
 
+## D-16. Post-action/screen summary helper 분리
+
+### 이동 대상
+
+```text
+POST_ACTION_COMMANDS
+_with_post_action
+_collect_post_action
+_collect_screen_summary
+_summarize_field
+_summarize_action
+_enum_value
+```
+
+### 완료 기준
+
+- [x] post-action context/screen summary 실제 구현이 feature helper module로 분리된다.
+- [x] `sap_cli.dispatcher` private helper facade wrapper 유지
+- [x] 기존 `POST_ACTION_COMMANDS` 목록 유지
+- [x] dispatcher/transcript 관련 테스트 통과
+
+### 진행 메모
+
+- `sap_cli/dispatchers/post_action.py`를 추가해 post-action context와 screen summary helper 실제 구현을 이동했다.
+- 중앙 `sap_cli.dispatcher`에는 `_with_post_action`, `_collect_post_action`, `_collect_screen_summary`, `_summarize_field`, `_summarize_action`, `_enum_value` facade wrapper를 유지했다.
+- `_collect_post_action` wrapper는 `_collect_modal`과 `_collect_screen_summary`를 implementation에 주입하므로 기존 private helper monkeypatch 호환 구조를 유지한다.
+- `POST_ACTION_COMMANDS`는 기존 명령 목록을 유지한 채 post_action module로 이동했다.
+- `sap_cli/dispatchers/__init__.py`에서도 post_action helper public surface를 re-export한다.
+- `dispatcher.py`는 1223줄에서 1171줄로 감소했다.
+- 검증: `uv run pytest tests/test_dispatcher.py tests/test_command_surface_consistency.py tests/test_transcript_store.py tests/test_transcript_planner.py` → 21 passed.
+- 검증: `uv run pytest` → 505 passed.
+
+---
+
 # Phase E: Recipe 운영 고도화
 
 목표: recipe를 실제 사내 운영 자산으로 만들기 위한 품질·검증·소유권 기반을 준비한다.

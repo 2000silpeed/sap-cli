@@ -248,6 +248,15 @@ uv run pytest tests/test_command_surface_consistency.py
 - `sap_cli/dispatchers/__init__.py`에서도 connection dispatcher public surface를 re-export한다.
 - `dispatcher.py`는 1289줄에서 1223줄로 감소했다.
 
+## D-16 post-action/screen summary helper 분리 진행 메모
+
+- `POST_ACTION_COMMANDS`와 post-action context/screen summary helper 실제 구현을 신규 `sap_cli/dispatchers/post_action.py`로 이동했다.
+- 중앙 dispatcher에는 `_with_post_action`, `_collect_post_action`, `_collect_screen_summary`, `_summarize_field`, `_summarize_action`, `_enum_value` facade wrapper만 유지한다.
+- `_collect_post_action` wrapper는 `_collect_modal`과 `_collect_screen_summary`를 implementation에 주입해 기존 private helper monkeypatch 호환 구조를 유지한다.
+- `POST_ACTION_COMMANDS` 명령 목록은 기존 동작과 동일하게 유지했다.
+- `sap_cli/dispatchers/__init__.py`에서도 post_action helper public surface를 re-export한다.
+- `dispatcher.py`는 1223줄에서 1171줄로 감소했다.
+
 ## D-2 진행 메모
 
 - `recipe_failure`, `recipe_enable`, `recipe_history`, `recipe_chain` 구현을 `sap_cli/dispatchers/recipe.py`로 이동했다.
