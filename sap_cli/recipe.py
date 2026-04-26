@@ -56,7 +56,11 @@ class Recipe(BaseModel):
     previous_version_archive: str = ""
     tcode_sequence: list[str] = Field(default_factory=list)
     source_session: str = ""
+    created_by: str = ""
+    updated_by: str = ""
     approved_by: str = ""
+    shared_scope: str = "private"
+    team: str = ""
 
 
 # 자동 비활성화 임계값 — total≥3 AND failure_rate≥0.5

@@ -253,6 +253,10 @@ class TestSessionToRecipe:
         session = _make_candidate_session()
         result = session_to_recipe(session, approved_by="manager1")
         assert result["approved_by"] == "manager1"
+        assert result["created_by"] == "manager1"
+        assert result["updated_by"] == "manager1"
+        assert result["shared_scope"] == "private"
+        assert result["team"] == ""
 
     def test_hint_from_intent(self):
         session = _make_candidate_session()
@@ -406,6 +410,26 @@ class TestRecipeModelExtension:
         r = Recipe(id="test-1", description="테스트", source_session="abc123", approved_by="admin")
         assert r.source_session == "abc123"
         assert r.approved_by == "admin"
+        assert r.created_by == ""
+        assert r.updated_by == ""
+        assert r.shared_scope == "private"
+        assert r.team == ""
+
+    def test_ownership_fields(self):
+        r = Recipe(
+            id="test-owner",
+            description="소유권 테스트",
+            created_by="alice",
+            updated_by="bob",
+            approved_by="manager",
+            shared_scope="team",
+            team="fi",
+        )
+        assert r.created_by == "alice"
+        assert r.updated_by == "bob"
+        assert r.approved_by == "manager"
+        assert r.shared_scope == "team"
+        assert r.team == "fi"
 
     def test_serialize_deserialize(self, tmp_path):
         store = RecipeStore(store_dir=tmp_path)
@@ -420,7 +444,24 @@ class TestRecipeModelExtension:
         loaded = store.load("test-2")
         assert loaded.source_session == "sess123"
         assert loaded.approved_by == "manager"
+        assert loaded.shared_scope == "private"
+        assert loaded.team == ""
         assert loaded.steps[0].args["tcode"] == "${tcode}"
+
+    def test_legacy_json_ownership_defaults(self, tmp_path):
+        store = RecipeStore(store_dir=tmp_path)
+        legacy = tmp_path / "legacy-owner.json"
+        legacy.write_text(
+            '{"id":"legacy-owner","description":"old","steps":[]}',
+            encoding="utf-8",
+        )
+        loaded = store.load("legacy-owner")
+        assert loaded is not None
+        assert loaded.created_by == ""
+        assert loaded.updated_by == ""
+        assert loaded.approved_by == ""
+        assert loaded.shared_scope == "private"
+        assert loaded.team == ""
 
 
 # ---------------------------------------------------------------

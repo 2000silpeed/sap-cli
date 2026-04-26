@@ -1178,6 +1178,8 @@ precheck → dry-run plan → execute → verify → report
 
 ## E-3. Recipe ownership 준비
 
+상태: 완료 — Phase 21 사용자 식별 도입 전 스키마 충돌을 막기 위한 ownership 기본 필드와 레거시 기본 정책을 고정했다.
+
 ### Phase 21과 연결
 
 향후 멀티유저 거버넌스에서 recipe에는 다음 필드가 필요하다.
@@ -1190,13 +1192,23 @@ precheck → dry-run plan → execute → verify → report
 
 ### 작업
 
-- [ ] schema 확장 전 migration 전략 수립
-- [ ] 기존 recipe 역호환 default 결정
-- [ ] ownership 없는 recipe의 처리 정책 결정
+- [x] schema 확장 전 migration 전략 수립
+  - 즉시 파일 마이그레이션을 수행하지 않고 `Recipe` 모델 default로 무중단 lazy migration한다.
+  - 기존 JSON은 로드/저장 시 새 필드가 채워지며, Phase 21에서 사용자 식별자가 들어와도 필드명이 충돌하지 않는다.
+  - Phase 21 전에는 `shared_scope` 값 검증을 강제하지 않아 과거/실험 데이터 로딩을 막지 않는다.
+- [x] 기존 recipe 역호환 default 결정
+  - `created_by=""`, `updated_by=""`, `approved_by=""`, `team=""`를 unknown identity로 둔다.
+  - `shared_scope="private"`를 기본값으로 둬 ownership 없는 기존 recipe가 팀/전역 공유로 승격되지 않게 한다.
+- [x] ownership 없는 recipe의 처리 정책 결정
+  - ownership 없는 recipe는 “로컬 private legacy recipe”로 취급한다.
+  - 세션 승인에서 생성되는 신규 recipe는 승인자를 `created_by`, `updated_by`, `approved_by`에 기록한다.
+  - 추후 Phase 21에서 실제 사용자 식별자가 들어오면 빈 identity만 backfill 대상으로 삼는다.
 
 ### 완료 기준
 
-- [ ] Phase 21 사용자 식별 도입 시 recipe schema 충돌이 없다.
+- [x] Phase 21 사용자 식별 도입 시 recipe schema 충돌이 없다.
+  - `Recipe`에 `created_by`, `updated_by`, `approved_by`, `shared_scope`, `team` 필드가 공존한다.
+  - 레거시 JSON ownership default 및 세션 승인 생성 경로를 테스트로 고정했다.
 
 ---
 

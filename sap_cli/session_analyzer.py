@@ -215,7 +215,11 @@ def session_to_recipe(session: McpSession, approved_by: str = "") -> dict[str, A
         "keywords": keywords,
         "steps": recipe_steps,
         "source_session": session.id,
+        "created_by": approved_by,
+        "updated_by": approved_by,
         "approved_by": approved_by,
+        "shared_scope": "private",
+        "team": "",
     }
 
 
