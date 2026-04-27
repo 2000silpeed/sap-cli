@@ -1210,18 +1210,9 @@ def _collect_recipe_replay_observations(
 
 
 def _normalize_recipe_success_criteria(raw: Any) -> dict[str, Any]:
-    if not isinstance(raw, dict):
-        return {}
-    criteria = dict(raw)
-    for key in ("allowed_status_types", "blocked_status_types"):
-        value = criteria.get(key)
-        if isinstance(value, str):
-            criteria[key] = [
-                item.strip().upper()
-                for item in value.split(",")
-                if item.strip()
-            ]
-    return criteria
+    from .recipe import normalize_replay_success_criteria
+
+    return normalize_replay_success_criteria(raw)
 
 
 def _resolve_recipe_replay_success_criteria(

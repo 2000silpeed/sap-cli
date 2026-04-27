@@ -183,12 +183,33 @@ def _safe_recipe_id(tcode: str, session_id: str) -> str:
     return f"{safe_tcode}_{session_id}" if safe_tcode else session_id
 
 
-def session_to_recipe(session: McpSession, approved_by: str = "") -> dict[str, Any]:
+def _derive_replay_success_criteria(steps: list[SessionStep]) -> dict[str, Any]:
+    """Infer a conservative replay success contract from the final session state."""
+    for step in reversed(steps):
+        tcode = str(step.after_transaction or step.before_transaction or "").upper().strip()
+        screen = step.after_screen or step.before_screen
+        criteria: dict[str, Any] = {}
+        if tcode:
+            criteria["expected_tcode"] = tcode
+        if screen:
+            criteria["expected_screen_number"] = str(screen)
+        if criteria:
+            return criteria
+    return {}
+
+
+def session_to_recipe(
+    session: McpSession,
+    approved_by: str = "",
+    replay_success_criteria: dict[str, Any] | None = None,
+    derive_replay_success_criteria: bool = True,
+) -> dict[str, Any]:
     """정제된 세션을 Recipe dict로 변환.
 
     Returns dict compatible with recipe.Recipe(**result).
     """
     from .recipe import RecipeStep as RStep
+    from .recipe import normalize_replay_success_criteria
 
     analysis = analyze(session)
     core_flow: list[dict[str, Any]] = analysis["core_flow"]
@@ -207,6 +228,14 @@ def session_to_recipe(session: McpSession, approved_by: str = "") -> dict[str, A
         })
 
     recipe_id = _safe_recipe_id(tcode, session.id)
+    if replay_success_criteria is not None:
+        final_success_criteria = normalize_replay_success_criteria(replay_success_criteria)
+    elif derive_replay_success_criteria:
+        final_success_criteria = normalize_replay_success_criteria(
+            _derive_replay_success_criteria(core_steps)
+        )
+    else:
+        final_success_criteria = {}
 
     return {
         "id": recipe_id,
@@ -214,6 +243,7 @@ def session_to_recipe(session: McpSession, approved_by: str = "") -> dict[str, A
         "context": session.ai_reasoning,
         "keywords": keywords,
         "steps": recipe_steps,
+        "replay_success_criteria": final_success_criteria,
         "source_session": session.id,
         "created_by": approved_by,
         "updated_by": approved_by,
@@ -226,6 +256,8 @@ def session_to_recipe(session: McpSession, approved_by: str = "") -> dict[str, A
 def approve_session(
     session: McpSession,
     approved_by: str = "admin",
+    replay_success_criteria: dict[str, Any] | None = None,
+    derive_replay_success_criteria: bool = True,
 ) -> dict[str, Any]:
     """candidate 세션을 승인하고 레시피 dict를 반환.
 
@@ -236,7 +268,12 @@ def approve_session(
     if session.approved:
         return {"error": f"이미 승인된 세션입니다 (recipe_id: {session.recipe_id})"}
 
-    recipe_data = session_to_recipe(session, approved_by=approved_by)
+    recipe_data = session_to_recipe(
+        session,
+        approved_by=approved_by,
+        replay_success_criteria=replay_success_criteria,
+        derive_replay_success_criteria=derive_replay_success_criteria,
+    )
     session.approved = True
     session.recipe_id = recipe_data["id"]
 

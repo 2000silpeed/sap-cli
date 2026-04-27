@@ -245,11 +245,19 @@ def dispatch_session_approve(
 ) -> dict[str, Any]:
     """Approve a session candidate and persist it as a recipe."""
     from ..recipe import Recipe, RecipeStep as RStep
+    from ..recipe import normalize_replay_success_criteria
     from ..session_analyzer import analyze, approve_session
 
     store = get_session_store()
     session_id = str(args["session_id"])
     approved_by = str(args.get("approved_by", "admin"))
+    criteria_supplied = "replay_success_criteria" in args
+    replay_success_criteria = (
+        normalize_replay_success_criteria(args.get("replay_success_criteria", {}))
+        if criteria_supplied
+        else None
+    )
+    derive_success_criteria = bool(args.get("derive_replay_success_criteria", True))
 
     session = store.load(session_id)
     if session is None:
@@ -261,7 +269,12 @@ def dispatch_session_approve(
     if session.approved:
         return {"error": f"이미 승인된 세션입니다 (recipe_id: {session.recipe_id})"}
 
-    recipe_data = approve_session(session, approved_by=approved_by)
+    recipe_data = approve_session(
+        session,
+        approved_by=approved_by,
+        replay_success_criteria=replay_success_criteria,
+        derive_replay_success_criteria=derive_success_criteria,
+    )
     if "error" in recipe_data:
         return recipe_data
 
@@ -286,6 +299,12 @@ def dispatch_session_approve(
         "recipe_id": recipe.id,
         "step_count": len(recipe.steps),
         "linked_tcodes": linked_tcodes,
+        "replay_success_criteria": recipe.replay_success_criteria,
+        "replay_success_criteria_source": (
+            "request" if criteria_supplied
+            else "session" if recipe.replay_success_criteria
+            else "none"
+        ),
     }
 
 
@@ -330,4 +349,3 @@ def log_session_step(
             command,
             exc_info=True,
         )
-

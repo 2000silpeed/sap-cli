@@ -468,6 +468,12 @@ def recipe_save(
     description: str = typer.Argument(help="레시피 설명"),
     steps_json: str = typer.Argument(help="단계 JSON 배열"),
     keywords: Optional[str] = typer.Option(None, "--keywords", "-k", help="검색 키워드 (쉼표 구분)"),
+    context: Optional[str] = typer.Option(None, "--context", "-c", help="레시피 상세 맥락"),
+    replay_success_criteria_json: Optional[str] = typer.Option(
+        None,
+        "--replay-success-criteria",
+        help="replay 최종 검증 기준 JSON. 예: '{\"expected_tcode\":\"VA02\"}'",
+    ),
 ) -> None:
     """AI 네비게이션 레시피 저장."""
     import json as _json
@@ -478,6 +484,10 @@ def recipe_save(
     }
     if keywords:
         params["keywords"] = [k.strip() for k in keywords.split(",")]
+    if context is not None:
+        params["context"] = context
+    if replay_success_criteria_json is not None:
+        params["replay_success_criteria"] = _json.loads(replay_success_criteria_json)
     _run_command("recipe_save", params)
 
 

@@ -104,7 +104,9 @@ class TestVersionUp:
         assert len(archived.steps) == 3
 
     def test_metadata_carried_over(self, store: RecipeStore):
-        _save_v1(store, success=12)
+        r = _save_v1(store, success=12)
+        r.replay_success_criteria = {"expected_tcode": "VA01"}
+        store.save(r)
         new = store.version_up(
             "va01-create",
             new_steps=[RecipeStep(tool="sap_run", args={"tcode": "VA01"})],
@@ -113,6 +115,46 @@ class TestVersionUp:
         assert new.success_count == 12  # 승계
         assert new.description == "VA01 신규 생성"
         assert new.keywords == ["수주", "va01"]
+        assert new.replay_success_criteria == {"expected_tcode": "VA01"}
+
+    def test_version_up_can_replace_replay_success_criteria(self, store: RecipeStore):
+        r = _save_v1(store)
+        r.replay_success_criteria = {
+            "expected_tcode": "VA01",
+            "expected_screen_number": "100",
+        }
+        store.save(r)
+
+        new = store.version_up(
+            "va01-create",
+            new_steps=[RecipeStep(tool="sap_run", args={"tcode": "VA02"})],
+            replay_success_criteria={
+                "expected_tcode": "va02",
+                "expected_screen_number": 200,
+                "blocked_status_types": "E,A",
+            },
+        )
+
+        assert new is not None
+        assert new.replay_success_criteria == {
+            "expected_tcode": "VA02",
+            "expected_screen_number": "200",
+            "blocked_status_types": ["E", "A"],
+        }
+
+    def test_version_up_can_clear_replay_success_criteria(self, store: RecipeStore):
+        r = _save_v1(store)
+        r.replay_success_criteria = {"expected_tcode": "VA01"}
+        store.save(r)
+
+        new = store.version_up(
+            "va01-create",
+            new_steps=[RecipeStep(tool="sap_run", args={"tcode": "VA01"})],
+            replay_success_criteria={},
+        )
+
+        assert new is not None
+        assert new.replay_success_criteria == {}
 
     def test_failure_state_reset(self, store: RecipeStore):
         r = _save_v1(store)
@@ -188,10 +230,13 @@ class TestDispatchVersioning:
             "recipe_id": "va01-create",
             "new_steps": [{"tool": "sap_run", "args": {"tcode": "VA01"}}],
             "change_note": "테스트",
+            "replay_success_criteria": {"expected_tcode": "va01"},
         })
 
         assert result["new_version"] == 2
         assert result["previous_version_archive"].startswith("va01-create__v1__")
+        assert result["replay_success_criteria"] == {"expected_tcode": "VA01"}
+        assert result["replay_success_criteria_updated"] is True
 
     def test_dispatch_version_up_empty_steps(self, store: RecipeStore, monkeypatch: pytest.MonkeyPatch):
         from sap_cli.dispatcher import _dispatch_recipe_version_up

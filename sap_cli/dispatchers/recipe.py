@@ -579,7 +579,7 @@ def dispatch_recipe_save(
     delete_recipe_with_links: Callable[[str], dict[str, Any]],
 ) -> dict[str, Any]:
     """Save or update a recipe, including duplicate handling and ontology links."""
-    from ..recipe import Recipe, RecipeStep, efficiency_score
+    from ..recipe import Recipe, RecipeStep, efficiency_score, normalize_replay_success_criteria
 
     store = get_recipe_store()
     recipe_id = str(args["recipe_id"])
@@ -590,6 +590,12 @@ def dispatch_recipe_save(
         keywords = [k.strip() for k in keywords.split(",")]
     steps_raw = args.get("steps", [])
     steps = [RecipeStep(**s) if isinstance(s, dict) else s for s in steps_raw]
+    criteria_supplied = "replay_success_criteria" in args
+    replay_success_criteria = (
+        normalize_replay_success_criteria(args.get("replay_success_criteria", {}))
+        if criteria_supplied
+        else None
+    )
 
     on_duplicate = args.get("on_duplicate")
     if on_duplicate is not None:
@@ -623,6 +629,8 @@ def dispatch_recipe_save(
         existing.context = context
         existing.keywords = keywords
         existing.steps = steps
+        if criteria_supplied:
+            existing.replay_success_criteria = replay_success_criteria or {}
         store.save(existing)
         linked_tcodes = link_recipe_to_ontology(
             recipe_id, steps, description=description, context=context, keywords=keywords,
@@ -633,6 +641,8 @@ def dispatch_recipe_save(
             "updated": True,
             "step_count": len(steps),
             "linked_tcodes": linked_tcodes,
+            "replay_success_criteria": existing.replay_success_criteria,
+            "has_replay_success_criteria": bool(existing.replay_success_criteria),
         }
 
     if on_duplicate is None:
@@ -791,6 +801,7 @@ def dispatch_recipe_save(
         keywords=keywords,
         steps=steps,
         success_count=inherited_success,
+        replay_success_criteria=replay_success_criteria or {},
     )
     store.save(recipe)
 
@@ -808,6 +819,8 @@ def dispatch_recipe_save(
         "replaced_ids": replaced_ids,
         "cleaned_tcodes": cleaned_tcodes_all,
         "inherited_success_count": inherited_success,
+        "replay_success_criteria": recipe.replay_success_criteria,
+        "has_replay_success_criteria": bool(recipe.replay_success_criteria),
     }
 
 
@@ -945,7 +958,7 @@ def dispatch_recipe_version_up(
     link_recipe_to_ontology: Callable[..., list[str]],
 ) -> dict[str, Any]:
     """Save a new recipe version and refresh ontology links."""
-    from ..recipe import RecipeStep
+    from ..recipe import RecipeStep, normalize_replay_success_criteria
 
     store = get_recipe_store()
     recipe_id = str(args["recipe_id"])
@@ -953,6 +966,12 @@ def dispatch_recipe_version_up(
     new_steps = [RecipeStep(**s) if isinstance(s, dict) else s for s in steps_raw]
     new_context = str(args.get("new_context", ""))
     change_note = str(args.get("change_note", ""))
+    criteria_supplied = "replay_success_criteria" in args
+    replay_success_criteria = (
+        normalize_replay_success_criteria(args.get("replay_success_criteria", {}))
+        if criteria_supplied
+        else None
+    )
 
     if not new_steps:
         return {"error": True, "message": "new_steps는 비어있을 수 없습니다."}
@@ -963,7 +982,11 @@ def dispatch_recipe_version_up(
 
     unlink_recipe_from_ontology(existing)
     new_recipe = store.version_up(
-        recipe_id, new_steps=new_steps, new_context=new_context, change_note=change_note,
+        recipe_id,
+        new_steps=new_steps,
+        new_context=new_context,
+        change_note=change_note,
+        replay_success_criteria=replay_success_criteria,
     )
     if new_recipe is None:
         return {"error": True, "message": f"version_up 실패: {recipe_id}"}
@@ -981,6 +1004,8 @@ def dispatch_recipe_version_up(
         "previous_version_archive": new_recipe.previous_version_archive,
         "step_count": len(new_recipe.steps),
         "linked_tcodes": linked_tcodes,
+        "replay_success_criteria": new_recipe.replay_success_criteria,
+        "replay_success_criteria_updated": criteria_supplied,
     }
 
 

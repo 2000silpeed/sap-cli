@@ -264,6 +264,33 @@ class TestSessionToRecipe:
         hints = [s["hint"] for s in result["steps"] if s["hint"]]
         assert len(hints) > 0
 
+    def test_replay_success_criteria_derived_from_final_state(self):
+        session = _make_candidate_session()
+        result = session_to_recipe(session)
+        assert result["replay_success_criteria"] == {
+            "expected_tcode": "VL33N",
+            "expected_screen_number": "100",
+        }
+
+    def test_replay_success_criteria_can_be_overridden(self):
+        session = _make_candidate_session()
+        result = session_to_recipe(
+            session,
+            replay_success_criteria={
+                "expected_tcode": "vl33n",
+                "expected_screen_number": 200,
+            },
+        )
+        assert result["replay_success_criteria"] == {
+            "expected_tcode": "VL33N",
+            "expected_screen_number": "200",
+        }
+
+    def test_replay_success_criteria_derivation_can_be_disabled(self):
+        session = _make_candidate_session()
+        result = session_to_recipe(session, derive_replay_success_criteria=False)
+        assert result["replay_success_criteria"] == {}
+
 
 # ---------------------------------------------------------------
 # 승인 흐름 테스트
@@ -280,6 +307,25 @@ class TestApproveSession:
         assert session.approved is True
         assert session.recipe_id is not None
         assert result["id"] == session.recipe_id
+        assert result["replay_success_criteria"] == {
+            "expected_tcode": "VL33N",
+            "expected_screen_number": "100",
+        }
+
+    def test_approve_candidate_accepts_explicit_replay_success_criteria(self):
+        session = _make_candidate_session()
+        analyze(session)
+
+        result = approve_session(
+            session,
+            replay_success_criteria={"expected_tcode": "vl33n", "title_contains": "Delivery"},
+        )
+
+        assert "error" not in result
+        assert result["replay_success_criteria"] == {
+            "expected_tcode": "VL33N",
+            "title_contains": "Delivery",
+        }
 
     def test_approve_non_candidate_rejected(self):
         session = McpSession(
@@ -395,6 +441,10 @@ class TestDispatchSessionCandidates:
         assert saved_recipe.source_session == session.id
         assert saved_recipe.approved_by == "admin"
         assert len(saved_recipe.steps) > 0
+        assert saved_recipe.replay_success_criteria == {
+            "expected_tcode": "VL33N",
+            "expected_screen_number": "200",
+        }
 
         ont_store = OntologyStore(knowledge_dir=knowledge_dir)
         ont = TransactionOntology(tcode="VL33N", title="배송 문서 변경")

@@ -1187,6 +1187,11 @@ precheck → dry-run plan → execute → verify → report
   - `success_criteria={}`와 `save_success_criteria=true` 조합으로 저장된 기준을 초기화할 수 있다.
   - replay execute 응답에 `success_criteria_source`와 `success_criteria_persisted`를 포함해 request/recipe/default 출처와 저장 여부를 확인할 수 있게 했다.
   - `sap_recipe_show`/`sap_recipe_replay_plan`은 저장된 기준을 상세 노출하고, `sap_recipe_list`/검색 요약은 저장 기준 존재 여부를 compact하게 노출한다.
+- [x] E-2 success criteria recipe 생성/버전업/세션 변환 연결
+  - `sap_recipe_save`와 CLI `recipe-save`가 `replay_success_criteria`를 직접 저장/갱신/초기화할 수 있게 했다.
+  - `sap_recipe_version_up`은 기준 미지정 시 기존 `replay_success_criteria`를 유지하고, 새 기준을 전달하면 새 버전에 반영하거나 `{}`로 초기화한다.
+  - `sap_session_approve`/`session_to_recipe`는 명시 기준이 없으면 세션 최종 transaction/screen에서 `expected_tcode`/`expected_screen_number`를 자동 추론한다.
+  - MCP schema에 recipe save/version-up/session approve의 replay success criteria 입력 경로와 자동 추론 옵션을 반영했다.
 - [x] E-2 auth/preflight 위험 분류 세분화
   - `DangerousTransaction` 정책에 `category`, `risk_level`, `auth_action`, `preflight_code`를 추가하고 기존 `reason` 문자열 호환을 유지했다.
   - `DangerousReport` 정책 모델을 추가해 ABAP report/program 단위 위험 항목을 별도로 분류할 수 있게 했다.
@@ -1206,6 +1211,7 @@ precheck → dry-run plan → execute → verify → report
   - replay 품질 메타데이터가 검색 순위와 recipe 조회/list 응답에 반영된다.
   - `sap_recipe_list`는 compact replay 품질만 노출하고, 상세 집계는 `sap_recipe_show`/`sap_recipe_replay_plan`에서 확인한다.
   - replay success criteria는 recipe metadata로 저장되어 다음 실행에서 재사용할 수 있다.
+  - replay success criteria는 recipe 저장, 버전업, session approve 기반 자동 레시피 변환 시점에도 설정/승계/자동 추론된다.
   - dangerous tcode/report는 auth/preflight에서 구조화된 risk category/code로 분류되며, `sap_run` report/program 실행 입력 경로에서도 같은 정책이 적용된다.
 
 ---

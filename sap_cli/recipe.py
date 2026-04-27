@@ -64,6 +64,62 @@ class Recipe(BaseModel):
     team: str = ""
 
 
+def normalize_replay_success_criteria(raw: Any) -> dict[str, Any]:
+    """Normalize replay verification criteria stored on recipes.
+
+    The criteria are intentionally schemaless so newer MCP clients can add
+    fields without a storage migration.  This helper only normalizes the
+    currently supported fields that benefit from consistent representation.
+    """
+    if not isinstance(raw, dict):
+        return {}
+
+    criteria = dict(raw)
+    expected_tcode = str(criteria.get("expected_tcode") or "").strip()
+    if expected_tcode:
+        criteria["expected_tcode"] = expected_tcode.upper()
+    elif "expected_tcode" in criteria:
+        criteria.pop("expected_tcode", None)
+
+    for key in ("expected_screen_number", "expected_screen", "title_contains"):
+        if key not in criteria:
+            continue
+        value = str(criteria.get(key) or "").strip()
+        if value:
+            criteria[key] = value
+        else:
+            criteria.pop(key, None)
+
+    for key in ("allowed_status_types", "blocked_status_types"):
+        value = criteria.get(key)
+        if isinstance(value, str):
+            criteria[key] = [
+                item.strip().upper()
+                for item in value.split(",")
+                if item.strip()
+            ]
+        elif isinstance(value, (list, tuple, set)):
+            criteria[key] = [
+                str(item).strip().upper()
+                for item in value
+                if str(item).strip()
+            ]
+
+    if "require_no_modal" in criteria:
+        value = criteria["require_no_modal"]
+        if isinstance(value, str):
+            criteria["require_no_modal"] = value.strip().lower() not in {
+                "0",
+                "false",
+                "no",
+                "off",
+            }
+        else:
+            criteria["require_no_modal"] = bool(value)
+
+    return criteria
+
+
 # 자동 비활성화 임계값 — total≥3 AND failure_rate≥0.5
 AUTO_DISABLE_MIN_TOTAL = 3
 AUTO_DISABLE_FAILURE_RATE = 0.5
@@ -271,7 +327,7 @@ class RecipeStore:
         if recipe is None:
             return None
 
-        recipe.replay_success_criteria = dict(criteria)
+        recipe.replay_success_criteria = normalize_replay_success_criteria(criteria)
         self.save(recipe)
         return recipe
 
@@ -298,6 +354,7 @@ class RecipeStore:
         new_steps: list[RecipeStep],
         new_context: str = "",
         change_note: str = "",
+        replay_success_criteria: dict[str, Any] | None = None,
     ) -> Recipe | None:
         """현재 버전을 _archive로 옮기고 version+1로 신규 저장.
 
@@ -319,6 +376,10 @@ class RecipeStore:
         new_recipe.disabled_reason = ""
         new_recipe.failure_count = 0
         new_recipe.last_failed_at = 0.0
+        if replay_success_criteria is not None:
+            new_recipe.replay_success_criteria = normalize_replay_success_criteria(
+                replay_success_criteria
+            )
         if change_note:
             note_line = f"[v{new_recipe.version} change_note] {change_note}"
             new_recipe.context = (

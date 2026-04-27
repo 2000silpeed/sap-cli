@@ -355,6 +355,9 @@ sap recipe-enable "spro-pricing-condition" --keep-failure-count
 # 레시피 저장 (AI가 MCP로 자동 저장하지만, 수동도 가능)
 sap recipe-save "spro-pricing-condition" "SPRO > SD > 가격결정" '[{"tool":"sap_run","args":{"tcode":"SPRO"},"hint":"SPRO 진입"}]' -k "가격결정,pricing"
 
+# replay 최종 검증 기준까지 함께 저장
+sap recipe-save "va02-change" "VA02 수주 변경" '[{"tool":"sap_run","args":{"tcode":"VA02"}}]' --replay-success-criteria '{"expected_tcode":"VA02","expected_screen_number":"4001"}'
+
 # 레시피 삭제
 sap recipe-delete "spro-pricing-condition"
 ```
@@ -368,6 +371,9 @@ AI MCP 사용 흐름:
 2. 경로 있으면 `execution_plan` 따라 즉시 실행 (별도 탐색 불필요)
 3. 경로 없으면 `sap_recipe_search`로 외부 레시피 검색, 그래도 없으면 직접 탐색
 4. 성공 시 `sap_recipe_save`로 저장 → 온톨로지 `action_paths`에 자동 연결
+   - `replay_success_criteria`를 함께 저장하면 이후 `sap_recipe_replay_execute`가 같은 최종 검증 기준을 재사용합니다.
+   - `sap_session_approve`로 세션을 레시피화할 때는 세션의 마지막 transaction/screen에서 `expected_tcode`/`expected_screen_number`를 자동 추론합니다.
+   - `sap_recipe_version_up`은 기준 미지정 시 기존 기준을 유지하고, 새 `replay_success_criteria`를 전달하면 갱신 또는 초기화할 수 있습니다.
 5. `sap_recipe_success`로 성공 카운트 증가
 
 온톨로지와 레시피의 관계:

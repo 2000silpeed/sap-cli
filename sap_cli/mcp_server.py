@@ -709,6 +709,15 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     },
                     "description": "실행 단계 배열 (성공 경로만)",
                 },
+                "replay_success_criteria": {
+                    "type": "object",
+                    "description": (
+                        "향후 sap_recipe_replay_execute에서 재사용할 최종 검증 기준. "
+                        "예: expected_tcode, expected_screen_number, title_contains, "
+                        "allowed_status_types, blocked_status_types, require_no_modal. "
+                        "빈 객체를 전달하면 저장된 기준을 초기화합니다."
+                    ),
+                },
                 "on_duplicate": {
                     "type": "string",
                     "enum": ["keep_existing", "replace", "keep_both"],
@@ -843,6 +852,13 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 },
                 "new_context": {"type": "string", "description": "새 버전의 context (선택; 미지정 시 기존 유지)"},
                 "change_note": {"type": "string", "description": "변경 사유 메모 (예: 'EHP8 패치로 btn[5]→btn[7]')"},
+                "replay_success_criteria": {
+                    "type": "object",
+                    "description": (
+                        "새 버전에서 사용할 replay 최종 검증 기준. 미지정 시 기존 기준을 유지하고, "
+                        "빈 객체를 지정하면 기준을 초기화합니다."
+                    ),
+                },
             },
             "required": ["recipe_id", "new_steps"],
         },
@@ -1094,6 +1110,21 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "properties": {
                 "session_id": {"type": "string", "description": "승인할 세션 ID"},
                 "approved_by": {"type": "string", "description": "승인자 이름 (기본: admin)"},
+                "replay_success_criteria": {
+                    "type": "object",
+                    "description": (
+                        "레시피로 저장할 replay 최종 검증 기준. 미지정 시 세션의 마지막 "
+                        "transaction/screen에서 expected_tcode/expected_screen_number를 자동 추론합니다. "
+                        "빈 객체를 지정하면 자동 추론 없이 기준을 비웁니다."
+                    ),
+                },
+                "derive_replay_success_criteria": {
+                    "type": "boolean",
+                    "description": (
+                        "replay_success_criteria가 미지정일 때 세션 최종 상태에서 검증 기준을 자동 생성할지 여부. "
+                        "기본값은 true입니다."
+                    ),
+                },
             },
             "required": ["session_id"],
         },

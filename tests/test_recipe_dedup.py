@@ -105,6 +105,64 @@ class TestDispatchRecipeSaveHITL:
         assert result["status"] == "saved"
         assert store.load("va01-new") is not None
 
+    def test_recipe_save_persists_replay_success_criteria(self, store: RecipeStore):
+        from sap_cli.dispatcher import _dispatch_recipe_save
+        with self._patch_store(store), self._patch_link():
+            result = _dispatch_recipe_save({
+                "recipe_id": "va01-new",
+                "description": "수주 생성",
+                "context": "표준 수주",
+                "keywords": ["수주"],
+                "steps": [{"tool": "sap_run", "args": {"tcode": "VA01"}}],
+                "replay_success_criteria": {
+                    "expected_tcode": "va01",
+                    "expected_screen_number": 100,
+                    "allowed_status_types": "S,W",
+                },
+            })
+
+        saved = store.load("va01-new")
+        assert result["status"] == "saved"
+        assert result["has_replay_success_criteria"] is True
+        assert result["replay_success_criteria"] == {
+            "expected_tcode": "VA01",
+            "expected_screen_number": "100",
+            "allowed_status_types": ["S", "W"],
+        }
+        assert saved is not None
+        assert saved.replay_success_criteria == result["replay_success_criteria"]
+
+    def test_recipe_save_can_clear_existing_replay_success_criteria(self, store: RecipeStore):
+        from sap_cli.dispatcher import _dispatch_recipe_save
+        store.save(_recipe(
+            "va01-existing",
+            desc="수주 생성",
+            context="표준 수주",
+            keywords=["수주"],
+            tcode="VA01",
+        ))
+        existing = store.load("va01-existing")
+        assert existing is not None
+        existing.replay_success_criteria = {"expected_tcode": "VA01"}
+        store.save(existing)
+
+        with self._patch_store(store), self._patch_link():
+            result = _dispatch_recipe_save({
+                "recipe_id": "va01-existing",
+                "description": "수주 생성 수정",
+                "context": "표준 수주 수정",
+                "keywords": ["수주"],
+                "steps": [{"tool": "sap_run", "args": {"tcode": "VA01"}}],
+                "replay_success_criteria": {},
+            })
+
+        saved = store.load("va01-existing")
+        assert result["status"] == "saved"
+        assert result["updated"] is True
+        assert result["has_replay_success_criteria"] is False
+        assert saved is not None
+        assert saved.replay_success_criteria == {}
+
     def test_duplicate_returns_candidates_without_on_duplicate(self, store: RecipeStore):
         from sap_cli.dispatcher import _dispatch_recipe_save
         store.save(_recipe(
