@@ -10,6 +10,7 @@ import pytest
 from sap_cli.auth.policy import (
     AgentPolicy,
     AuditConfig,
+    DangerousReport,
     DangerousTransaction,
     Policy,
     RelationBinding,
@@ -96,6 +97,7 @@ class _FakeSap:
         self.screen_number = 100
         self.modal_text = None
         self.last_field = None
+        self.vkeys = []
 
     def run_transaction(self, tcode: str) -> None:
         self.transaction = tcode
@@ -113,6 +115,10 @@ class _FakeSap:
     def send_command(self, command: str) -> None:
         self.transaction = command.lstrip("/n").lstrip("/o") or self.transaction
         self.screen_number = 4100
+
+    def send_vkey(self, key: int) -> None:
+        self.vkeys.append(key)
+        self.screen_number = 4002
 
     def get_session_info(self):
         return _FakeDump(
@@ -175,6 +181,61 @@ def test_dispatch_run_includes_post_action_context(monkeypatch, tmp_path):
     assert result["screen_number"] == 4000
     assert result["post_action"]["status"]["type"] == "S"
     assert result["post_action"]["modal"]["has_modal"] is False
+
+
+def test_dispatch_run_can_prepare_and_execute_report(monkeypatch, tmp_path):
+    fake_sap = _FakeSap()
+    monkeypatch.setattr("sap_cli.dispatcher._get_sap", lambda slot_id="ses0": fake_sap)
+    monkeypatch.setattr(
+        "sap_cli.dispatcher.load_policy",
+        lambda: _make_policy(tmp_path),
+    )
+
+    result = dispatch_command(
+        "run",
+        {"tcode": "SA38", "report": "rsparam", "execute_report": True},
+        DispatchContext(source="cli"),
+    )
+
+    assert result["executed"] == "SA38"
+    assert result["report"] == "RSPARAM"
+    assert result["program"] == "RSPARAM"
+    assert result["report_field"] == "wnd[0]/usr/ctxtRS38M-PROGRAMM"
+    assert result["report_executed"] is True
+    assert result["execute_vkey"] == 8
+    assert fake_sap.last_field == ("wnd[0]/usr/ctxtRS38M-PROGRAMM", "RSPARAM")
+    assert fake_sap.vkeys == [8]
+
+
+def test_dispatch_run_dangerous_report_requires_approval_before_execution(
+    monkeypatch,
+    tmp_path,
+):
+    fake_sap = _FakeSap()
+    policy = _make_policy(tmp_path)
+    policy.dangerous_reports = [
+        DangerousReport(
+            report="RSPARAM",
+            reason="시스템 파라미터 조회",
+            category="system_configuration_report",
+            preflight_code="dangerous_system_report",
+        )
+    ]
+
+    monkeypatch.setattr("sap_cli.dispatcher._get_sap", lambda slot_id="ses0": fake_sap)
+    monkeypatch.setattr("sap_cli.dispatcher.load_policy", lambda: policy)
+
+    with pytest.raises(ApprovalRequiredError) as exc:
+        dispatch_command(
+            "run",
+            {"tcode": "SA38", "report": "RSPARAM", "execute_report": True},
+            DispatchContext(source="cli"),
+        )
+
+    assert "시스템 파라미터" in exc.value.reason
+    assert fake_sap.transaction == "SESSION_MANAGER"
+    assert fake_sap.last_field is None
+    assert fake_sap.vkeys == []
 
 
 

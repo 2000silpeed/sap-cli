@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from sap_cli.dispatcher import DispatchContext, dispatch_command
-from sap_cli.auth.policy import AgentPolicy, DangerousTransaction, Policy, RelationBinding
+from sap_cli.auth.policy import AgentPolicy, DangerousReport, DangerousTransaction, Policy, RelationBinding
 from sap_cli.recipe import Recipe, RecipeStep, RecipeStore
 
 
@@ -354,6 +354,58 @@ def test_replay_execute_preflight_exposes_dangerous_tcode_risk(tmp_path: Path):
     assert issue["risk"]["type"] == "transaction"
     assert issue["risk"]["id"] == "SM30"
     assert issue["risk"]["category"] == "table_maintenance"
+    assert issue["risk"]["auth_action"] == "approval_required"
+    assert sap.calls == []
+
+
+def test_replay_execute_preflight_exposes_dangerous_report_risk(tmp_path: Path):
+    store = _store(tmp_path)
+    store.save(Recipe(
+        id="dangerous-report",
+        description="시스템 파라미터 report 실행",
+        steps=[
+            RecipeStep(
+                tool="sap_run",
+                args={"tcode": "SA38", "report": "RSPARAM", "execute_report": True},
+            )
+        ],
+    ))
+    sap = _ReplaySap()
+    policy = Policy(
+        agents={
+            "standard": AgentPolicy(
+                relations=[RelationBinding(resource="tx:*", relation="operator")],
+            )
+        },
+        dangerous_reports=[
+            DangerousReport(
+                report="RSPARAM",
+                reason="시스템 파라미터 조회",
+                category="system_configuration_report",
+                risk_level="medium",
+                preflight_code="dangerous_system_report",
+            )
+        ],
+        active_agent="standard",
+    )
+
+    with (
+        patch("sap_cli.dispatcher._get_recipe_store", return_value=store),
+        patch("sap_cli.dispatcher._get_sap", return_value=sap),
+        patch("sap_cli.dispatcher.load_policy", return_value=policy),
+    ):
+        result = dispatch_command(
+            "recipe_replay_execute",
+            {"recipe_id": "dangerous-report"},
+            DispatchContext(source="mcp"),
+        )
+
+    issue = result["preflight"]["issues"][0]
+    assert result["status"] == "blocked"
+    assert issue["code"] == "dangerous_system_report"
+    assert issue["risk"]["type"] == "report"
+    assert issue["risk"]["id"] == "RSPARAM"
+    assert issue["risk"]["category"] == "system_configuration_report"
     assert issue["risk"]["auth_action"] == "approval_required"
     assert sap.calls == []
 

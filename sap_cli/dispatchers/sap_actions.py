@@ -12,6 +12,10 @@ from typing import Any
 Factory = Callable[..., Any]
 
 
+DEFAULT_REPORT_FIELD_ID = "wnd[0]/usr/ctxtRS38M-PROGRAMM"
+REPORT_EXECUTE_VKEY = 8
+
+
 SAP_ACTION_COMMANDS: frozenset[str] = frozenset(
     {
         "command",
@@ -105,20 +109,42 @@ def dispatch_run(
     collect_recipe_hints: Factory,
     with_post_action: Factory,
 ) -> dict[str, Any]:
-    """Run a transaction code."""
+    """Run a transaction code and optionally prepare/execute an ABAP report."""
     sap = get_sap(ctx.slot_id)
     tcode = str(args["tcode"])
+    report = _normalize_report_arg(args)
     sap.run_transaction(tcode)
+    report_payload: dict[str, Any] = {}
+    if report:
+        report_field_id = str(args.get("report_field_id") or DEFAULT_REPORT_FIELD_ID)
+        execute_report = bool(args.get("execute_report", False))
+        sap.set_field(report_field_id, report)
+        report_payload = {
+            "report": report,
+            "program": report,
+            "report_field": report_field_id,
+            "report_executed": False,
+        }
+        if execute_report:
+            sap.send_vkey(REPORT_EXECUTE_VKEY)
+            report_payload["report_executed"] = True
+            report_payload["execute_vkey"] = REPORT_EXECUTE_VKEY
     info = sap.get_session_info()
     payload = {
         "executed": tcode,
         "current_transaction": info.transaction,
         "screen_number": info.screen_number,
     }
+    payload.update(report_payload)
     hints = collect_recipe_hints(tcode)
     if hints:
         payload["recipe_hints"] = hints
     return with_post_action(payload, sap, "run", ctx)
+
+
+def _normalize_report_arg(args: dict[str, Any]) -> str:
+    report = args.get("report") or args.get("program") or ""
+    return str(report).strip().upper()
 
 
 def dispatch_set(

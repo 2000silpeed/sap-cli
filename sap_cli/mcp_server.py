@@ -97,6 +97,27 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "tcode": {"type": "string", "description": "트랜잭션 코드 (예: MM03)"},
+                "report": {
+                    "type": "string",
+                    "description": (
+                        "SA38/SE38 등 report launcher에서 입력할 ABAP report/program 이름. "
+                        "DangerousReport 정책 분류와 preflight 승인 판단에 사용됩니다."
+                    ),
+                },
+                "program": {
+                    "type": "string",
+                    "description": "report의 별칭. report가 있으면 report 값이 우선됩니다.",
+                },
+                "report_field_id": {
+                    "type": "string",
+                    "default": "wnd[0]/usr/ctxtRS38M-PROGRAMM",
+                    "description": "report/program을 입력할 SAP GUI 필드 ID.",
+                },
+                "execute_report": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "report 입력 후 Execute(F8, VKey 8)를 전송할지 여부.",
+                },
             },
             "required": ["tcode"],
         },

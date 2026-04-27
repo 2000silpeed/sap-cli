@@ -22,7 +22,7 @@ agents:
         relation: operator
     requires_approval:
       - permission: execute
-        transactions: ["SM30", "SE38", "SU01", "SE16"]
+        transactions: ["SM30", "SE38", "SA38", "SU01", "SE16"]
 
   operator:
     description: "일반 운영 에이전트 (조회+실행+입력)"
@@ -31,7 +31,7 @@ agents:
         relation: operator
     requires_approval:
       - permission: execute
-        transactions: ["SM30", "SE38", "SU01", "SE16"]
+        transactions: ["SM30", "SE38", "SA38", "SU01", "SE16"]
 
   mm_operator:
     description: "MM 모듈 전용 에이전트"
@@ -71,6 +71,12 @@ dangerous_transactions:
     auth_action: "approval_required"
     preflight_code: "dangerous_table_maintenance"
   - tcode: "SE38"
+    reason: "ABAP 프로그램 실행"
+    category: "abap_report_execution"
+    risk_level: "critical"
+    auth_action: "approval_required"
+    preflight_code: "dangerous_report_launcher"
+  - tcode: "SA38"
     reason: "ABAP 프로그램 실행"
     category: "abap_report_execution"
     risk_level: "critical"

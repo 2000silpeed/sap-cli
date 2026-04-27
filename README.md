@@ -1128,7 +1128,9 @@ copy sap_cli\auth\default_policy.yaml %USERPROFILE%\.sap_cli\policy.yaml
 | `mm_operator` | MM(자재관리) 도메인 특화. MM 트랜잭션 허용 |
 | `sd_operator` | SD(영업/배포) 도메인 특화. SD 트랜잭션 허용 |
 
-SM30, SE38, SU01 등 위험 트랜잭션은 모든 프리셋에서 차단됩니다.
+SM30, SE38/SA38, SU01 등 위험 트랜잭션은 모든 프리셋에서 차단됩니다.
+`sap run SA38 --report RSPARAM --execute-report`처럼 report/program을 명시하면
+DangerousReport 정책도 함께 평가되어 report 단위 승인/차단 사유가 audit/preflight에 남습니다.
 
 정책 파일이 있으면 MCP 서버는 권한 검사만 하는 것이 아니라, 프로필에 맞지 않는 도구는 `list_tools` 단계에서 아예 숨깁니다.
 

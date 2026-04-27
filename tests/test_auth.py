@@ -282,6 +282,79 @@ class TestDangerousTransactions:
         assert metadata["id"] == "RSPARAM"
         assert metadata["preflight_code"] == "dangerous_system_report"
 
+    def test_dangerous_report_metadata_takes_precedence_over_report_launcher(self):
+        policy = Policy(
+            agents={
+                "standard": AgentPolicy(
+                    relations=[RelationBinding(resource="tx:*", relation="operator")],
+                )
+            },
+            dangerous_transactions=[
+                DangerousTransaction(
+                    tcode="SE38",
+                    reason="ABAP 프로그램 실행",
+                    category="abap_report_execution",
+                    preflight_code="dangerous_report_launcher",
+                )
+            ],
+            dangerous_reports=[
+                DangerousReport(
+                    report="RSPARAM",
+                    reason="시스템 파라미터 조회",
+                    category="system_configuration_report",
+                    preflight_code="dangerous_system_report",
+                )
+            ],
+            active_agent="standard",
+        )
+        checker = PermissionChecker(policy)
+
+        reason = checker.requires_approval("sap_run", {"tcode": "SE38", "report": "RSPARAM"})
+        metadata = checker.risk_metadata("sap_run", {"tcode": "SE38", "report": "RSPARAM"})
+
+        assert reason is not None
+        assert "시스템 파라미터" in reason
+        assert metadata["type"] == "report"
+        assert metadata["id"] == "RSPARAM"
+        assert metadata["preflight_code"] == "dangerous_system_report"
+
+    def test_deny_transaction_risk_is_not_bypassed_by_report_argument(self):
+        policy = Policy(
+            agents={
+                "standard": AgentPolicy(
+                    relations=[RelationBinding(resource="tx:*", relation="operator")],
+                )
+            },
+            dangerous_transactions=[
+                DangerousTransaction(
+                    tcode="SE38",
+                    reason="ABAP 프로그램 실행 금지",
+                    category="abap_report_execution",
+                    auth_action="deny",
+                    preflight_code="denied_report_launcher",
+                )
+            ],
+            dangerous_reports=[
+                DangerousReport(
+                    report="RSPARAM",
+                    reason="시스템 파라미터 조회",
+                    category="system_configuration_report",
+                    preflight_code="dangerous_system_report",
+                )
+            ],
+            active_agent="standard",
+        )
+        checker = PermissionChecker(policy)
+
+        result = checker.check_tool("sap_run", {"tcode": "SE38", "report": "RSPARAM"})
+        metadata = checker.risk_metadata("sap_run", {"tcode": "SE38", "report": "RSPARAM"})
+
+        assert result.allowed is False
+        assert result.risk_metadata["type"] == "transaction"
+        assert result.risk_metadata["auth_action"] == "deny"
+        assert metadata["type"] == "transaction"
+        assert metadata["preflight_code"] == "denied_report_launcher"
+
 
 # ---------------------------------------------------------------------------
 # Audit Logger

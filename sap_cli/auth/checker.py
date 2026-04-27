@@ -71,12 +71,19 @@ class PermissionChecker:
         if permission is None:
             return CheckResult(False, f"알 수 없는 도구: {tool_name}")
 
-        risk_metadata = self.risk_metadata(tool_name, arguments or {})
-        if risk_metadata.get("auth_action") == "deny":
+        deny_risk = next(
+            (
+                risk
+                for risk in self._risk_metadata_entries(tool_name, arguments or {})
+                if risk.get("auth_action") == "deny"
+            ),
+            None,
+        )
+        if deny_risk:
             return CheckResult(
                 False,
-                self._format_risk_reason(risk_metadata),
-                risk_metadata=risk_metadata,
+                self._format_risk_reason(deny_risk),
+                risk_metadata=deny_risk,
             )
 
         resource = self._resolve_resource(tool_name, arguments or {})
@@ -107,23 +114,23 @@ class PermissionChecker:
         if not self.is_enforcing:
             return None
 
-        # 위험 트랜잭션 체크
-        tcode = self._extract_tcode(tool_name, arguments or {})
-        if tcode:
-            dangerous = self._policy.get_dangerous_transaction_details()
-            dangerous_entry = dangerous.get(tcode.upper())
-            if dangerous_entry and dangerous_entry.auth_action == "approval_required":
-                return self._format_risk_reason(dangerous_entry.to_risk_metadata())
-
-        report = self._extract_report(tool_name, arguments or {})
-        if report:
-            dangerous_report = self._policy.get_dangerous_report_details().get(report.upper())
-            if dangerous_report and dangerous_report.auth_action == "approval_required":
-                return self._format_risk_reason(dangerous_report.to_risk_metadata())
+        args = arguments or {}
+        approval_risks = [
+            risk
+            for risk in self._risk_metadata_entries(tool_name, args)
+            if risk.get("auth_action") == "approval_required"
+        ]
+        if approval_risks:
+            report_risk = next(
+                (risk for risk in approval_risks if risk.get("type") == "report"),
+                None,
+            )
+            return self._format_risk_reason(report_risk or approval_risks[0])
 
         # 에이전트별 승인 규칙 체크
         if self._agent and self._agent.requires_approval:
             permission = TOOL_PERMISSION_MAP.get(tool_name)
+            tcode = self._extract_tcode(tool_name, args)
             if permission and tcode:
                 for rule in self._agent.requires_approval:
                     if rule.permission == permission and tcode.upper() in [t.upper() for t in rule.transactions]:
@@ -133,23 +140,55 @@ class PermissionChecker:
 
     def risk_metadata(self, tool_name: str, arguments: dict[str, Any] | None = None) -> dict[str, str]:
         """권한/preflight 응답에 포함할 구조화 위험 분류를 반환."""
-        if not self.is_enforcing or not self._policy:
+        risk_entries = self._risk_metadata_entries(tool_name, arguments or {})
+        if not risk_entries:
             return {}
 
+        deny_risk = next(
+            (risk for risk in risk_entries if risk.get("auth_action") == "deny"),
+            None,
+        )
+        if deny_risk:
+            return deny_risk
+
+        report_risk = next(
+            (risk for risk in risk_entries if risk.get("type") == "report"),
+            None,
+        )
+        if report_risk:
+            return report_risk
+        return risk_entries[0]
+
+    def _risk_metadata_entries(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any] | None = None,
+    ) -> list[dict[str, str]]:
+        """Return all dangerous transaction/report risks that match a call.
+
+        Report risks are kept as a first-class match instead of being hidden
+        behind a generic SE38/SA38 transaction risk.  Deny risks are still
+        handled first by callers so a report argument cannot bypass a denied
+        transaction.
+        """
+        if not self.is_enforcing or not self._policy:
+            return []
+
         args = arguments or {}
+        risks: list[dict[str, str]] = []
         tcode = self._extract_tcode(tool_name, args)
         if tcode:
             dangerous = self._policy.get_dangerous_transaction_details().get(tcode.upper())
             if dangerous:
-                return dangerous.to_risk_metadata()
+                risks.append(dangerous.to_risk_metadata())
 
         report = self._extract_report(tool_name, args)
         if report:
             dangerous_report = self._policy.get_dangerous_report_details().get(report.upper())
             if dangerous_report:
-                return dangerous_report.to_risk_metadata()
+                risks.append(dangerous_report.to_risk_metadata())
 
-        return {}
+        return risks
 
     def can_access_tool_surface(self, tool_name: str) -> bool:
         """현재 에이전트 프로필에 이 도구를 MCP surface에 노출할 수 있는지 판단."""

@@ -196,9 +196,38 @@ def screen(
 
 
 @app.command()
-def run(tcode: str = typer.Argument(help="트랜잭션 코드 (예: MM03, VA01)")) -> None:
-    """트랜잭션 실행."""
-    _run_command("run", {"tcode": tcode}, allow_daemon=True)
+def run(
+    tcode: str = typer.Argument(help="트랜잭션 코드 (예: MM03, VA01, SA38)"),
+    report: Optional[str] = typer.Option(
+        None,
+        "--report",
+        "-r",
+        help="SA38/SE38 등에서 입력할 ABAP report/program 이름",
+    ),
+    program: Optional[str] = typer.Option(
+        None,
+        "--program",
+        help="--report의 별칭. --report가 있으면 --report가 우선",
+    ),
+    execute_report: bool = typer.Option(
+        False,
+        "--execute-report",
+        help="report/program 입력 후 Execute(F8)를 전송",
+    ),
+    report_field_id: str = typer.Option(
+        "wnd[0]/usr/ctxtRS38M-PROGRAMM",
+        "--report-field-id",
+        help="report/program을 입력할 SAP GUI 필드 ID",
+    ),
+) -> None:
+    """트랜잭션 실행. report/program 지정 시 ABAP report 실행 경로를 준비."""
+    params: dict[str, Any] = {"tcode": tcode}
+    report_name = report or program
+    if report_name:
+        params["report"] = report_name
+        params["report_field_id"] = report_field_id
+        params["execute_report"] = execute_report
+    _run_command("run", params, allow_daemon=True)
 
 
 @app.command("set")
