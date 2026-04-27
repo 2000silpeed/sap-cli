@@ -902,8 +902,16 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "success_criteria": {
                     "type": "object",
                     "description": (
-                        "실행 후 검증 기준 커스터마이징. 예: expected_tcode, expected_screen_number, "
+                        "실행 후 검증 기준 커스터마이징. 명시하면 기본적으로 recipe metadata에 저장되어 "
+                        "다음 replay_execute에서 재사용됩니다. 예: expected_tcode, expected_screen_number, "
                         "title_contains, allowed_status_types, blocked_status_types, require_no_modal."
+                    ),
+                },
+                "save_success_criteria": {
+                    "type": "boolean",
+                    "description": (
+                        "success_criteria를 recipe metadata에 저장할지 여부. 기본값은 "
+                        "success_criteria가 비어있지 않으면 true입니다. false이면 현재 실행에만 적용합니다."
                     ),
                 },
                 "observation_scope": {

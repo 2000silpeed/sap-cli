@@ -156,6 +156,7 @@ def dispatch_recipe_replay_plan(
         "failure_count": recipe.failure_count,
         "quality_score": efficiency_score(recipe),
         "replay_quality": replay_quality_summary(recipe, include_details=True),
+        "replay_success_criteria": recipe.replay_success_criteria,
         "flow": ["precheck", "dry_run_plan", "execute", "verify", "report"],
         "precheck": precheck,
         "dry_run_plan": dry_run_plan,
@@ -169,6 +170,7 @@ def dispatch_recipe_replay_plan(
         },
         "verify": {
             "required_observations": ["sap_status", "sap_modal", "sap_screen_summary"],
+            "saved_success_criteria": recipe.replay_success_criteria,
             "success_criteria": [
                 "마지막 SAP status가 오류/중단 상태가 아님",
                 "예상치 못한 modal dialog가 남아있지 않음",
@@ -832,6 +834,7 @@ def dispatch_recipe_search(
             "success_count": r.success_count,
             "quality_score": efficiency_score(r),
             "replay_quality": replay_quality_summary(r),
+            "replay_success_criteria": r.replay_success_criteria,
             "execution_plan": _execution_plan(r),
             "instruction": (
                 f"레시피 '{r.id}'가 검색되었습니다. "
@@ -853,6 +856,7 @@ def dispatch_recipe_search(
             "success_count": r.success_count,
             "quality_score": efficiency_score(r),
             "replay_quality": replay_quality_summary(r),
+            "has_replay_success_criteria": bool(r.replay_success_criteria),
         })
     return {
         "query": query,
@@ -884,6 +888,7 @@ def dispatch_recipe_show(
         "failure_count": r.failure_count,
         "quality_score": efficiency_score(r),
         "replay_quality": replay_quality_summary(r, include_details=True),
+        "replay_success_criteria": r.replay_success_criteria,
         "execution_plan": _execution_plan(r),
         "instruction": (
             f"레시피 '{r.id}'의 상세 실행 계획입니다. "

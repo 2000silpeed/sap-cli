@@ -883,7 +883,6 @@ def _dispatch_recipe_replay_execute(
             "message": "step 권한/approval/risk 검사를 통과하지 못해 실행하지 않았습니다.",
         }
 
-    success_criteria = _normalize_recipe_success_criteria(args.get("success_criteria", {}))
     observation_scope = str(args.get("observation_scope", "final") or "final").lower()
     if observation_scope not in {"final", "status", "screen"}:
         return {
@@ -895,6 +894,12 @@ def _dispatch_recipe_replay_execute(
             "report_called": False,
             "message": "observation_scope는 final/status/screen 중 하나여야 합니다.",
         }
+
+    (
+        success_criteria,
+        success_criteria_source,
+        success_criteria_persisted,
+    ) = _resolve_recipe_replay_success_criteria(recipe_id, args)
 
     executed_steps: list[dict[str, Any]] = []
     step_ctx = DispatchContext(
@@ -929,6 +934,9 @@ def _dispatch_recipe_replay_execute(
                 auto_report=bool(args.get("auto_report", True)),
                 execution_ms=_elapsed_ms(started_at),
                 failure_type=_classify_recipe_replay_failure(precondition_result),
+                success_criteria=success_criteria,
+                success_criteria_source=success_criteria_source,
+                success_criteria_persisted=success_criteria_persisted,
             )
         step_started_at = time.perf_counter()
         try:
@@ -945,6 +953,9 @@ def _dispatch_recipe_replay_execute(
                 auto_report=bool(args.get("auto_report", True)),
                 execution_ms=_elapsed_ms(started_at),
                 failure_type="approval_required",
+                success_criteria=success_criteria,
+                success_criteria_source=success_criteria_source,
+                success_criteria_persisted=success_criteria_persisted,
             )
         except PermissionDeniedError as exc:
             reason = f"step {order} permission denied: {exc}"
@@ -958,6 +969,9 @@ def _dispatch_recipe_replay_execute(
                 auto_report=bool(args.get("auto_report", True)),
                 execution_ms=_elapsed_ms(started_at),
                 failure_type="permission_denied",
+                success_criteria=success_criteria,
+                success_criteria_source=success_criteria_source,
+                success_criteria_persisted=success_criteria_persisted,
             )
         except Exception as exc:
             reason = f"step {order} execution error: {exc}"
@@ -971,6 +985,9 @@ def _dispatch_recipe_replay_execute(
                 auto_report=bool(args.get("auto_report", True)),
                 execution_ms=_elapsed_ms(started_at),
                 failure_type="execution_error",
+                success_criteria=success_criteria,
+                success_criteria_source=success_criteria_source,
+                success_criteria_persisted=success_criteria_persisted,
             )
         executed_step = {
             "order": order,
@@ -1016,6 +1033,8 @@ def _dispatch_recipe_replay_execute(
             "stage": "verify",
             "execution_ms": execution_ms,
             "success_criteria": success_criteria,
+            "success_criteria_source": success_criteria_source,
+            "success_criteria_persisted": success_criteria_persisted,
             "observation_scope": observation_scope,
             "plan": plan,
             "executed_steps": executed_steps,
@@ -1039,6 +1058,8 @@ def _dispatch_recipe_replay_execute(
         "stage": "report" if auto_report else "verify",
         "execution_ms": execution_ms,
         "success_criteria": success_criteria,
+        "success_criteria_source": success_criteria_source,
+        "success_criteria_persisted": success_criteria_persisted,
         "observation_scope": observation_scope,
         "plan": plan,
         "executed_steps": executed_steps,
@@ -1133,6 +1154,9 @@ def _recipe_replay_failed(
     auto_report: bool,
     execution_ms: int = 0,
     failure_type: str = "",
+    success_criteria: dict[str, Any] | None = None,
+    success_criteria_source: str = "",
+    success_criteria_persisted: bool = False,
 ) -> dict[str, Any]:
     observations = _collect_recipe_replay_observations(ctx)
     failure_type = failure_type or stage
@@ -1153,6 +1177,9 @@ def _recipe_replay_failed(
         "status": "failed",
         "stage": stage,
         "execution_ms": execution_ms,
+        "success_criteria": success_criteria or {},
+        "success_criteria_source": success_criteria_source or "default",
+        "success_criteria_persisted": success_criteria_persisted,
         "plan": plan,
         "executed_steps": executed_steps,
         "observations": observations,
@@ -1195,6 +1222,37 @@ def _normalize_recipe_success_criteria(raw: Any) -> dict[str, Any]:
                 if item.strip()
             ]
     return criteria
+
+
+def _resolve_recipe_replay_success_criteria(
+    recipe_id: str,
+    args: dict[str, Any],
+) -> tuple[dict[str, Any], str, bool]:
+    """Resolve replay verification criteria from request or saved recipe metadata.
+
+    Explicit ``success_criteria`` always wins for the current execution.  Non-empty
+    explicit criteria are persisted by default so the next replay can reuse the
+    same verification contract.  Passing ``success_criteria={}`` with
+    ``save_success_criteria=true`` clears the saved contract.
+    """
+    explicit_criteria = "success_criteria" in args and args.get("success_criteria") is not None
+    if explicit_criteria:
+        criteria = _normalize_recipe_success_criteria(args.get("success_criteria", {}))
+        should_save = bool(args.get("save_success_criteria", bool(criteria)))
+        persisted = False
+        if should_save:
+            recipe = _get_recipe_store().update_replay_success_criteria(recipe_id, criteria)
+            persisted = recipe is not None
+        return criteria, "request", persisted
+
+    recipe = _get_recipe_store().load(recipe_id)
+    if recipe is None:
+        return {}, "default", False
+
+    saved = _normalize_recipe_success_criteria(recipe.replay_success_criteria)
+    if saved:
+        return saved, "recipe", False
+    return {}, "default", False
 
 
 def _actual_tcode_from_observations(observations: dict[str, Any]) -> str:

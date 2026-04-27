@@ -1126,7 +1126,7 @@ _enum_value
 
 ## E-2. Recipe replay 검증 플로우 설계
 
-상태: 진행 중 — `sap_recipe_replay_plan` 1차 및 `sap_recipe_replay_execute` 실행 래퍼와 replay 품질 메타 1차 도입 완료.
+상태: 진행 중 — `sap_recipe_replay_plan` 1차, `sap_recipe_replay_execute` 실행 래퍼, replay 품질 메타, 위험 분류, success criteria 저장/재사용 도입 완료.
 
 ### 목표
 
@@ -1180,6 +1180,13 @@ precheck → dry-run plan → execute → verify → report
   - 지원 success criteria: `expected_tcode`, `expected_screen_number`/`expected_screen`, `title_contains`, `allowed_status_types`, `blocked_status_types`, `require_no_modal`.
   - `observation_scope=final|status|screen`으로 step별 관찰값 저장 범위를 선택할 수 있게 했다.
   - precondition/criteria 실패 유형이 replay 품질 메타의 `last_failure_type`과 실패 유형 집계에 반영된다.
+- [x] E-2 success criteria metadata 저장/재사용
+  - `Recipe.replay_success_criteria` 필드를 추가해 recipe JSON에 최종 검증 기준을 저장할 수 있게 했다.
+  - `sap_recipe_replay_execute`에서 명시 `success_criteria`가 비어있지 않으면 기본적으로 저장하고, `save_success_criteria=false`이면 현재 실행에만 적용한다.
+  - 명시 `success_criteria`가 없으면 저장된 `replay_success_criteria`를 기본 검증 기준으로 재사용한다.
+  - `success_criteria={}`와 `save_success_criteria=true` 조합으로 저장된 기준을 초기화할 수 있다.
+  - replay execute 응답에 `success_criteria_source`와 `success_criteria_persisted`를 포함해 request/recipe/default 출처와 저장 여부를 확인할 수 있게 했다.
+  - `sap_recipe_show`/`sap_recipe_replay_plan`은 저장된 기준을 상세 노출하고, `sap_recipe_list`/검색 요약은 저장 기준 존재 여부를 compact하게 노출한다.
 - [x] E-2 auth/preflight 위험 분류 세분화
   - `DangerousTransaction` 정책에 `category`, `risk_level`, `auth_action`, `preflight_code`를 추가하고 기존 `reason` 문자열 호환을 유지했다.
   - `DangerousReport` 정책 모델을 추가해 ABAP report/program 단위 위험 항목을 별도로 분류할 수 있게 했다.
@@ -1194,6 +1201,7 @@ precheck → dry-run plan → execute → verify → report
   - replay execute 메타데이터가 recipe JSON에 누적되어 후속 품질 분석의 기반으로 사용 가능하다.
   - replay 품질 메타데이터가 검색 순위와 recipe 조회/list 응답에 반영된다.
   - `sap_recipe_list`는 compact replay 품질만 노출하고, 상세 집계는 `sap_recipe_show`/`sap_recipe_replay_plan`에서 확인한다.
+  - replay success criteria는 recipe metadata로 저장되어 다음 실행에서 재사용할 수 있다.
   - dangerous tcode/report는 auth/preflight에서 구조화된 risk category/code로 분류된다.
 
 ---

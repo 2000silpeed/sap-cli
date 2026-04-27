@@ -52,6 +52,7 @@ class Recipe(BaseModel):
     replay_last_failure_type: str = ""
     replay_failure_type_counts: dict[str, int] = Field(default_factory=dict)
     replay_system_client_stats: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    replay_success_criteria: dict[str, Any] = Field(default_factory=dict)
     version: int = 1
     previous_version_archive: str = ""
     tcode_sequence: list[str] = Field(default_factory=list)
@@ -148,6 +149,7 @@ class RecipeStore:
                 "disabled_reason": r.disabled_reason,
                 "quality_score": efficiency_score(r),
                 "replay_quality": replay_quality_summary(r, include_details=False),
+                "has_replay_success_criteria": bool(r.replay_success_criteria),
             })
         return results
 
@@ -256,6 +258,20 @@ class RecipeStore:
             scope["last_failure_type"] = failure_type
         recipe.replay_system_client_stats[scope_key] = scope
 
+        self.save(recipe)
+        return recipe
+
+    def update_replay_success_criteria(
+        self,
+        recipe_id: str,
+        criteria: dict[str, Any],
+    ) -> Recipe | None:
+        """Store replay verification criteria for future execute calls."""
+        recipe = self.load(recipe_id)
+        if recipe is None:
+            return None
+
+        recipe.replay_success_criteria = dict(criteria)
         self.save(recipe)
         return recipe
 

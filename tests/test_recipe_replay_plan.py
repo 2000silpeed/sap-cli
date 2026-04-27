@@ -425,6 +425,107 @@ def test_replay_execute_applies_custom_success_criteria(tmp_path: Path):
     assert result["replay_metrics"]["replay_last_failure_type"] == "expected_tcode_mismatch"
 
 
+def test_replay_execute_persists_and_reuses_success_criteria(tmp_path: Path):
+    store = _store(tmp_path)
+    store.save(Recipe(
+        id="criteria-reuse",
+        description="성공 기준 저장 재사용",
+        steps=[RecipeStep(tool="sap_run", args={"tcode": "VA01"})],
+    ))
+    sap = _ReplaySap()
+
+    with (
+        patch("sap_cli.dispatcher._get_recipe_store", return_value=store),
+        patch("sap_cli.dispatcher._get_sap", return_value=sap),
+    ):
+        first = dispatch_command(
+            "recipe_replay_execute",
+            {
+                "recipe_id": "criteria-reuse",
+                "auto_report": False,
+                "success_criteria": {
+                    "expected_tcode": "VA02",
+                    "allowed_status_types": "S",
+                },
+            },
+            DispatchContext(source="mcp", enforce_auth=False),
+        )
+        second = dispatch_command(
+            "recipe_replay_execute",
+            {
+                "recipe_id": "criteria-reuse",
+                "auto_report": False,
+            },
+            DispatchContext(source="mcp", enforce_auth=False),
+        )
+
+    saved = store.load("criteria-reuse")
+    assert saved is not None
+    assert saved.replay_success_criteria == {
+        "expected_tcode": "VA02",
+        "allowed_status_types": ["S"],
+    }
+    assert first["status"] == "failed"
+    assert first["success_criteria_source"] == "request"
+    assert first["success_criteria_persisted"] is True
+    assert second["status"] == "failed"
+    assert second["success_criteria_source"] == "recipe"
+    assert second["success_criteria_persisted"] is False
+    assert second["success_criteria"]["expected_tcode"] == "VA02"
+
+
+def test_replay_execute_can_clear_saved_success_criteria(tmp_path: Path):
+    store = _store(tmp_path)
+    store.save(Recipe(
+        id="criteria-clear",
+        description="성공 기준 초기화",
+        replay_success_criteria={"expected_tcode": "VA02"},
+        steps=[RecipeStep(tool="sap_run", args={"tcode": "VA01"})],
+    ))
+    sap = _ReplaySap()
+
+    with (
+        patch("sap_cli.dispatcher._get_recipe_store", return_value=store),
+        patch("sap_cli.dispatcher._get_sap", return_value=sap),
+    ):
+        result = dispatch_command(
+            "recipe_replay_execute",
+            {
+                "recipe_id": "criteria-clear",
+                "auto_report": False,
+                "success_criteria": {},
+                "save_success_criteria": True,
+            },
+            DispatchContext(source="mcp", enforce_auth=False),
+        )
+
+    saved = store.load("criteria-clear")
+    assert saved is not None
+    assert saved.replay_success_criteria == {}
+    assert result["status"] == "success"
+    assert result["success_criteria"] == {}
+    assert result["success_criteria_source"] == "request"
+    assert result["success_criteria_persisted"] is True
+
+
+def test_replay_plan_exposes_saved_success_criteria(tmp_path: Path):
+    from sap_cli.dispatcher import _dispatch_recipe_replay_plan
+
+    store = _store(tmp_path)
+    store.save(Recipe(
+        id="criteria-plan",
+        description="저장 성공 기준 노출",
+        replay_success_criteria={"expected_tcode": "VA01"},
+        steps=[RecipeStep(tool="sap_run", args={"tcode": "VA01"})],
+    ))
+
+    with patch("sap_cli.dispatcher._get_recipe_store", return_value=store):
+        result = _dispatch_recipe_replay_plan({"recipe_id": "criteria-plan"})
+
+    assert result["replay_success_criteria"] == {"expected_tcode": "VA01"}
+    assert result["verify"]["saved_success_criteria"] == {"expected_tcode": "VA01"}
+
+
 def test_replay_execute_can_store_step_observations_by_scope(tmp_path: Path):
     store = _store(tmp_path)
     store.save(Recipe(
