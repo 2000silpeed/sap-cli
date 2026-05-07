@@ -247,6 +247,9 @@ capability 지도를 live element 검사와 함께 사용합니다.
 # Type/SubType, 현재 값, changeable, 콤보 entries, 가능한 action 확인
 sap inspect "wnd[0]/usr/cmbLFART"
 
+# SAP GUI Scripting API 그래프에서 GuiComboBox/select 관련 subgraph 조회
+sap scripting-query --type GuiComboBox --intent select --depth 2
+
 # 타입에 맞춰 자동 실행: text field는 Text, combo는 Entries→Key, checkbox는 Selected
 sap act "wnd[0]/usr/cmbLFART" set "Standard Delivery"
 sap act "wnd[0]/usr/chkSELECT" set true
@@ -260,8 +263,23 @@ sap act "wnd[0]/shellcont/shell" select_node --node-key "00005"
 sap act "wnd[0]/shellcont/shell" expand_node --node-key "00001"
 ```
 
-MCP에서는 `sap_inspect_element`로 capability를 확인하고,
+MCP에서는 `sap_scripting_query`로 API 그래프를 조회하고,
+`sap_inspect_element`로 live element capability를 확인한 뒤
 `sap_ui_action`으로 `set/select/press/focus/read/search_help/select_node` 등을 실행합니다.
+
+SAP GUI Scripting API 그래프 seed는 프로젝트에 포함되어 있습니다.
+
+```text
+sap_cli/ontology/knowledge/scripting_api/graph.json
+```
+
+공식 SAP GUI Scripting API 문서 export에서 그래프를 재생성하려면:
+
+```powershell
+python scripts/build_sap_scripting_graph.py sap_gui_scripting_api.txt `
+  --out sap_cli/ontology/knowledge/scripting_api/graph.generated.json `
+  --source "https://help.sap.com/doc/9215986e54174174854b0af6bb14305a/800.08/en-US/sap_gui_scripting_api.pdf"
+```
 
 ### 4.6 키보드/버튼
 
@@ -955,6 +973,7 @@ Windows의 Claude Code `settings.json`에 추가:
 | `sap_session` | 세션 정보 조회 |
 | `sap_screen` | 현재 화면 UI 구조 (JSON) |
 | `sap_inspect_element` | 단일 element의 Type/SubType/capability/entries 검사 |
+| `sap_scripting_query` | SAP GUI Scripting API 그래프 온톨로지 subgraph 조회 |
 | `sap_ui_action` | Scripting capability 기반 범용 UI 액션 fallback |
 | `sap_run` | 트랜잭션 실행 |
 | `sap_command` | SAP 커맨드 필드에 명령 실행 |

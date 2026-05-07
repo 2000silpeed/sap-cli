@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .scripting_api_graph import get_default_graph
+
 
 COMPONENT_CAPABILITIES: dict[str, dict[str, Any]] = {
     "GuiTextField": {
@@ -119,6 +121,10 @@ def normalize_action(action: str) -> str:
 
 def component_capability(component_type: str, subtype: str = "") -> dict[str, Any]:
     """Return static capability metadata for a component type/subtype."""
+    graph_capability = get_default_graph().capability(component_type, subtype)
+    if graph_capability:
+        return graph_capability
+
     base = dict(COMPONENT_CAPABILITIES.get(component_type, {}))
     if subtype and isinstance(base.get("subtypes"), dict):
         subtype_meta = base["subtypes"].get(subtype)

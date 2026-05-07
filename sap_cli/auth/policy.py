@@ -45,6 +45,7 @@ TOOL_PERMISSION_MAP: dict[str, Permission] = {
     "sap_session": Permission.READ,
     "sap_screen": Permission.READ,
     "sap_inspect_element": Permission.READ,
+    "sap_scripting_query": Permission.READ,
     "sap_get_field": Permission.READ,
     "sap_get_status": Permission.READ,
     "sap_table_read": Permission.READ,

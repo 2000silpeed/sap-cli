@@ -251,6 +251,26 @@ def inspect_element(
     _run_command("inspect", {"element_id": element_id}, allow_daemon=True)
 
 
+@app.command("scripting-query")
+def scripting_query(
+    component_type: str = typer.Option("", "--type", "-t", help="SAP GUI Scripting Type (예: GuiComboBox)"),
+    intent: str = typer.Option("", "--intent", "-i", help="의도/action (예: set, select_node)"),
+    node_id: str = typer.Option("", "--node-id", "-n", help="graph node id (예: object:GuiComboBox)"),
+    depth: int = typer.Option(1, "--depth", "-d", help="subgraph 확장 깊이"),
+) -> None:
+    """SAP GUI Scripting API 그래프 온톨로지 조회."""
+    _run_command(
+        "scripting_query",
+        {
+            "component_type": component_type,
+            "intent": intent,
+            "node_id": node_id,
+            "depth": depth,
+        },
+        allow_daemon=False,
+    )
+
+
 @app.command("act")
 def ui_action(
     element_id: str = typer.Argument(help="대상 SAP GUI element ID"),

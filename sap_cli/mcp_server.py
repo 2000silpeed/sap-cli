@@ -101,6 +101,23 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_scripting_query",
+        "description": (
+            "프로젝트에 내장된 SAP GUI Scripting API 그래프 온톨로지를 조회합니다. "
+            "component_type(예: GuiComboBox), intent(예: set/select_node), node_id로 필요한 subgraph만 가져옵니다. "
+            "전용 도구나 조작법을 추측하지 말고 이 그래프를 먼저 조회하세요."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "component_type": {"type": "string", "description": "SAP GUI Scripting Type (예: GuiComboBox, GuiShell)"},
+                "intent": {"type": "string", "description": "의도/action (예: set, select, press, select_node)"},
+                "node_id": {"type": "string", "description": "직접 조회할 graph node id (예: object:GuiComboBox)"},
+                "depth": {"type": "integer", "description": "주변 graph 확장 깊이", "default": 1},
+            },
+        },
+    },
+    {
         "name": "sap_ui_action",
         "description": (
             "SAP GUI Scripting capability 지도와 live element Type을 기반으로 범용 UI 액션을 수행합니다. "

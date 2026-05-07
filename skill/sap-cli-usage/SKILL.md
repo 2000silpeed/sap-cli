@@ -13,7 +13,7 @@ description: SAP CLI 실제 사용법 스킬. sap connect/run/screen/set/fill/vk
 1. `sap connect` 또는 `sap_connect`로 연결한다.
 2. 액션 전 `sap screen` / `sap_screen`으로 현재 화면을 읽는다.
 3. 필드 ID를 모르면 `sap screen --search` 또는 `sap_screen(fields_only=true)`를 사용한다.
-4. 전용 명령이 없으면 `sap inspect` / `sap_inspect_element`로 live capability를 보고 `sap act` / `sap_ui_action`으로 실행한다.
+4. 전용 명령이 없으면 `sap scripting-query` / `sap_scripting_query`로 SAP GUI Scripting API 그래프를 조회하고, `sap inspect` / `sap_inspect_element`로 live capability를 본 뒤 `sap act` / `sap_ui_action`으로 실행한다.
 5. 조작 후 `sap status` / `sap_get_status`를 확인한다.
 6. 상태 type이 `E`면 즉시 중단하고 에러를 보고한다.
 
@@ -39,6 +39,7 @@ sap status
 
 ```powershell
 sap inspect "wnd[0]/usr/cmbLFART"
+sap scripting-query --type GuiComboBox --intent select --depth 2
 sap act "wnd[0]/usr/cmbLFART" set "Standard Delivery"
 sap act "wnd[0]/usr/chkSELECT" set true
 sap act "wnd[0]/usr/btnSAVE" press
@@ -49,6 +50,7 @@ MCP:
 
 ```python
 sap_inspect_element(element_id="wnd[0]/usr/cmbLFART")
+sap_scripting_query(component_type="GuiComboBox", intent="select", depth=2)
 sap_ui_action(element_id="wnd[0]/usr/cmbLFART", action="set", value="Standard Delivery")
 ```
 

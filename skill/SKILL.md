@@ -37,7 +37,7 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
 2. **결과 확인 필수**: 버튼 클릭/Enter/저장 후 반드시 `sap_get_status`로 결과를 확인한다
 3. **에러 즉시 중단**: 상태바 type이 "E"면 사용자에게 보고하고 진행을 멈춘다
 4. **필드 ID 동적 확인**: 필드 ID를 모르면 `sap_screen(fields_only=true)`로 확인한다
-5. **전용 기능 없으면 live capability 사용**: 전용 도구가 없거나 조작법이 애매하면 `sap_inspect_element`로 Type/SubType/capability를 확인하고 `sap_ui_action`으로 실행한다
+5. **전용 기능 없으면 Scripting API 그래프 사용**: 전용 도구가 없거나 조작법이 애매하면 `sap_scripting_query`로 공식 API 그래프 subgraph를 조회하고, `sap_inspect_element`로 live Type/SubType/capability를 확인한 뒤 `sap_ui_action`으로 실행한다
 6. **온톨로지 선행 조회**: 트랜잭션 구조를 모르면 `sap_ontology_query`로 먼저 조회한다
 7. **화면 전환 후 재확인**: 버튼/VKey 실행 후 모든 UI 요소 참조가 무효화되므로, 반드시 `sap_screen`으로 새 화면을 다시 읽는다
 8. **재시도 전 transcript 검토**: 직전 실패/경고/승인요청이 있으면 `sap_transcript_query`와 `sap_transcript_plan`으로 먼저 검토한다
@@ -55,6 +55,7 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
 | `sap_session` | 세션 정보 조회 (사용자, tcode, 화면번호) | - |
 | `sap_screen` | 현재 화면 UI 구조 (JSON) | `fields_only=true`, `actions_only=true` |
 | `sap_inspect_element` | 단일 요소의 SAP GUI Scripting capability 검사 | `element_id` |
+| `sap_scripting_query` | SAP GUI Scripting API 그래프 subgraph 조회 | `component_type`, `intent`, `node_id` |
 | `sap_ui_action` | Type/SubType 기반 범용 UI 액션 fallback | `element_id`, `action`, `value` |
 | `sap_run` | 트랜잭션 실행 | `tcode` (필수) |
 | `sap_set_field` | 필드 값 설정 (1개) | `element_id`, `value` (필수) |
@@ -143,6 +144,7 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
 3. sap_screen(actions_only=true)       # 가능한 액션만 필터링
 
 4. 전용 도구가 없거나 컴포넌트 조작법이 애매하면:
+   sap_scripting_query(component_type="GuiComboBox", intent="select", depth=2)
    sap_inspect_element(element_id="...")  # Type/SubType/capability/entries 확인
    sap_ui_action(element_id="...", action="set", value="...")  # live type 기반 실행
 ```

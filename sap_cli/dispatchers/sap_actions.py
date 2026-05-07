@@ -24,6 +24,7 @@ SAP_ACTION_COMMANDS: frozenset[str] = frozenset(
         "press",
         "record_step",
         "run",
+        "scripting_query",
         "set",
         "status",
         "table",
@@ -65,6 +66,8 @@ def dispatch_sap_action_command(
         return dispatch_set(args, ctx, get_sap, with_post_action)
     if command == "inspect":
         return dispatch_inspect(args, ctx, get_sap)
+    if command == "scripting_query":
+        return dispatch_scripting_query(args)
     if command == "ui_action":
         return dispatch_ui_action(args, ctx, get_sap, with_post_action)
     if command == "get":
@@ -182,6 +185,18 @@ def dispatch_inspect(args: dict[str, Any], ctx: Any, get_sap: Factory) -> dict[s
     """Inspect a live SAP GUI element and return capabilities."""
     sap = get_sap(ctx.slot_id)
     return sap.inspect_element(str(args["element_id"]))
+
+
+def dispatch_scripting_query(args: dict[str, Any]) -> dict[str, Any]:
+    """Query the SAP GUI Scripting API graph ontology."""
+    from sap_cli.scripting_api_graph import query_default_graph
+
+    return query_default_graph(
+        node_id=str(args.get("node_id", "")),
+        component_type=str(args.get("component_type", "")),
+        intent=str(args.get("intent", "")),
+        depth=int(args.get("depth", 1)),
+    )
 
 
 def dispatch_ui_action(
