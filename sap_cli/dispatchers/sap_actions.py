@@ -20,6 +20,7 @@ SAP_ACTION_COMMANDS: frozenset[str] = frozenset(
     {
         "command",
         "get",
+        "inspect",
         "press",
         "record_step",
         "run",
@@ -34,6 +35,7 @@ SAP_ACTION_COMMANDS: frozenset[str] = frozenset(
         "tree_expand",
         "tree_collapse",
         "tree_press",
+        "ui_action",
         "vkey",
     }
 )
@@ -61,6 +63,10 @@ def dispatch_sap_action_command(
         return dispatch_run(args, ctx, get_sap, collect_recipe_hints, with_post_action)
     if command == "set":
         return dispatch_set(args, ctx, get_sap, with_post_action)
+    if command == "inspect":
+        return dispatch_inspect(args, ctx, get_sap)
+    if command == "ui_action":
+        return dispatch_ui_action(args, ctx, get_sap, with_post_action)
     if command == "get":
         return dispatch_get(args, ctx, get_sap)
     if command == "press":
@@ -170,6 +176,31 @@ def dispatch_set(
         "actual_value": sap.get_field(element_id),
     }
     return with_post_action(payload, sap, "set", ctx)
+
+
+def dispatch_inspect(args: dict[str, Any], ctx: Any, get_sap: Factory) -> dict[str, Any]:
+    """Inspect a live SAP GUI element and return capabilities."""
+    sap = get_sap(ctx.slot_id)
+    return sap.inspect_element(str(args["element_id"]))
+
+
+def dispatch_ui_action(
+    args: dict[str, Any],
+    ctx: Any,
+    get_sap: Factory,
+    with_post_action: Factory,
+) -> dict[str, Any]:
+    """Perform an adaptive UI action using live SAP GUI Scripting capabilities."""
+    sap = get_sap(ctx.slot_id)
+    payload = sap.perform_ui_action(
+        str(args["element_id"]),
+        str(args["action"]),
+        None if args.get("value") is None else str(args.get("value")),
+        node_key=str(args.get("node_key", "")),
+        column=str(args.get("column", "")),
+        row=None if args.get("row") is None else int(args["row"]),
+    )
+    return with_post_action(payload, sap, "ui_action", ctx)
 
 
 def dispatch_get(args: dict[str, Any], ctx: Any, get_sap: Factory) -> Any:

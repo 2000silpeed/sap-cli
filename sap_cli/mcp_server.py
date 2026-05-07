@@ -86,6 +86,41 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_inspect_element",
+        "description": (
+            "SAP GUI element_id 하나를 live로 검사해 Type/SubType, 값, changeable, "
+            "사용 가능한 Scripting capability, 콤보 entries 등을 반환합니다. "
+            "전용 도구가 없거나 어떤 조작이 가능한지 모를 때 먼저 사용하세요."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "element_id": {"type": "string", "description": "검사할 SAP GUI element ID"},
+            },
+            "required": ["element_id"],
+        },
+    },
+    {
+        "name": "sap_ui_action",
+        "description": (
+            "SAP GUI Scripting capability 지도와 live element Type을 기반으로 범용 UI 액션을 수행합니다. "
+            "set/select/press/focus/read/search_help, 트리 node 액션(select_node/expand_node/collapse_node/doubleclick_node/press_node), "
+            "테이블 select_row 등을 지원합니다. 전용 도구가 없을 때의 fallback 실행 도구입니다."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "element_id": {"type": "string", "description": "대상 SAP GUI element ID"},
+                "action": {"type": "string", "description": "수행할 액션: set/select/press/focus/read/search_help/select_node/expand_node/collapse_node/doubleclick_node/press_node/select_row 등"},
+                "value": {"type": "string", "description": "액션 값. 필드/콤보 값, node_key, row 번호 등"},
+                "node_key": {"type": "string", "description": "트리 노드 key (트리 액션용)"},
+                "column": {"type": "string", "description": "트리 버튼/링크 컬럼 (press_node용)"},
+                "row": {"type": "integer", "description": "테이블 행 번호 (select_row용, 0-based)"},
+            },
+            "required": ["element_id", "action"],
+        },
+    },
+    {
         "name": "sap_run",
         "description": (
             "SAP 트랜잭션을 실행합니다. 예: MM03(자재조회), VA01(수주생성), ME21N(구매오더). "
@@ -167,7 +202,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_get_field",
-        "description": "SAP 화면 필드의 현재 값을 읽습니다. 여러 필드를 한번에 조회할 수 있습니다.",
+        "description": "SAP 화면 필드의 현재 값을 읽습니다. 여러 필드를 한번에 조회할 수 있습니다. GuiComboBox는 현재 key/text와 선택 가능한 entries(key/value)도 반환합니다.",
         "inputSchema": {
             "type": "object",
             "properties": {

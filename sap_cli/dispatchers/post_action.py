@@ -20,6 +20,7 @@ POST_ACTION_COMMANDS: frozenset[str] = frozenset(
         "press",
         "vkey",
         "command",
+        "ui_action",
         "record_step",
         "macro_play",
         "table_select",

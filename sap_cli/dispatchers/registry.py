@@ -29,6 +29,8 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "connections": CommandDef("sap_connections", Permission.READ),
     "session": CommandDef("sap_session", Permission.READ),
     "screen": CommandDef("sap_screen", Permission.READ),
+    "inspect": CommandDef("sap_inspect_element", Permission.READ),
+    "ui_action": CommandDef("sap_ui_action", Permission.WRITE),
     "run": CommandDef("sap_run", Permission.EXECUTE),
     "set": CommandDef("sap_set_field", Permission.WRITE),
     "get": CommandDef("sap_get_field", Permission.READ),

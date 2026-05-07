@@ -243,6 +243,39 @@ def set_field(
     )
 
 
+@app.command("inspect")
+def inspect_element(
+    element_id: str = typer.Argument(help="검사할 SAP GUI element ID"),
+) -> None:
+    """SAP GUI 요소의 Type/SubType/capability/entries를 live로 검사."""
+    _run_command("inspect", {"element_id": element_id}, allow_daemon=True)
+
+
+@app.command("act")
+def ui_action(
+    element_id: str = typer.Argument(help="대상 SAP GUI element ID"),
+    action: str = typer.Argument(help="액션 (set/select/press/focus/read/search_help/select_node/select_row 등)"),
+    value: str | None = typer.Argument(None, help="액션 값 (필드값, 콤보값, node_key, row 등)"),
+    node_key: str = typer.Option("", "--node-key", help="트리 node_key"),
+    column: str = typer.Option("", "--column", help="트리 press_node 컬럼"),
+    row: int | None = typer.Option(None, "--row", help="테이블 행 번호 (0-based)"),
+) -> None:
+    """SAP GUI Scripting capability 기반 범용 UI 액션 실행."""
+    params: dict[str, Any] = {
+        "element_id": element_id,
+        "action": action,
+    }
+    if value is not None:
+        params["value"] = value
+    if node_key:
+        params["node_key"] = node_key
+    if column:
+        params["column"] = column
+    if row is not None:
+        params["row"] = row
+    _run_command("ui_action", params, allow_daemon=True)
+
+
 @app.command("fill")
 def fill_fields(
     assignments: list[str] = typer.Argument(help="필드=값 쌍 (예: MATNR=100-100 WERKS=1000)"),

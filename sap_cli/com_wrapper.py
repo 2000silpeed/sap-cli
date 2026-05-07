@@ -36,6 +36,7 @@ from .ontology.schema import (
     SemanticContext,
     StatusMessageType,
 )
+from .scripting_ontology import component_capability, normalize_action
 
 # win32com은 Windows 전용 - 임포트 실패 시 스텁 제공
 _WIN32 = platform.system() == "Windows"
@@ -394,16 +395,23 @@ class SapGuiWrapper:
         except Exception as e:
             raise SapGuiError(f"필드 읽기 실패 [{element_id}]: {e}") from e
 
-    def get_field_info(self, element_id: str) -> dict[str, str]:
+    def get_field_info(self, element_id: str) -> dict[str, Any]:
         """필드 값과 이름 정보를 함께 읽기."""
         try:
             element = self.session.FindById(element_id)
             name = self._safe_attr(element, "Name", "")
-            return {
+            payload: dict[str, Any] = {
                 "name": name or self._extract_name(element_id),
                 "field": element_id,
                 "value": self.get_field(element_id),
             }
+            if self._is_combo_box(element, element_id):
+                payload["key"] = self._safe_attr(element, "Key", "")
+                payload["text"] = self._safe_attr(element, "Text", "")
+                entries = self._get_combo_entries(element)
+                if entries:
+                    payload["entries"] = entries
+            return payload
         except Exception as e:
             raise SapGuiError(f"필드 읽기 실패 [{element_id}]: {e}") from e
 
@@ -477,6 +485,181 @@ class SapGuiWrapper:
         except Exception as e:
             raise SapGuiError(f"콤보박스 선택 실패 [{element_id}]: {e}") from e
 
+    def get_combo_entries(self, element_id: str) -> list[dict[str, Any]]:
+        """콤보박스 선택 가능 항목 목록 조회."""
+        try:
+            element = self.session.FindById(element_id)
+            if not self._is_combo_box(element, element_id):
+                raise SapGuiError(f"콤보박스가 아닙니다 [{element_id}]")
+            return self._get_combo_entries(element)
+        except SapGuiError:
+            raise
+        except Exception as e:
+            raise SapGuiError(f"콤보박스 항목 조회 실패 [{element_id}]: {e}") from e
+
+    # -------------------------------------------------------------------
+    # Scripting Ontology / Generic UI Action
+    # -------------------------------------------------------------------
+
+    def inspect_element(self, element_id: str) -> dict[str, Any]:
+        """Inspect one SAP GUI component and return live capability metadata."""
+        try:
+            element = self.session.FindById(element_id)
+            component_type = str(self._safe_attr(element, "Type", "Unknown"))
+            subtype = str(self._safe_attr(element, "SubType", ""))
+            payload: dict[str, Any] = {
+                "id": element_id,
+                "type": component_type,
+                **({"sub_type": subtype} if subtype else {}),
+                "name": self._safe_attr(element, "Name", self._extract_name(element_id)),
+                "text": self._safe_attr(element, "Text", ""),
+                "tooltip": self._safe_attr(element, "Tooltip", ""),
+                "changeable": bool(self._safe_attr(element, "Changeable", False)),
+                "selected": self._safe_attr(element, "Selected", ""),
+                "value": self._element_value(element, element_id),
+                "capability": component_capability(component_type, subtype),
+            }
+            if self._is_combo_box(element, element_id):
+                payload["key"] = self._safe_attr(element, "Key", "")
+                payload["entries"] = self._get_combo_entries(element)
+            return payload
+        except Exception as e:
+            raise SapGuiError(f"요소 검사 실패 [{element_id}]: {e}") from e
+
+    def perform_ui_action(
+        self,
+        element_id: str,
+        action: str,
+        value: str | None = None,
+        *,
+        node_key: str = "",
+        column: str = "",
+        row: int | None = None,
+    ) -> dict[str, Any]:
+        """Perform a generic UI action using live component capabilities.
+
+        This is the adaptive path for AI agents: inspect the element type at
+        runtime and route a high-level action to the correct SAP GUI Scripting
+        API call without needing a bespoke command for every component.
+        """
+        normalized = normalize_action(action)
+        element = self.session.FindById(element_id)
+        component_type = str(self._safe_attr(element, "Type", "Unknown"))
+        subtype = str(self._safe_attr(element, "SubType", ""))
+        used: dict[str, Any] = {
+            "element_id": element_id,
+            "requested_action": action,
+            "action": normalized,
+            "type": component_type,
+            **({"sub_type": subtype} if subtype else {}),
+        }
+
+        if normalized == "inspect":
+            return {"inspected": True, **self.inspect_element(element_id)}
+
+        if normalized == "focus":
+            self.set_focus(element_id)
+            return {"focused": True, **used}
+
+        if normalized == "read":
+            return {"read": True, **used, "field_info": self.get_field_info(element_id)}
+
+        if normalized in {"set", "select"}:
+            if component_type == "GuiComboBox" or "/cmb" in element_id:
+                if value is None:
+                    raise SapGuiError("콤보박스 선택에는 value가 필요합니다.")
+                self.select_combo(element_id, value)
+                return {"selected": True, "value": value, **used}
+            if component_type == "GuiCheckBox" or "/chk" in element_id:
+                checked = str(value or "").lower() not in ("", "0", "false", "off", "no")
+                self.set_checkbox(element_id, checked)
+                return {"checked": checked, **used}
+            if component_type == "GuiRadioButton" or "/rad" in element_id:
+                self.select_radio(element_id)
+                return {"selected": True, **used}
+            if component_type in {"GuiTab", "GuiMenu"}:
+                self.session.FindById(element_id).Select()
+                return {"selected": True, **used}
+            if component_type == "GuiButton" and normalized == "select":
+                self.press(element_id)
+                return {"pressed": True, **used}
+            if value is None:
+                raise SapGuiError("필드 설정에는 value가 필요합니다.")
+            self.set_field(element_id, value)
+            return {"value_set": value, **used}
+
+        if normalized == "toggle":
+            if component_type != "GuiCheckBox" and "/chk" not in element_id:
+                raise SapGuiError(f"toggle은 체크박스에만 사용할 수 있습니다: {component_type}")
+            current = bool(self._safe_attr(element, "Selected", False))
+            self.set_checkbox(element_id, not current)
+            return {"checked": not current, **used}
+
+        if normalized == "press":
+            self.press(element_id)
+            return {"pressed": True, **used}
+
+        if normalized == "search_help":
+            self.set_focus(element_id)
+            self.send_vkey(16)
+            return {"search_help": True, **used}
+
+        if normalized == "select_node":
+            key = node_key or value or ""
+            if not key:
+                raise SapGuiError("트리 노드 선택에는 node_key 또는 value가 필요합니다.")
+            self.tree_select_node(element_id, key)
+            return {"selected": True, "node_key": key, **used}
+
+        if normalized == "expand_node":
+            key = node_key or value or ""
+            if not key:
+                raise SapGuiError("트리 노드 확장에는 node_key 또는 value가 필요합니다.")
+            self.tree_expand_node(element_id, key)
+            return {"expanded": True, "node_key": key, **used}
+
+        if normalized == "collapse_node":
+            key = node_key or value or ""
+            if not key:
+                raise SapGuiError("트리 노드 접기에는 node_key 또는 value가 필요합니다.")
+            self.tree_collapse_node(element_id, key)
+            return {"collapsed": True, "node_key": key, **used}
+
+        if normalized == "doubleclick_node":
+            key = node_key or value or ""
+            if not key:
+                raise SapGuiError("트리 노드 더블클릭에는 node_key 또는 value가 필요합니다.")
+            self.tree_double_click_node(element_id, key)
+            return {"double_clicked": True, "node_key": key, **used}
+
+        if normalized == "press_node":
+            key = node_key or value or ""
+            if not key:
+                raise SapGuiError("트리 노드 버튼 클릭에는 node_key 또는 value가 필요합니다.")
+            used_col = self.tree_press_button(element_id, key, column)
+            return {"pressed": True, "node_key": key, "used_column": used_col, **used}
+
+        if normalized == "select_row":
+            if row is None:
+                if value is None:
+                    raise SapGuiError("테이블 행 선택에는 row 또는 value가 필요합니다.")
+                row = int(value)
+            self.select_table_row(element_id, row)
+            return {"selected": True, "row": row, **used}
+
+        raise SapGuiError(
+            f"지원하지 않는 UI action: {action} ({normalized}) for {component_type}"
+        )
+
+    def _element_value(self, element: Any, element_id: str) -> str:
+        if self._is_combo_box(element, element_id):
+            return self._get_combo_value(element)
+        for attr in ("Text", "Value", "Key"):
+            val = self._safe_attr(element, attr, "")
+            if val not in ("", None):
+                return str(val)
+        return ""
+
     @staticmethod
     def _is_combo_box(element: Any, element_id: str = "") -> bool:
         """Best-effort GuiComboBox detection for normal set/get paths."""
@@ -491,14 +674,22 @@ class SapGuiWrapper:
     def _set_combo_value(element: Any, value: str) -> None:
         """Set a SAP GUI combo box by key or display value.
 
-        SAP GUI systems differ: some combo boxes accept Key, others Value. Try
-        both before falling back to Text so `sap set` and macro `combo` are both
-        usable with common key/display inputs.
+        SAP GUI's normal Windows scripting model selects combo boxes by Key.
+        Users and AI often know only the displayed value, so resolve display
+        value -> key from Entries before falling back to Value/Text.
         """
+        combo_key = SapGuiWrapper._resolve_combo_key(element, value)
         errors: list[str] = []
-        for attr in ("Key", "Value", "Text"):
+        for attr, candidate in (
+            ("Key", combo_key),
+            ("key", combo_key),
+            ("Value", value),
+            ("value", value),
+            ("Text", value),
+            ("text", value),
+        ):
             try:
-                setattr(element, attr, value)
+                setattr(element, attr, candidate)
                 return
             except Exception as e:
                 errors.append(f"{attr}: {e}")
@@ -512,6 +703,100 @@ class SapGuiWrapper:
                 val = getattr(element, attr)
                 if val is not None:
                     return str(val)
+            except Exception:
+                continue
+        return ""
+
+    @staticmethod
+    def _resolve_combo_key(element: Any, requested: str) -> str:
+        """Return the combo key matching requested key/display value if known."""
+        entries = SapGuiWrapper._get_combo_entries(element)
+        if not entries:
+            return requested
+
+        requested_norm = requested.strip()
+        requested_lower = requested_norm.lower()
+
+        # Exact key match first.
+        for entry in entries:
+            key = str(entry.get("key", ""))
+            if requested_norm == key:
+                return key
+
+        # Then exact display/value match.
+        for entry in entries:
+            key = str(entry.get("key", ""))
+            value = str(entry.get("value", ""))
+            if requested_norm == value:
+                return key
+
+        # Finally case-insensitive convenience matching.
+        for entry in entries:
+            key = str(entry.get("key", ""))
+            value = str(entry.get("value", ""))
+            if requested_lower in {key.lower(), value.lower()}:
+                return key
+
+        return requested
+
+    @staticmethod
+    def _get_combo_entries(element: Any) -> list[dict[str, Any]]:
+        """Extract combo entries from SAP GUI's Entries collection if available."""
+        try:
+            entries = getattr(element, "Entries")
+        except Exception:
+            try:
+                entries = getattr(element, "entries")
+            except Exception:
+                return []
+
+        count = SapGuiWrapper._collection_count(entries)
+        result: list[dict[str, Any]] = []
+        for i in range(count):
+            entry = SapGuiWrapper._collection_item(entries, i)
+            if entry is None:
+                continue
+            key = SapGuiWrapper._entry_attr(entry, "Key", "key")
+            value = SapGuiWrapper._entry_attr(entry, "Value", "value")
+            pos = SapGuiWrapper._entry_attr(entry, "Pos", "pos")
+            result.append(
+                {
+                    "key": key,
+                    "value": value,
+                    **({"pos": pos} if pos != "" else {}),
+                }
+            )
+        return result
+
+    @staticmethod
+    def _collection_count(collection: Any) -> int:
+        for attr in ("Count", "count", "Length", "length"):
+            try:
+                return int(getattr(collection, attr))
+            except Exception:
+                continue
+        return 0
+
+    @staticmethod
+    def _collection_item(collection: Any, index: int) -> Any | None:
+        for getter in (
+            lambda: collection(index),
+            lambda: collection.ElementAt(index),
+            lambda: collection.elementAt(index),
+            lambda: collection.Item(index),
+            lambda: collection.item(index),
+        ):
+            try:
+                return getter()
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    def _entry_attr(entry: Any, *names: str) -> str:
+        for name in names:
+            try:
+                return str(getattr(entry, name))
             except Exception:
                 continue
         return ""

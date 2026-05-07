@@ -15,6 +15,26 @@ class FakeCombo:
         self.Value = ""
         self.Text = ""
         self.Name = "LFART"
+        self.Entries = FakeEntries([
+            FakeEntry("LF", "Standard Delivery", 1),
+            FakeEntry("NL", "Normal Delivery", 2),
+        ])
+
+
+class FakeEntry:
+    def __init__(self, key: str, value: str, pos: int) -> None:
+        self.Key = key
+        self.Value = value
+        self.Pos = pos
+
+
+class FakeEntries:
+    def __init__(self, entries: list[FakeEntry]) -> None:
+        self._entries = entries
+        self.Count = len(entries)
+
+    def __call__(self, index: int) -> FakeEntry:
+        return self._entries[index]
 
 
 class FakeTextField:
@@ -45,7 +65,22 @@ def test_set_field_handles_gui_combo_box():
         "name": "LFART",
         "field": "wnd[0]/usr/cmbLFART",
         "value": "LF",
+        "key": "LF",
+        "text": "",
+        "entries": [
+            {"key": "LF", "value": "Standard Delivery", "pos": "1"},
+            {"key": "NL", "value": "Normal Delivery", "pos": "2"},
+        ],
     }
+
+
+def test_set_field_maps_display_value_to_combo_key():
+    combo = FakeCombo()
+    wrapper = _wrapper_with(combo)
+
+    wrapper.set_field("wnd[0]/usr/cmbLFART", "Normal Delivery")
+
+    assert combo.Key == "NL"
 
 
 def test_select_combo_uses_same_combo_setter():
@@ -54,6 +89,42 @@ def test_select_combo_uses_same_combo_setter():
 
     wrapper.select_combo("wnd[0]/usr/cmbLFART", "NL")
 
+    assert combo.Key == "NL"
+
+
+def test_get_combo_entries():
+    combo = FakeCombo()
+    wrapper = _wrapper_with(combo)
+
+    assert wrapper.get_combo_entries("wnd[0]/usr/cmbLFART") == [
+        {"key": "LF", "value": "Standard Delivery", "pos": "1"},
+        {"key": "NL", "value": "Normal Delivery", "pos": "2"},
+    ]
+
+
+def test_inspect_element_returns_combo_capability():
+    combo = FakeCombo()
+    wrapper = _wrapper_with(combo)
+
+    inspected = wrapper.inspect_element("wnd[0]/usr/cmbLFART")
+
+    assert inspected["type"] == "GuiComboBox"
+    assert "set" in inspected["capability"]["actions"]
+    assert inspected["entries"][1] == {"key": "NL", "value": "Normal Delivery", "pos": "2"}
+
+
+def test_perform_ui_action_sets_combo_by_display_value():
+    combo = FakeCombo()
+    wrapper = _wrapper_with(combo)
+
+    result = wrapper.perform_ui_action(
+        "wnd[0]/usr/cmbLFART",
+        "set",
+        "Normal Delivery",
+    )
+
+    assert result["action"] == "set"
+    assert result["type"] == "GuiComboBox"
     assert combo.Key == "NL"
 
 

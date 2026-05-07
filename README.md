@@ -213,6 +213,10 @@ sap set "wnd[0]/usr/ctxtRMMG1-MATNR" "100-100"
 # 콤보박스 직접 설정 (key 또는 표시값)
 sap set "wnd[0]/usr/cmbLFART" "LF"
 
+# 콤보박스 key/value 목록 확인 후 선택
+sap get "wnd[0]/usr/cmbLFART"
+sap set "wnd[0]/usr/cmbLFART" "Standard Delivery"
+
 # 여러 필드 한번에 입력 + 자동 Enter (필드명 자동 매핑)
 sap fill MATNR=100-100 WERKS=1000 LGORT=0001
 
@@ -233,6 +237,31 @@ sap set "wnd[0]/usr/radRMMG1-AUESSION" "true"
 ```
 
 > `sap fill`은 현재 화면을 스캔하여 필드명(MATNR 등)을 실제 element_id로 자동 매핑합니다. 체크박스(`/chk`)와 라디오버튼(`/rad`)도 자동 감지됩니다.
+
+### 4.5.1 요소 검사와 범용 UI 액션
+
+전용 명령이 없거나 어떤 조작이 가능한지 모를 때는 SAP GUI Scripting
+capability 지도를 live element 검사와 함께 사용합니다.
+
+```powershell
+# Type/SubType, 현재 값, changeable, 콤보 entries, 가능한 action 확인
+sap inspect "wnd[0]/usr/cmbLFART"
+
+# 타입에 맞춰 자동 실행: text field는 Text, combo는 Entries→Key, checkbox는 Selected
+sap act "wnd[0]/usr/cmbLFART" set "Standard Delivery"
+sap act "wnd[0]/usr/chkSELECT" set true
+sap act "wnd[0]/usr/btnSAVE" press
+
+# 검색 도움말
+sap act "wnd[0]/usr/ctxtRMMG1-MATNR" search_help
+
+# 트리 fallback
+sap act "wnd[0]/shellcont/shell" select_node --node-key "00005"
+sap act "wnd[0]/shellcont/shell" expand_node --node-key "00001"
+```
+
+MCP에서는 `sap_inspect_element`로 capability를 확인하고,
+`sap_ui_action`으로 `set/select/press/focus/read/search_help/select_node` 등을 실행합니다.
 
 ### 4.6 키보드/버튼
 
@@ -925,6 +954,8 @@ Windows의 Claude Code `settings.json`에 추가:
 | `sap_connections` | 모든 활성 SAP 연결 목록 조회 |
 | `sap_session` | 세션 정보 조회 |
 | `sap_screen` | 현재 화면 UI 구조 (JSON) |
+| `sap_inspect_element` | 단일 element의 Type/SubType/capability/entries 검사 |
+| `sap_ui_action` | Scripting capability 기반 범용 UI 액션 fallback |
 | `sap_run` | 트랜잭션 실행 |
 | `sap_command` | SAP 커맨드 필드에 명령 실행 |
 | `sap_set_field` | 필드 값 설정 |
