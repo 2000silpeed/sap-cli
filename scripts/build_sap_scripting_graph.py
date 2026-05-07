@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-"""Build a SAP GUI Scripting API graph from exported official documentation.
+"""Build a SAP GUI Scripting API graph from official documentation.
 
 This script is intentionally dependency-free. It accepts a plain-text or
-Markdown export of the official SAP GUI Scripting API guide and extracts a
-best-effort object/property/method/event graph.
+Markdown export of the official SAP GUI Scripting API guide, or an official
+HTTP(S) URL. PDF URLs are converted through the local ``pdftotext`` command and
+then parsed into a best-effort object/property/method/event graph.
 
 Recommended source:
 - SAP GUI Scripting API PDF from SAP Help Portal.
 
 Workflow:
-1. Export the official PDF/HTML to text or Markdown.
-2. Run:
+1. Run against a local text/Markdown export, stdin, or an official URL:
    python scripts/build_sap_scripting_graph.py api.txt \
      --out sap_cli/ontology/knowledge/scripting_api/graph.generated.json
-3. Review the generated graph before replacing graph.json.
+   python scripts/build_sap_scripting_graph.py https://.../sap_gui_scripting_api.pdf \
+     --out sap_cli/ontology/knowledge/scripting_api/graph.generated.json
+   python scripts/build_sap_scripting_graph.py - --out graph.generated.json < api.txt
+2. Review the generated graph before replacing graph.json.
 
 The bundled seed graph remains the safe runtime fallback; generated graphs
 should be reviewed because vendor documentation layouts can vary.
@@ -24,6 +27,9 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
+import sys
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -99,17 +105,64 @@ def build_graph(text: str, *, source: str = "") -> dict[str, Any]:
     }
 
 
+def _decode_response(data: bytes, *, source: str, content_type: str = "") -> str:
+    is_pdf = source.lower().split("?", 1)[0].endswith(".pdf") or "pdf" in content_type.lower()
+    if not is_pdf:
+        return data.decode("utf-8", errors="replace")
+
+    try:
+        result = subprocess.run(
+            ["pdftotext", "-", "-"],
+            input=data,
+            capture_output=True,
+            check=True,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("PDF URL을 직접 읽으려면 로컬에 pdftotext(poppler)가 필요합니다.") from exc
+    except subprocess.CalledProcessError as exc:
+        stderr = exc.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"PDF 텍스트 변환 실패: {stderr}") from exc
+
+    return result.stdout.decode("utf-8", errors="replace")
+
+
+def read_source(source: str) -> tuple[str, str]:
+    if source == "-":
+        return sys.stdin.read(), ""
+
+    if source.startswith(("http://", "https://")):
+        request = urllib.request.Request(source, headers={"User-Agent": "sap-cli-scripting-graph-builder/1.0"})
+        with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310 - explicit user-provided docs URL
+            data = response.read()
+            content_type = response.headers.get("Content-Type", "")
+        return _decode_response(data, source=source, content_type=content_type), source
+
+    return Path(source).read_text(encoding="utf-8"), ""
+
+
+def write_graph(graph: dict[str, Any], out: str) -> None:
+    payload = json.dumps(graph, ensure_ascii=False, indent=2)
+    if out == "-":
+        print(payload)
+        return
+
+    out_path = Path(out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(payload, encoding="utf-8")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("input", type=Path, help="Text/Markdown export of SAP GUI Scripting API docs")
-    parser.add_argument("--out", type=Path, required=True, help="Output graph JSON")
-    parser.add_argument("--source", default="", help="Official source URL")
+    parser.add_argument("input", help="Text/Markdown export, stdin '-', or official HTTP(S) URL")
+    parser.add_argument("--out", required=True, help="Output graph JSON path, or '-' for stdout")
+    parser.add_argument("--source", default="", help="Official source URL override for graph metadata")
     args = parser.parse_args()
 
-    graph = build_graph(args.input.read_text(encoding="utf-8"), source=args.source)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(graph, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps({"nodes": len(graph["nodes"]), "edges": len(graph["edges"]), "out": str(args.out)}))
+    text, detected_source = read_source(args.input)
+    graph = build_graph(text, source=args.source or detected_source)
+    write_graph(graph, args.out)
+    if args.out != "-":
+        print(json.dumps({"nodes": len(graph["nodes"]), "edges": len(graph["edges"]), "out": args.out}))
 
 
 if __name__ == "__main__":
