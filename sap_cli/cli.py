@@ -232,10 +232,10 @@ def run(
 
 @app.command("set")
 def set_field(
-    element_id: str = typer.Argument(help="필드 ID (예: wnd[0]/usr/ctxtRMMG1-MATNR)"),
-    value: str = typer.Argument(help="설정할 값"),
+    element_id: str = typer.Argument(help="필드/콤보박스 ID (예: wnd[0]/usr/ctxtRMMG1-MATNR, wnd[0]/usr/cmbLFART)"),
+    value: str = typer.Argument(help="설정할 값 (콤보박스는 key 또는 표시값)"),
 ) -> None:
-    """필드에 값 설정."""
+    """필드 또는 콤보박스에 값 설정."""
     _run_command(
         "set",
         {"element_id": element_id, "value": value},

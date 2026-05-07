@@ -210,6 +210,9 @@ sap screen --search "Save"
 # 필드에 값 설정 (1개씩)
 sap set "wnd[0]/usr/ctxtRMMG1-MATNR" "100-100"
 
+# 콤보박스 직접 설정 (key 또는 표시값)
+sap set "wnd[0]/usr/cmbLFART" "LF"
+
 # 여러 필드 한번에 입력 + 자동 Enter (필드명 자동 매핑)
 sap fill MATNR=100-100 WERKS=1000 LGORT=0001
 

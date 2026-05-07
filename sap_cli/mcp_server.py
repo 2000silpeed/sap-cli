@@ -135,12 +135,12 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_set_field",
-        "description": "SAP 화면의 필드에 값을 설정합니다.",
+        "description": "SAP 화면의 필드 값을 설정합니다. GuiComboBox 콤보박스도 element_id로 직접 설정할 수 있습니다.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "element_id": {"type": "string", "description": "필드 ID (예: wnd[0]/usr/ctxtRMMG1-MATNR)"},
-                "value": {"type": "string", "description": "설정할 값"},
+                "element_id": {"type": "string", "description": "필드/콤보박스 ID (예: wnd[0]/usr/ctxtRMMG1-MATNR, wnd[0]/usr/cmbLFART)"},
+                "value": {"type": "string", "description": "설정할 값. 콤보박스는 key 또는 표시값"},
             },
             "required": ["element_id", "value"],
         },

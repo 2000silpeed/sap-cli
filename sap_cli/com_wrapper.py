@@ -370,9 +370,16 @@ class SapGuiWrapper:
     # -------------------------------------------------------------------
 
     def set_field(self, element_id: str, value: str) -> None:
-        """필드에 값 설정."""
+        """필드에 값 설정.
+
+        GuiComboBox는 Text 대신 Key/Value 계열 속성을 써야 하는 경우가
+        있어 콤보박스 타입이면 select_combo와 같은 경로로 처리한다.
+        """
         try:
             element = self.session.FindById(element_id)
+            if self._is_combo_box(element, element_id):
+                self._set_combo_value(element, value)
+                return
             element.Text = value
         except Exception as e:
             raise SapGuiError(f"필드 설정 실패 [{element_id}]: {e}") from e
@@ -381,6 +388,8 @@ class SapGuiWrapper:
         """필드 값 읽기."""
         try:
             element = self.session.FindById(element_id)
+            if self._is_combo_box(element, element_id):
+                return self._get_combo_value(element)
             return str(element.Text)
         except Exception as e:
             raise SapGuiError(f"필드 읽기 실패 [{element_id}]: {e}") from e
@@ -393,7 +402,7 @@ class SapGuiWrapper:
             return {
                 "name": name or self._extract_name(element_id),
                 "field": element_id,
-                "value": str(element.Text),
+                "value": self.get_field(element_id),
             }
         except Exception as e:
             raise SapGuiError(f"필드 읽기 실패 [{element_id}]: {e}") from e
@@ -464,9 +473,48 @@ class SapGuiWrapper:
     def select_combo(self, element_id: str, value: str) -> None:
         """콤보박스(드롭다운) 값 선택."""
         try:
-            self.session.FindById(element_id).Value = value
+            self._set_combo_value(self.session.FindById(element_id), value)
         except Exception as e:
             raise SapGuiError(f"콤보박스 선택 실패 [{element_id}]: {e}") from e
+
+    @staticmethod
+    def _is_combo_box(element: Any, element_id: str = "") -> bool:
+        """Best-effort GuiComboBox detection for normal set/get paths."""
+        try:
+            if str(element.Type) == "GuiComboBox":
+                return True
+        except Exception:
+            pass
+        return "/cmb" in element_id
+
+    @staticmethod
+    def _set_combo_value(element: Any, value: str) -> None:
+        """Set a SAP GUI combo box by key or display value.
+
+        SAP GUI systems differ: some combo boxes accept Key, others Value. Try
+        both before falling back to Text so `sap set` and macro `combo` are both
+        usable with common key/display inputs.
+        """
+        errors: list[str] = []
+        for attr in ("Key", "Value", "Text"):
+            try:
+                setattr(element, attr, value)
+                return
+            except Exception as e:
+                errors.append(f"{attr}: {e}")
+        raise SapGuiError("; ".join(errors) or "no writable combo property")
+
+    @staticmethod
+    def _get_combo_value(element: Any) -> str:
+        """Read a combo box value using the most informative available property."""
+        for attr in ("Key", "Value", "Text"):
+            try:
+                val = getattr(element, attr)
+                if val is not None:
+                    return str(val)
+            except Exception:
+                continue
+        return ""
 
     # -------------------------------------------------------------------
     # Status Bar
