@@ -120,6 +120,10 @@ ACTION_MAP: dict[str, ActionType] = {
     "tab": ActionType.SELECT_TAB,
     "menu": ActionType.SELECT_MENU,
     "table-select": ActionType.SELECT_TABLE_ROW,
+    "tree-select": ActionType.SELECT_TREE_NODE,
+    "tree-expand": ActionType.EXPAND_TREE_NODE,
+    "tree-doubleclick": ActionType.DOUBLE_CLICK_TREE_NODE,
+    "tree-collapse": ActionType.COLLAPSE_TREE_NODE,
 }
 
 
@@ -152,3 +156,19 @@ def execute_sap_action(sap: SapGuiWrapper, action: str, target: str, value: str 
         sap.select_menu(target)
     elif action == "table-select":
         sap.select_table_row(target, int(value or "0"))
+    elif action == "tree-select":
+        if not value:
+            raise ValueError("tree-select 액션은 value에 node_key가 필요합니다.")
+        sap.tree_select_node(target, value)
+    elif action == "tree-expand":
+        if not value:
+            raise ValueError("tree-expand 액션은 value에 node_key가 필요합니다.")
+        sap.tree_expand_node(target, value)
+    elif action == "tree-doubleclick":
+        if not value:
+            raise ValueError("tree-doubleclick 액션은 value에 node_key가 필요합니다.")
+        sap.tree_double_click_node(target, value)
+    elif action == "tree-collapse":
+        if not value:
+            raise ValueError("tree-collapse 액션은 value에 node_key가 필요합니다.")
+        sap.tree_collapse_node(target, value)

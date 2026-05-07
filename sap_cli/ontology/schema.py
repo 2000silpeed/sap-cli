@@ -106,6 +106,8 @@ class ActionType(str, Enum):
     READ_SCREEN = "ReadScreen"
     SELECT_TREE_NODE = "SelectTreeNode"
     EXPAND_TREE_NODE = "ExpandTreeNode"
+    DOUBLE_CLICK_TREE_NODE = "DoubleClickTreeNode"
+    COLLAPSE_TREE_NODE = "CollapseTreeNode"
 
 
 # ---------------------------------------------------------------------------

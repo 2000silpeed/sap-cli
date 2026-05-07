@@ -244,6 +244,30 @@ class MacroPlayer:
             elif action == ActionType.SELECT_TABLE_ROW:
                 self.sap.select_table_row(step.target_id, int(step.value or "0"))
 
+            elif action == ActionType.SELECT_TREE_NODE:
+                self.sap.tree_select_node(
+                    step.target_id,
+                    self._require_value(step, "node_key"),
+                )
+
+            elif action == ActionType.EXPAND_TREE_NODE:
+                self.sap.tree_expand_node(
+                    step.target_id,
+                    self._require_value(step, "node_key"),
+                )
+
+            elif action == ActionType.DOUBLE_CLICK_TREE_NODE:
+                self.sap.tree_double_click_node(
+                    step.target_id,
+                    self._require_value(step, "node_key"),
+                )
+
+            elif action == ActionType.COLLAPSE_TREE_NODE:
+                self.sap.tree_collapse_node(
+                    step.target_id,
+                    self._require_value(step, "node_key"),
+                )
+
             elif action == ActionType.READ_SCREEN:
                 self.sap.get_screen()
 
@@ -293,6 +317,15 @@ class MacroPlayer:
                 success=False,
                 error=str(e),
             )
+
+    @staticmethod
+    def _require_value(step: MacroStep, label: str) -> str:
+        """Return a required step value with a macro-friendly error message."""
+        if step.value is None or step.value == "":
+            raise ValueError(
+                f"{step.action.value} 액션은 value에 {label} 값이 필요합니다."
+            )
+        return step.value
 
     def _verify_screen(self, expected: int | None) -> bool:
         """현재 화면번호가 예상과 일치하는지 검증."""

@@ -22,6 +22,11 @@ _SYSTEM_ACTIONS = {ActionType.PRESS_BUTTON, ActionType.SEND_VKEY, ActionType.SEL
 # 변수로 추출하지 않을 짧은 값
 _MIN_VALUE_LENGTH = 2
 
+# AI가 finish 단계에서 실제 값 대신 placeholder 자체를 넘기는 경우 방지.
+_PLACEHOLDER_ONLY_PATTERN = re.compile(
+    r"^\s*(?:\$\{\w+\}|\{\{\s*[\w.-]+\s*\}\}|\{[\w.-]+\})\s*$"
+)
+
 
 _DEFAULT_STATE_FILE = Path.home() / ".sap_cli" / ".recorder_state.json"
 
@@ -129,10 +134,22 @@ class MacroRecorder:
             for key, val in variables.items():
                 # 형식 2: 값이 dict이면 {"value": ..., "desc": ...}
                 if isinstance(val, dict):
-                    var_name = key
-                    actual_value = str(val.get("value", ""))
-                    var_desc = str(val.get("desc", actual_value))
+                    var_name = self._normalize_var_name(str(key))
+                    actual_value = str(
+                        val.get("value")
+                        or val.get("actual")
+                        or val.get("default")
+                        or ""
+                    )
+                    var_desc = str(
+                        val.get("desc")
+                        or val.get("description")
+                        or actual_value
+                    )
+                    if not self._can_replace_value(actual_value):
+                        continue
                 else:
+                    key = str(key)
                     val = str(val)
                     val_in_steps = any(
                         s.value and val in s.value for s in self._steps
@@ -142,7 +159,7 @@ class MacroRecorder:
                     )
 
                     if val_in_steps:
-                        var_name = key
+                        var_name = self._normalize_var_name(key)
                         actual_value = val
                         var_desc = val
                     elif key_in_steps:
@@ -155,6 +172,12 @@ class MacroRecorder:
                         var_desc = val
                     else:
                         continue
+
+                    if not self._can_replace_value(actual_value):
+                        continue
+
+                if not any(s.value and actual_value in s.value for s in self._steps):
+                    continue
 
                 macro_vars.append(MacroVariable(
                     name=var_name,
@@ -295,3 +318,34 @@ class MacroRecorder:
             if clean:
                 return re.sub(r"[^a-zA-Z0-9_]", "_", clean).lower().strip("_") or "var"
         return re.sub(r"[^a-zA-Z0-9_]", "_", value).lower().strip("_")[:20] or "var"
+
+    @staticmethod
+    def _can_replace_value(actual_value: str) -> bool:
+        """Return whether a variable actual value is safe to replace in steps.
+
+        finish()는 녹화된 literal 값을 placeholder로 치환하는 단계다.
+        AI가 실수로 ${var}, {{var}}, {var} 같은 placeholder 자체나 빈 값을
+        actual value로 넘기면 replace("", ...)로 매크로가 오염될 수 있으므로
+        보수적으로 건너뛴다.
+        """
+        if not actual_value.strip():
+            return False
+        return _PLACEHOLDER_ONLY_PATTERN.match(actual_value) is None
+
+    @staticmethod
+    def _normalize_var_name(name: str) -> str:
+        """Normalize AI-provided variable names into ${...}-compatible names."""
+        stripped = name.strip()
+        placeholder = re.match(r"^\$\{(\w+)\}$", stripped)
+        if placeholder:
+            stripped = placeholder.group(1)
+        else:
+            placeholder = re.match(r"^\{\{\s*([\w.-]+)\s*\}\}$", stripped)
+            if placeholder:
+                stripped = placeholder.group(1)
+            else:
+                placeholder = re.match(r"^\{([\w.-]+)\}$", stripped)
+                if placeholder:
+                    stripped = placeholder.group(1)
+
+        return re.sub(r"\W+", "_", stripped).strip("_") or "var"

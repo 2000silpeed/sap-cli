@@ -83,6 +83,56 @@ class TestFinish:
         # value가 ${변수명}으로 치환되었는지 확인
         assert "${" in macro.steps[1].value
 
+    def test_finish_skips_placeholder_or_empty_variable_specs(self, recorder):
+        """AI가 실제값 대신 placeholder/빈 dict를 넘겨도 매크로를 오염시키지 않는다."""
+        recorder.start("test")
+        recorder.record_step(ActionType.SET_FIELD_VALUE, "wnd[0]/usr/ctxtRMMG1-MATNR", value="100-100")
+        recorder.record_step(ActionType.SET_FIELD_VALUE, "wnd[0]/usr/txtSOME-FIELD", value="ABC")
+
+        macro = recorder.finish(
+            name="자재조회",
+            variables={
+                "matnr": {"description": "조회할 자재번호"},
+                "field": "${field}",
+                "${placeholder}": "placeholder 자체",
+            },
+        )
+
+        assert macro.variables == []
+        assert macro.steps[0].value == "100-100"
+        assert macro.steps[1].value == "ABC"
+
+    def test_finish_accepts_dict_variable_spec_with_description(self, recorder):
+        recorder.start("test")
+        recorder.record_step(ActionType.SET_FIELD_VALUE, "wnd[0]/usr/ctxtRMMG1-MATNR", value="100-100")
+
+        macro = recorder.finish(
+            name="자재조회",
+            variables={
+                "matnr": {"value": "100-100", "description": "조회할 자재번호"},
+            },
+        )
+
+        assert len(macro.variables) == 1
+        assert macro.variables[0].name == "matnr"
+        assert macro.variables[0].description == "조회할 자재번호"
+        assert macro.variables[0].default == "100-100"
+        assert macro.steps[0].value == "${matnr}"
+
+    def test_finish_normalizes_placeholder_variable_name(self, recorder):
+        recorder.start("test")
+        recorder.record_step(ActionType.SET_FIELD_VALUE, "wnd[0]/usr/ctxtRMMG1-MATNR", value="100-100")
+
+        macro = recorder.finish(
+            name="자재조회",
+            variables={
+                "${matnr}": {"value": "100-100", "desc": "조회할 자재번호"},
+            },
+        )
+
+        assert macro.variables[0].name == "matnr"
+        assert macro.steps[0].value == "${matnr}"
+
     def test_tcode_auto_detect_from_target_id(self, recorder):
         """value가 None인 기존 매크로 호환: target_id에서 tcode 감지."""
         recorder.start("test")
