@@ -12,6 +12,57 @@ from typing import Any
 DEFAULT_GRAPH_PATH = (
     Path(__file__).parent / "ontology" / "knowledge" / "scripting_api" / "graph.json"
 )
+DEFAULT_GENERATED_GRAPH_PATH = (
+    Path(__file__).parent / "ontology" / "knowledge" / "scripting_api" / "graph.generated.json"
+)
+
+
+def merge_graph_data(*graphs: dict[str, Any]) -> dict[str, Any]:
+    """Merge graph JSON documents while preserving curated seed metadata."""
+    node_by_id: dict[str, dict[str, Any]] = {}
+    edge_by_key: dict[tuple[Any, ...], dict[str, Any]] = {}
+    sources_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    versions: list[str] = []
+
+    for graph in graphs:
+        if not graph:
+            continue
+        version = str(graph.get("version", ""))
+        if version:
+            versions.append(version)
+        for source in graph.get("sources", []):
+            key = (str(source.get("title", "")), str(source.get("url", "")))
+            sources_by_key[key] = dict(source)
+        for node in graph.get("nodes", []):
+            node_id = str(node["id"])
+            if node_id in node_by_id:
+                # Keep curated seed fields, but fill missing data from generated overlays.
+                node_by_id[node_id] = {**dict(node), **node_by_id[node_id]}
+            else:
+                node_by_id[node_id] = dict(node)
+        for graph_edge in graph.get("edges", []):
+            props = tuple(
+                sorted(
+                    (key, json.dumps(value, sort_keys=True, ensure_ascii=False))
+                    for key, value in graph_edge.items()
+                    if key not in {"source", "target", "type"}
+                )
+            )
+            key = (
+                str(graph_edge["source"]),
+                str(graph_edge["target"]),
+                str(graph_edge["type"]),
+                props,
+            )
+            edge_by_key[key] = dict(graph_edge)
+
+    return {
+        "version": "+".join(dict.fromkeys(versions)),
+        "description": "Merged SAP GUI Scripting API graph.",
+        "sources": list(sources_by_key.values()),
+        "nodes": list(node_by_id.values()),
+        "edges": list(edge_by_key.values()),
+    }
 
 
 class ScriptingApiGraph:
@@ -32,7 +83,11 @@ class ScriptingApiGraph:
     @classmethod
     def load(cls, path: str | Path | None = None) -> "ScriptingApiGraph":
         graph_path = Path(path) if path else DEFAULT_GRAPH_PATH
-        return cls(json.loads(graph_path.read_text(encoding="utf-8")))
+        data = json.loads(graph_path.read_text(encoding="utf-8"))
+        if path is None and DEFAULT_GENERATED_GRAPH_PATH.exists():
+            generated_data = json.loads(DEFAULT_GENERATED_GRAPH_PATH.read_text(encoding="utf-8"))
+            data = merge_graph_data(data, generated_data)
+        return cls(data)
 
     def query(
         self,

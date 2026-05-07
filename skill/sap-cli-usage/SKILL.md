@@ -54,6 +54,29 @@ sap_scripting_query(component_type="GuiComboBox", intent="select", depth=2)
 sap_ui_action(element_id="wnd[0]/usr/cmbLFART", action="set", value="Standard Delivery")
 ```
 
+## 공식 SAP GUI Scripting API 그래프 갱신
+
+직접 데이터를 손으로 넣지 않는다. SAP 공식 PDF/HTML을 그래프 빌더에 넣어
+`graph.generated.json`을 생성하면 런타임이 seed 그래프와 자동 병합한다.
+
+```powershell
+python scripts/build_sap_scripting_graph.py `
+  "https://help.sap.com/doc/9215986e54174174854b0af6bb14305a/800.08/en-US/sap_gui_scripting_api.pdf" `
+  --out sap_cli/ontology/knowledge/scripting_api/graph.generated.json
+```
+
+생성 후 조회:
+
+```powershell
+sap scripting-query --type GuiGridView --depth 1
+sap scripting-query --type GuiTree --depth 1
+sap scripting-query --type GuiComboBox --intent select --depth 2
+```
+
+PDF URL 입력에는 로컬 `pdftotext`/poppler가 필요하다. `graph.generated.json`은
+공식 문서에서 자동 추출된 overlay이고, 기존 `graph.json`의 curated
+intent/action 지도는 그대로 유지된다.
+
 ## 콤보박스
 
 콤보박스는 `Text`에 쓰지 말고 SAP GUI Scripting의 `Entries`를 이용해 표시값을 `Key`로 매핑한다.

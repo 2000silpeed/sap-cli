@@ -153,6 +153,20 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
 `sap_get_field`로 entries를 확인한 뒤 `sap_ui_action(action="set")` 또는
 `sap_set_field`에 key/표시값을 넘긴다. 내부에서 entries의 표시값을 key로 매핑한다.
 
+공식 SAP GUI Scripting API 전체 지도는 수동 입력하지 않는다. 공식 PDF/HTML을
+빌더에 넣어 `sap_cli/ontology/knowledge/scripting_api/graph.generated.json`을
+생성하면 런타임이 기존 curated `graph.json`과 자동 병합한다.
+
+```powershell
+python scripts/build_sap_scripting_graph.py `
+  "https://help.sap.com/doc/9215986e54174174854b0af6bb14305a/800.08/en-US/sap_gui_scripting_api.pdf" `
+  --out sap_cli/ontology/knowledge/scripting_api/graph.generated.json
+```
+
+생성 후 `sap_scripting_query(component_type="GuiGridView", depth=1)`처럼
+공식 API 객체/속성/메서드를 조회한다. PDF URL 입력에는 로컬
+`pdftotext`/poppler가 필요하다.
+
 ### 패턴 3: 저장 흐름
 
 문서 생성/변경 트랜잭션에서 저장할 때:

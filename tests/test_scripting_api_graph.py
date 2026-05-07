@@ -1,6 +1,7 @@
 """SAP GUI Scripting API graph ontology tests."""
 
-from sap_cli.scripting_api_graph import get_default_graph, query_default_graph
+from scripts.build_sap_scripting_graph import build_graph
+from sap_cli.scripting_api_graph import get_default_graph, merge_graph_data, query_default_graph
 from sap_cli.scripting_ontology import component_capability
 
 
@@ -31,3 +32,74 @@ def test_default_graph_lists_api_objects_when_no_query():
 
     assert any(node["id"] == "object:GuiSession" for node in result["nodes"])
     assert any(node["id"] == "intent:set" for node in result["nodes"])
+
+
+def test_build_graph_parses_numbered_pdf_headings_and_signatures():
+    graph = build_graph(
+        """
+        GuiComboBox Object . . . . . . . . . . . . . . . . . . . . . . 75
+        1.2.12 GuiComboBox Object
+        GuiComboBox extends the GuiVComponent Object [page 281].
+        Methods
+        Method
+        Syntax
+        PUBLIC
+        SetKeySpace
+        Public Sub SetKeySpace()
+        Properties
+        Key (Read-write)
+        Public Property Key As String
+        Text (Read-only)
+        Public Property Text As String
+        1.2.65 GuiTextField
+        GuiTextField extends the GuiVComponent Object [page 281].
+        Methods
+        GetListProperty
+        Public Function GetListProperty( _
+        ) As String
+        """,
+        source="https://help.sap.com/example.pdf",
+    )
+
+    node_ids = {node["id"] for node in graph["nodes"]}
+    edge_tuples = {(edge["source"], edge["target"], edge["type"]) for edge in graph["edges"]}
+
+    assert "object:GuiComboBox" in node_ids
+    assert "object:GuiTextField" in node_ids
+    assert "method:GuiComboBox.PUBLIC" not in node_ids
+    assert ("object:GuiComboBox", "object:GuiVComponent", "EXTENDS") in edge_tuples
+    assert ("object:GuiComboBox", "property:GuiComboBox.Key", "HAS_PROPERTY") in edge_tuples
+    assert ("object:GuiComboBox", "method:GuiComboBox.SetKeySpace", "HAS_METHOD") in edge_tuples
+    assert ("object:GuiTextField", "method:GuiTextField.GetListProperty", "HAS_METHOD") in edge_tuples
+
+
+def test_merge_graph_data_preserves_seed_and_adds_generated_members():
+    seed = {
+        "version": "seed",
+        "sources": [{"title": "seed", "url": "seed://graph"}],
+        "nodes": [
+            {"id": "object:GuiComboBox", "type": "api_object", "name": "GuiComboBox", "curated": True},
+            {"id": "intent:select", "type": "intent", "name": "select"},
+        ],
+        "edges": [
+            {"source": "object:GuiComboBox", "target": "intent:select", "type": "SUPPORTS_ACTION"},
+        ],
+    }
+    generated = build_graph(
+        """
+        1.2.12 GuiComboBox Object
+        Properties
+        Value (Read-write)
+        Public Property Value As String
+        """,
+        source="https://help.sap.com/sap_gui_scripting_api.pdf",
+    )
+
+    merged = merge_graph_data(seed, generated)
+    nodes = {node["id"]: node for node in merged["nodes"]}
+    edge_tuples = {(edge["source"], edge["target"], edge["type"]) for edge in merged["edges"]}
+
+    assert nodes["object:GuiComboBox"]["curated"] is True
+    assert "property:GuiComboBox.Value" in nodes
+    assert ("object:GuiComboBox", "intent:select", "SUPPORTS_ACTION") in edge_tuples
+    assert ("object:GuiComboBox", "property:GuiComboBox.Value", "HAS_PROPERTY") in edge_tuples

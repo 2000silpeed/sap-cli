@@ -18,8 +18,10 @@ Workflow:
    python scripts/build_sap_scripting_graph.py - --out graph.generated.json < api.txt
 2. Review the generated graph before replacing graph.json.
 
-The bundled seed graph remains the safe runtime fallback; generated graphs
-should be reviewed because vendor documentation layouts can vary.
+The bundled seed graph remains the safe runtime fallback. When
+``sap_cli/ontology/knowledge/scripting_api/graph.generated.json`` exists, the
+runtime loader automatically overlays it on the curated seed graph so generated
+API objects/members can be queried without losing curated intents/actions.
 """
 
 from __future__ import annotations
@@ -34,9 +36,43 @@ from pathlib import Path
 from typing import Any
 
 
-OBJECT_HEADING = re.compile(r"^#+\s+(Gui[A-Za-z0-9]+)\s+Object\b|^(Gui[A-Za-z0-9]+)\s+Object\b")
+OBJECT_HEADING = re.compile(
+    r"^(?:(?P<section>\d+(?:\.\d+)*)\s+)?"
+    r"(?P<name>Gui[A-Za-z0-9]+|SapGuiAuto|CSapROTWrapper)"
+    r"(?:\s+(?P<kind>Object|Collection))?\s*$",
+    re.I,
+)
 SECTION_HEADING = re.compile(r"^#+\s+(Methods|Properties|Events)\b|^(Methods|Properties|Events)\s*$", re.I)
-MEMBER_LINE = re.compile(r"^`?([A-Za-z_][A-Za-z0-9_]*)`?\s*(?:\((Read-only|Read-write)\))?", re.I)
+PROPERTY_TITLE = re.compile(r"^`?([A-Z][A-Za-z0-9_]*)`?\s*\((Read-only|Read-write)\)\s*$", re.I)
+PROPERTY_SIGNATURE = re.compile(
+    r"^Public\s+Property\s+(?:Get\s+|Let\s+|Set\s+)?([A-Za-z_][A-Za-z0-9_]*)\b",
+    re.I,
+)
+METHOD_SIGNATURE = re.compile(r"^Public\s+(?:Sub|Function)\s+([A-Za-z_][A-Za-z0-9_]*)\b", re.I)
+METHOD_NAME = re.compile(r"^`?([A-Z][A-Za-z0-9_]*)`?\s*$")
+EXTENDS_LINE = re.compile(
+    r"\bextends(?:\s+the)?\s+(Gui[A-Za-z0-9]+|SapGuiAuto|CSapROTWrapper)(?:\s+Object)?\b",
+    re.I,
+)
+SKIP_MEMBERS = {
+    "All",
+    "Byte",
+    "Class",
+    "Description",
+    "Event",
+    "Function",
+    "Long",
+    "Method",
+    "Object",
+    "Property",
+    "Public",
+    "Returns",
+    "SAP",
+    "String",
+    "Sub",
+    "Syntax",
+}
+SKIP_MEMBERS_LOWER = {member.lower() for member in SKIP_MEMBERS}
 
 
 def node(node_id: str, node_type: str, name: str, **props: Any) -> dict[str, Any]:
@@ -47,61 +83,109 @@ def edge(source: str, target: str, edge_type: str, **props: Any) -> dict[str, An
     return {"source": source, "target": target, "type": edge_type, **props}
 
 
+def _match_object_heading(line: str) -> tuple[str, str] | None:
+    if ". ." in line or "[page" in line.lower():
+        return None
+    match = OBJECT_HEADING.match(line)
+    if not match:
+        return None
+    if not match.group("section") and not match.group("kind"):
+        return None
+    name = match.group("name")
+    kind = "api_collection" if (match.group("kind") or "").lower() == "collection" else "api_object"
+    return name, kind
+
+
 def build_graph(text: str, *, source: str = "") -> dict[str, Any]:
     nodes: dict[str, dict[str, Any]] = {}
-    edges: list[dict[str, Any]] = []
+    edges: dict[tuple[Any, ...], dict[str, Any]] = {}
     current_object = ""
     current_section = ""
+    pending_property_access: dict[str, str] = {}
+
+    def add_node(node_id: str, node_type: str, name: str, **props: Any) -> None:
+        existing = nodes.get(node_id, {})
+        nodes[node_id] = {**node(node_id, node_type, name), **existing, **props}
+
+    def add_edge(source_id: str, target_id: str, edge_type: str, **props: Any) -> None:
+        key = (source_id, target_id, edge_type, tuple(sorted(props.items())))
+        edges[key] = edge(source_id, target_id, edge_type, **props)
+
+    def add_member(member_name: str, section: str, access: str = "") -> None:
+        if not current_object or member_name.lower() in SKIP_MEMBERS_LOWER:
+            return
+        obj_id = f"object:{current_object}"
+        if section == "methods":
+            mid = f"method:{current_object}.{member_name}"
+            add_node(mid, "api_method", member_name)
+            add_edge(obj_id, mid, "HAS_METHOD")
+        elif section == "properties":
+            normalized_access = access or pending_property_access.pop(member_name, "") or "read"
+            pid = f"property:{current_object}.{member_name}"
+            add_node(pid, "api_property", member_name, access=normalized_access)
+            add_edge(obj_id, pid, "HAS_PROPERTY", access=normalized_access)
+        elif section == "events":
+            eid = f"event:{current_object}.{member_name}"
+            add_node(eid, "api_event", member_name)
+            add_edge(obj_id, eid, "HAS_EVENT")
 
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line:
             continue
 
-        object_match = OBJECT_HEADING.match(line)
+        object_match = _match_object_heading(line)
         if object_match:
-            current_object = object_match.group(1) or object_match.group(2)
+            current_object, node_type = object_match
             current_section = ""
+            pending_property_access.clear()
             obj_id = f"object:{current_object}"
-            nodes[obj_id] = node(obj_id, "api_object", current_object)
+            add_node(obj_id, node_type, current_object)
             continue
 
         section_match = SECTION_HEADING.match(line)
         if section_match:
             current_section = (section_match.group(1) or section_match.group(2) or "").lower()
+            pending_property_access.clear()
             continue
+
+        if current_object:
+            for base_object in EXTENDS_LINE.findall(line):
+                base_id = f"object:{base_object}"
+                add_node(base_id, "api_object", base_object)
+                add_edge(f"object:{current_object}", base_id, "EXTENDS")
 
         if not current_object or current_section not in {"methods", "properties", "events"}:
             continue
 
-        member_match = MEMBER_LINE.match(line)
-        if not member_match:
-            continue
-        member_name = member_match.group(1)
-        access = (member_match.group(2) or "").lower().replace("-", "-")
-        if member_name in {"Public", "ByVal", "Function", "Sub", "Property"}:
+        property_title = PROPERTY_TITLE.match(line)
+        if property_title and current_section == "properties":
+            member_name = property_title.group(1)
+            access = property_title.group(2).lower()
+            pending_property_access[member_name] = access
+            add_member(member_name, "properties", access)
             continue
 
-        obj_id = f"object:{current_object}"
-        if current_section == "methods":
-            mid = f"method:{current_object}.{member_name}"
-            nodes[mid] = node(mid, "api_method", member_name)
-            edges.append(edge(obj_id, mid, "HAS_METHOD"))
-        elif current_section == "properties":
-            pid = f"property:{current_object}.{member_name}"
-            nodes[pid] = node(pid, "api_property", member_name, access=access or "read")
-            edges.append(edge(obj_id, pid, "HAS_PROPERTY", access=access or "read"))
-        elif current_section == "events":
-            eid = f"event:{current_object}.{member_name}"
-            nodes[eid] = node(eid, "api_event", member_name)
-            edges.append(edge(obj_id, eid, "HAS_EVENT"))
+        property_signature = PROPERTY_SIGNATURE.match(line)
+        if property_signature:
+            add_member(property_signature.group(1), "properties")
+            continue
+
+        method_signature = METHOD_SIGNATURE.match(line)
+        if method_signature:
+            add_member(method_signature.group(1), "methods")
+            continue
+
+        method_name = METHOD_NAME.match(line)
+        if method_name and current_section in {"methods", "events"}:
+            add_member(method_name.group(1), current_section)
 
     return {
         "version": "generated-review-required",
         "description": "Generated SAP GUI Scripting API graph. Review before runtime use.",
         "sources": [{"title": "SAP GUI Scripting API export", "url": source}] if source else [],
         "nodes": list(nodes.values()),
-        "edges": edges,
+        "edges": list(edges.values()),
     }
 
 
