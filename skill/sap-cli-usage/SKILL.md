@@ -17,6 +17,26 @@ description: SAP CLI 실제 사용법 스킬. sap connect/run/screen/set/fill/vk
 5. 조작 후 `sap status` / `sap_get_status`를 확인한다.
 6. 상태 type이 `E`면 즉시 중단하고 에러를 보고한다.
 
+## Claude/Codex/MCP daemon 기본 실행
+
+CLI와 MCP는 기본적으로 daemon 경유를 우선 사용한다. daemon이 없으면 자동 시작을
+시도하고, 실패하면 direct dispatch로 fallback한다.
+
+```powershell
+sap daemon status
+sap daemon stop
+sap daemon start
+```
+
+직접 실행으로 강제하려면 환경변수로 끈다.
+
+```powershell
+$env:SAP_CLI_USE_DAEMON = "0"
+```
+
+Claude/Codex MCP 설정에서 별도 env를 안 넣어도 daemon 기본값은 켜져 있다. 그래도
+명시하고 싶으면 `SAP_CLI_USE_DAEMON=1`, `SAP_CLI_DAEMON_AUTOSTART=1`을 넣는다.
+
 ## CLI 핵심 명령
 
 ```powershell

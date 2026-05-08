@@ -120,15 +120,24 @@ def _dispatch_local(cmd: str, args: dict, slot_id: str = "ses0") -> dict:
 
 def _run_command(cmd: str, args: dict, *, allow_daemon: bool = False, slot_id: str | None = None) -> None:
     effective_slot = slot_id or _global_slot_id
-    if allow_daemon and _try_daemon(cmd, args, slot_id=effective_slot):
+    if allow_daemon and _use_daemon_default() and _try_daemon(cmd, args, slot_id=effective_slot):
         return
     _output_json(_dispatch_local(cmd, args, slot_id=effective_slot))
+
+
+def _use_daemon_default() -> bool:
+    """Use daemon by default unless SAP_CLI_USE_DAEMON=0/false/no/off."""
+    raw = os.getenv("SAP_CLI_USE_DAEMON", "1").strip().lower()
+    return raw not in {"0", "false", "no", "off", "direct"}
 
 
 def _try_daemon(cmd: str, args: dict, slot_id: str = "ses0") -> bool:
     """데몬으로 명령 전송 시도. 성공하면 결과 출력 후 True 반환."""
     from . import daemon
     result = daemon.send_command(cmd, args, context={"slot_id": slot_id})
+    if result is None and os.getenv("SAP_CLI_DAEMON_AUTOSTART", "1").strip().lower() not in {"0", "false", "no", "off"}:
+        if daemon.start_daemon():
+            result = daemon.send_command(cmd, args, context={"slot_id": slot_id})
     if result is None:
         return False
     if result["ok"]:

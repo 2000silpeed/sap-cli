@@ -1331,9 +1331,9 @@ def _screen_summary_enabled() -> bool:
 
 
 def _use_daemon() -> bool:
-    """SAP_CLI_USE_DAEMON=1 이면 daemon 경유 모드."""
-    raw = os.getenv("SAP_CLI_USE_DAEMON", "0").strip().lower()
-    return raw in {"1", "true", "yes"}
+    """Use daemon by default unless SAP_CLI_USE_DAEMON=0/false/no/off."""
+    raw = os.getenv("SAP_CLI_USE_DAEMON", "1").strip().lower()
+    return raw not in {"0", "false", "no", "off", "direct"}
 
 
 _active_session_id: str | None = None

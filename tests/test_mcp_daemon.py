@@ -169,8 +169,8 @@ def _ensure_textcontent(monkeypatch):
 class TestMcpHandleToolDaemon:
     """handle_tool이 SAP_CLI_USE_DAEMON=1일 때 daemon으로 위임."""
 
-    def test_daemon_mode_delegates_to_daemon(self, monkeypatch):
-        monkeypatch.setenv("SAP_CLI_USE_DAEMON", "1")
+    def test_daemon_mode_delegates_to_daemon_by_default(self, monkeypatch):
+        monkeypatch.delenv("SAP_CLI_USE_DAEMON", raising=False)
         monkeypatch.setattr("sap_cli.mcp_server.load_policy", lambda: None)
 
         daemon_response = {"ok": True, "data": {"transaction": "MM03", "screen_number": 100}}

@@ -43,6 +43,14 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
 8. **재시도 전 transcript 검토**: 직전 실패/경고/승인요청이 있으면 `sap_transcript_query`와 `sap_transcript_plan`으로 먼저 검토한다
 9. **온톨로지와 transcript를 같이 본다**: 온톨로지는 일반 구조를, transcript는 직전 실행 사실을 보여주므로 둘 중 하나만 믿지 않는다
 
+## Daemon 기본 실행
+
+CLI/MCP는 기본적으로 daemon 경유를 우선 사용한다. daemon이 없으면 자동 시작하고,
+실패 시 direct dispatch로 fallback한다. 직접 실행을 강제해야 할 때만
+`SAP_CLI_USE_DAEMON=0`을 설정한다. Claude/Codex MCP에서는 별도 설정 없이 daemon
+기본값이 켜지며, 명시하려면 `SAP_CLI_USE_DAEMON=1`,
+`SAP_CLI_DAEMON_AUTOSTART=1`을 MCP env에 넣는다.
+
 ---
 
 ## MCP 도구 레퍼런스
