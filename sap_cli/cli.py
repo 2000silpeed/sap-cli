@@ -296,11 +296,13 @@ def scripting_query(
 @app.command("act")
 def ui_action(
     element_id: str = typer.Argument(help="대상 SAP GUI element ID"),
-    action: str = typer.Argument(help="액션 (set/select/press/focus/read/search_help/select_node/select_row 등)"),
+    action: str = typer.Argument(help="액션 (set/select/press/focus/read/read_table/read_cell/set_cell/search_help/select_node/select_row/doubleclick_cell 등)"),
     value: str | None = typer.Argument(None, help="액션 값 (필드값, 콤보값, node_key, row 등)"),
     node_key: str = typer.Option("", "--node-key", help="트리 node_key"),
-    column: str = typer.Option("", "--column", help="트리 press_node 컬럼"),
+    column: str = typer.Option("", "--column", help="트리 press_node 컬럼 또는 테이블 컬럼"),
     row: int | None = typer.Option(None, "--row", help="테이블 행 번호 (0-based)"),
+    max_rows: int = typer.Option(50, "--max-rows", help="read_table 최대 행 수"),
+    columns: str = typer.Option("", "--columns", help="read_table 컬럼 목록(쉼표 구분)"),
 ) -> None:
     """SAP GUI Scripting capability 기반 범용 UI 액션 실행."""
     params: dict[str, Any] = {
@@ -315,6 +317,10 @@ def ui_action(
         params["column"] = column
     if row is not None:
         params["row"] = row
+    if max_rows != 50:
+        params["max_rows"] = max_rows
+    if columns:
+        params["columns"] = columns
     _run_command("ui_action", params, allow_daemon=True)
 
 

@@ -57,6 +57,16 @@ COMPONENT_CAPABILITIES: dict[str, dict[str, Any]] = {
         "write": [],
         "actions": ["press", "focus"],
     },
+    "GuiGridView": {
+        "read": ["RowCount", "ColumnCount", "GetCellValue"],
+        "write": ["ModifyCell", "SelectedRows", "SetCurrentCell", "DoubleClickCurrentCell"],
+        "actions": ["read_table", "read_cell", "set_cell", "select_row", "doubleclick_cell", "focus"],
+    },
+    "GuiTableControl": {
+        "read": ["Rows", "Columns", "GetCell"],
+        "write": ["GetCell.Text", "GetAbsoluteRow.Selected", "DoubleClick"],
+        "actions": ["read_table", "read_cell", "set_cell", "select_row", "doubleclick_cell", "focus"],
+    },
     "GuiTab": {
         "read": ["Text"],
         "write": ["Select"],
@@ -79,8 +89,8 @@ COMPONENT_CAPABILITIES: dict[str, dict[str, Any]] = {
         "subtypes": {
             "GridView": {
                 "read": ["RowCount", "ColumnCount", "GetCellValue"],
-                "write": ["SelectedRows", "DoubleClickCurrentCell"],
-                "actions": ["read_table", "select_row", "doubleclick_cell"],
+                "write": ["ModifyCell", "SelectedRows", "SetCurrentCell", "DoubleClickCurrentCell"],
+                "actions": ["read_table", "read_cell", "set_cell", "select_row", "doubleclick_cell"],
             },
             "Tree": {
                 "read": ["GetAllNodeKeys", "GetNodeTextByKey"],
@@ -110,6 +120,23 @@ ACTION_ALIASES: dict[str, str] = {
     "tree-collapse": "collapse_node",
     "tree_doubleclick": "doubleclick_node",
     "tree-doubleclick": "doubleclick_node",
+    "table_read": "read_table",
+    "table-read": "read_table",
+    "tree_read": "read_tree",
+    "tree-read": "read_tree",
+    "cell_read": "read_cell",
+    "cell-read": "read_cell",
+    "read-cell": "read_cell",
+    "cell_set": "set_cell",
+    "cell-set": "set_cell",
+    "set-cell": "set_cell",
+    "table_set": "set_cell",
+    "table-set": "set_cell",
+    "cell_doubleclick": "doubleclick_cell",
+    "cell-doubleclick": "doubleclick_cell",
+    "doubleclick-cell": "doubleclick_cell",
+    "table_doubleclick": "doubleclick_cell",
+    "table-doubleclick": "doubleclick_cell",
 }
 
 
@@ -122,9 +149,6 @@ def normalize_action(action: str) -> str:
 def component_capability(component_type: str, subtype: str = "") -> dict[str, Any]:
     """Return static capability metadata for a component type/subtype."""
     graph_capability = get_default_graph().capability(component_type, subtype)
-    if graph_capability:
-        return graph_capability
-
     base = dict(COMPONENT_CAPABILITIES.get(component_type, {}))
     if subtype and isinstance(base.get("subtypes"), dict):
         subtype_meta = base["subtypes"].get(subtype)
@@ -132,7 +156,17 @@ def component_capability(component_type: str, subtype: str = "") -> dict[str, An
             merged = dict(base)
             merged.pop("subtypes", None)
             merged.update(subtype_meta)
-            return merged
+            base = merged
+
+    if graph_capability:
+        merged_capability = dict(graph_capability)
+        for key in ("read", "write", "methods", "collections", "actions"):
+            merged_capability[key] = sorted(set(graph_capability.get(key, [])) | set(base.get(key, [])))
+        notes = [*graph_capability.get("notes", []), *base.get("notes", [])]
+        if notes:
+            merged_capability["notes"] = notes
+        return merged_capability
+
     return base or {
         "read": [],
         "write": [],

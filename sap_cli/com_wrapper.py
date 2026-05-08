@@ -584,6 +584,8 @@ class SapGuiWrapper:
         node_key: str = "",
         column: str = "",
         row: int | None = None,
+        max_rows: int = 50,
+        columns: list[str] | None = None,
     ) -> dict[str, Any]:
         """Perform a generic UI action using live component capabilities.
 
@@ -614,6 +616,27 @@ class SapGuiWrapper:
         if normalized == "read":
             return {"read": True, **used, "field_info": self.get_field_info(element_id)}
 
+        if normalized == "read_table":
+            table = self.read_table(element_id, max_rows=max_rows, columns=columns)
+            return {"read_table": True, **used, "table": table.model_dump(mode="json")}
+
+        if normalized == "read_tree":
+            nodes = self.read_tree(element_id)
+            return {
+                "read_tree": True,
+                **used,
+                "nodes": [node.model_dump(mode="json") for node in nodes],
+                "count": len(nodes),
+            }
+
+        if normalized == "read_cell":
+            if row is None:
+                if value is None:
+                    raise SapGuiError("셀 읽기에는 row 또는 value(row)가 필요합니다.")
+                row = int(value)
+            cell_value = self.read_table_cell(element_id, row, column)
+            return {"read_cell": True, "row": row, "column": column, "value": cell_value, **used}
+
         if normalized in {"set", "select"}:
             if component_type == "GuiComboBox" or "/cmb" in element_id:
                 if value is None:
@@ -637,6 +660,14 @@ class SapGuiWrapper:
                 raise SapGuiError("필드 설정에는 value가 필요합니다.")
             self.set_field(element_id, value)
             return {"value_set": value, **used}
+
+        if normalized == "set_cell":
+            if row is None:
+                raise SapGuiError("셀 설정에는 row가 필요합니다.")
+            if value is None:
+                raise SapGuiError("셀 설정에는 value가 필요합니다.")
+            self.set_table_cell(element_id, row, column, value)
+            return {"cell_set": True, "row": row, "column": column, "value": value, **used}
 
         if normalized == "toggle":
             if component_type != "GuiCheckBox" and "/chk" not in element_id:
@@ -696,6 +727,14 @@ class SapGuiWrapper:
                 row = int(value)
             self.select_table_row(element_id, row)
             return {"selected": True, "row": row, **used}
+
+        if normalized == "doubleclick_cell":
+            if row is None:
+                if value is None:
+                    raise SapGuiError("테이블 셀 더블클릭에는 row 또는 value(row)가 필요합니다.")
+                row = int(value)
+            self.double_click_table_cell(element_id, row, column)
+            return {"double_clicked": True, "row": row, "column": column, **used}
 
         raise SapGuiError(
             f"지원하지 않는 UI action: {action} ({normalized}) for {component_type}"
@@ -2023,6 +2062,24 @@ class SapGuiWrapper:
                 cell.Text = value
         except Exception as e:
             raise SapGuiError(f"테이블 셀 설정 실패: {e}") from e
+
+    def read_table_cell(self, element_id: str, row: int, col: str) -> str:
+        """테이블/그리드 셀 값 읽기."""
+        try:
+            table = self.session.FindById(element_id)
+            ttype = str(table.Type)
+            if ttype == "GuiGridView" or (
+                ttype == "GuiShell" and self._safe_attr(table, "SubType", "") == "GridView"
+            ):
+                if not col:
+                    col = str(table.ColumnOrder(0))
+                return str(table.GetCellValue(row, col))
+            cell = table.GetCell(row, col)
+            return str(self._safe_attr(cell, "Text", ""))
+        except Exception as e:
+            raise SapGuiError(
+                f"테이블 셀 읽기 실패 [{element_id}, row={row}, col={col}]: {e}"
+            ) from e
 
     def select_table_row(self, element_id: str, row: int) -> None:
         """테이블에서 행 선택."""

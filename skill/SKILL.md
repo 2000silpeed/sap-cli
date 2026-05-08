@@ -149,6 +149,10 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
    sap_inspect_element(element_id="...")  # Type/SubType/capability/entries 확인
    sap_combo_entries(element_id="...")    # 콤보 entries 직접 조회
    sap_ui_action(element_id="...", action="set", value="...")  # live type 기반 실행
+   sap_ui_action(element_id="...", action="read_table", max_rows=20)
+   sap_ui_action(element_id="...", action="read_cell", row=0, column="MATNR")
+   sap_ui_action(element_id="...", action="set_cell", value="100-100", row=0, column="MATNR")
+   sap_ui_action(element_id="...", action="doubleclick_cell", row=0, column="MATNR")
 ```
 
 `sap_set_field`, `sap_press`, `sap_ui_action` 응답에는 `ontology_preflight`가

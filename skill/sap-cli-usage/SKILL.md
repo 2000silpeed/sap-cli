@@ -48,6 +48,10 @@ sap act "wnd[0]/usr/cmbLFART" set "Standard Delivery"
 sap act "wnd[0]/usr/chkSELECT" set true
 sap act "wnd[0]/usr/btnSAVE" press
 sap act "wnd[0]/usr/ctxtRMMG1-MATNR" search_help
+sap act "wnd[0]/usr/cntlGRID/shellcont/shell" read_table --max-rows 20
+sap act "wnd[0]/usr/cntlGRID/shellcont/shell" read_cell --row 0 --column MATNR
+sap act "wnd[0]/usr/cntlGRID/shellcont/shell" set_cell "100-100" --row 0 --column MATNR
+sap act "wnd[0]/usr/cntlGRID/shellcont/shell" doubleclick_cell --row 0 --column MATNR
 ```
 
 MCP:

@@ -219,8 +219,20 @@ def dispatch_ui_action(
         node_key=str(args.get("node_key", "")),
         column=str(args.get("column", "")),
         row=None if args.get("row") is None else int(args["row"]),
+        max_rows=int(args.get("max_rows", 50)),
+        columns=_normalize_columns(args.get("columns")),
     )
     return with_post_action(payload, sap, "ui_action", ctx)
+
+
+def _normalize_columns(value: Any) -> list[str] | None:
+    if value in (None, "", []):
+        return None
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(",") if part.strip()]
+    if isinstance(value, list):
+        return [str(part).strip() for part in value if str(part).strip()]
+    return [str(value)]
 
 
 def _safe_action_context(
