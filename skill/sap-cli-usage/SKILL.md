@@ -51,7 +51,11 @@ sap act "wnd[0]/usr/ctxtRMMG1-MATNR" search_help
 sap act "wnd[0]/usr/cntlGRID/shellcont/shell" read_table --max-rows 20
 sap act "wnd[0]/usr/cntlGRID/shellcont/shell" read_cell --row 0 --column MATNR
 sap act "wnd[0]/usr/cntlGRID/shellcont/shell" set_cell "100-100" --row 0 --column MATNR
+sap act "wnd[0]/usr/cntlGRID/shellcont/shell" click_cell --row 0 --column MATNR
 sap act "wnd[0]/usr/cntlGRID/shellcont/shell" doubleclick_cell --row 0 --column MATNR
+sap act "wnd[0]/usr/cntlGRID/shellcont/shell" context_menu_item "SORT_ASC" --row 0 --column MATNR
+sap act "wnd[0]/usr/cntlGRID/shellcont/shell" select_column --column MATNR
+sap act "wnd[0]/usr/cntlGRID/shellcont/shell" clear_selection
 ```
 
 MCP:

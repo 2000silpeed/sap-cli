@@ -24,7 +24,12 @@ class FakeGridView:
         }
         self.SelectedRows = ""
         self.current_cell = None
+        self.clicked = False
         self.double_clicked = False
+        self.context_opened = False
+        self.context_item = None
+        self.selected_columns = set()
+        self.selection_cleared = False
 
     def ColumnOrder(self, index: int) -> str:
         return ["MATNR", "MAKTX"][index]
@@ -43,6 +48,24 @@ class FakeGridView:
 
     def DoubleClickCurrentCell(self) -> None:
         self.double_clicked = True
+
+    def ClickCurrentCell(self) -> None:
+        self.clicked = True
+
+    def ContextMenu(self) -> None:
+        self.context_opened = True
+
+    def SelectContextMenuItem(self, item: str) -> None:
+        self.context_item = ("id", item)
+
+    def SelectColumn(self, column: str) -> None:
+        self.selected_columns.add(column)
+
+    def DeselectColumn(self, column: str) -> None:
+        self.selected_columns.discard(column)
+
+    def ClearSelection(self) -> None:
+        self.selection_cleared = True
 
 
 def _wrapper_with(element):
@@ -115,3 +138,54 @@ def test_ui_action_sets_selects_and_doubleclicks_grid_cell():
     assert doubleclick_result["double_clicked"] is True
     assert grid.current_cell == (1, "MATNR")
     assert grid.double_clicked is True
+
+
+def test_ui_action_handles_grid_context_menu_and_column_selection():
+    grid = FakeGridView()
+    wrapper = _wrapper_with(grid)
+
+    current = wrapper.perform_ui_action(
+        "wnd[0]/usr/cntlGRID/shellcont/shell",
+        "set_current_cell",
+        row=1,
+        column="MAKTX",
+    )
+    click = wrapper.perform_ui_action(
+        "wnd[0]/usr/cntlGRID/shellcont/shell",
+        "click_cell",
+        row=1,
+        column="MAKTX",
+    )
+    context = wrapper.perform_ui_action(
+        "wnd[0]/usr/cntlGRID/shellcont/shell",
+        "context_menu_item",
+        "SORT_ASC",
+        row=1,
+        column="MAKTX",
+    )
+    select_col = wrapper.perform_ui_action(
+        "wnd[0]/usr/cntlGRID/shellcont/shell",
+        "select_column",
+        column="MATNR",
+    )
+    deselect_col = wrapper.perform_ui_action(
+        "wnd[0]/usr/cntlGRID/shellcont/shell",
+        "deselect_column",
+        column="MATNR",
+    )
+    clear = wrapper.perform_ui_action(
+        "wnd[0]/usr/cntlGRID/shellcont/shell",
+        "clear_selection",
+    )
+
+    assert current["current_cell_set"] is True
+    assert click["clicked"] is True
+    assert grid.clicked is True
+    assert context["context_menu_item_selected"] == "SORT_ASC"
+    assert grid.context_opened is True
+    assert grid.context_item == ("id", "SORT_ASC")
+    assert select_col["column_selected"] == "MATNR"
+    assert deselect_col["column_deselected"] == "MATNR"
+    assert "MATNR" not in grid.selected_columns
+    assert clear["selection_cleared"] is True
+    assert grid.selection_cleared is True

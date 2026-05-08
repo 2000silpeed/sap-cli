@@ -143,7 +143,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "element_id": {"type": "string", "description": "대상 SAP GUI element ID"},
-                "action": {"type": "string", "description": "수행할 액션: set/select/press/focus/read/read_table/read_tree/read_cell/set_cell/search_help/select_node/expand_node/collapse_node/doubleclick_node/press_node/select_row/doubleclick_cell 등"},
+                "action": {"type": "string", "description": "수행할 액션: set/select/press/focus/read/read_table/read_tree/read_cell/set_cell/set_current_cell/click_cell/context_menu/context_menu_item/select_context_menu_item/select_column/deselect_column/clear_selection/search_help/select_node/expand_node/collapse_node/doubleclick_node/press_node/select_row/doubleclick_cell 등"},
                 "value": {"type": "string", "description": "액션 값. 필드/콤보 값, node_key, row 번호 등"},
                 "node_key": {"type": "string", "description": "트리 노드 key (트리 액션용)"},
                 "column": {"type": "string", "description": "트리 버튼/링크 컬럼 또는 테이블 컬럼"},

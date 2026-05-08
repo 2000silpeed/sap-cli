@@ -59,13 +59,26 @@ COMPONENT_CAPABILITIES: dict[str, dict[str, Any]] = {
     },
     "GuiGridView": {
         "read": ["RowCount", "ColumnCount", "GetCellValue"],
-        "write": ["ModifyCell", "SelectedRows", "SetCurrentCell", "DoubleClickCurrentCell"],
-        "actions": ["read_table", "read_cell", "set_cell", "select_row", "doubleclick_cell", "focus"],
+        "write": [
+            "ModifyCell", "SelectedRows", "SetCurrentCell", "ClickCurrentCell",
+            "DoubleClickCurrentCell", "ContextMenu", "SelectContextMenuItem",
+            "SelectColumn", "DeselectColumn", "ClearSelection",
+        ],
+        "actions": [
+            "read_table", "read_cell", "set_cell", "set_current_cell", "click_cell",
+            "select_row", "doubleclick_cell", "context_menu", "context_menu_item",
+            "select_context_menu_item", "select_column", "deselect_column",
+            "clear_selection", "focus",
+        ],
     },
     "GuiTableControl": {
         "read": ["Rows", "Columns", "GetCell"],
         "write": ["GetCell.Text", "GetAbsoluteRow.Selected", "DoubleClick"],
-        "actions": ["read_table", "read_cell", "set_cell", "select_row", "doubleclick_cell", "focus"],
+        "actions": [
+            "read_table", "read_cell", "set_cell", "set_current_cell", "click_cell",
+            "select_row", "doubleclick_cell", "context_menu", "context_menu_item",
+            "select_context_menu_item", "clear_selection", "focus",
+        ],
     },
     "GuiTab": {
         "read": ["Text"],
@@ -89,8 +102,17 @@ COMPONENT_CAPABILITIES: dict[str, dict[str, Any]] = {
         "subtypes": {
             "GridView": {
                 "read": ["RowCount", "ColumnCount", "GetCellValue"],
-                "write": ["ModifyCell", "SelectedRows", "SetCurrentCell", "DoubleClickCurrentCell"],
-                "actions": ["read_table", "read_cell", "set_cell", "select_row", "doubleclick_cell"],
+                "write": [
+                    "ModifyCell", "SelectedRows", "SetCurrentCell", "ClickCurrentCell",
+                    "DoubleClickCurrentCell", "ContextMenu", "SelectContextMenuItem",
+                    "SelectColumn", "DeselectColumn", "ClearSelection",
+                ],
+                "actions": [
+                    "read_table", "read_cell", "set_cell", "set_current_cell", "click_cell",
+                    "select_row", "doubleclick_cell", "context_menu", "context_menu_item",
+                    "select_context_menu_item", "select_column", "deselect_column",
+                    "clear_selection",
+                ],
             },
             "Tree": {
                 "read": ["GetAllNodeKeys", "GetNodeTextByKey"],
@@ -137,6 +159,29 @@ ACTION_ALIASES: dict[str, str] = {
     "doubleclick-cell": "doubleclick_cell",
     "table_doubleclick": "doubleclick_cell",
     "table-doubleclick": "doubleclick_cell",
+    "current_cell": "set_current_cell",
+    "current-cell": "set_current_cell",
+    "set-current-cell": "set_current_cell",
+    "cell_click": "click_cell",
+    "cell-click": "click_cell",
+    "click-cell": "click_cell",
+    "context": "context_menu",
+    "context-menu": "context_menu",
+    "context_menu_select": "context_menu_item",
+    "context-menu-select": "context_menu_item",
+    "context-menu-item": "context_menu_item",
+    "select_context": "select_context_menu_item",
+    "select-context": "select_context_menu_item",
+    "select-context-menu-item": "select_context_menu_item",
+    "column_select": "select_column",
+    "column-select": "select_column",
+    "select-column": "select_column",
+    "column_deselect": "deselect_column",
+    "column-deselect": "deselect_column",
+    "deselect-column": "deselect_column",
+    "clear-selection": "clear_selection",
+    "clear_table_selection": "clear_selection",
+    "clear-table-selection": "clear_selection",
 }
 
 

@@ -669,6 +669,53 @@ class SapGuiWrapper:
             self.set_table_cell(element_id, row, column, value)
             return {"cell_set": True, "row": row, "column": column, "value": value, **used}
 
+        if normalized == "set_current_cell":
+            if row is None:
+                if value is None:
+                    raise SapGuiError("현재 셀 설정에는 row 또는 value(row)가 필요합니다.")
+                row = int(value)
+            used_column = self.set_current_table_cell(element_id, row, column)
+            return {"current_cell_set": True, "row": row, "column": used_column, **used}
+
+        if normalized == "click_cell":
+            if row is None:
+                if value is None:
+                    raise SapGuiError("셀 클릭에는 row 또는 value(row)가 필요합니다.")
+                row = int(value)
+            used_column = self.click_table_cell(element_id, row, column)
+            return {"clicked": True, "row": row, "column": used_column, **used}
+
+        if normalized == "context_menu":
+            used_column = self.open_context_menu(element_id, row=row, col=column)
+            return {"context_menu": True, **({"row": row} if row is not None else {}), "column": used_column, **used}
+
+        if normalized in {"select_context_menu_item", "context_menu_item"}:
+            item = value or column
+            if not item:
+                raise SapGuiError("컨텍스트 메뉴 항목 선택에는 value 또는 column이 필요합니다.")
+            if normalized == "context_menu_item":
+                self.open_context_menu(element_id, row=row, col=column if column != item else "")
+            selected_by = self.select_context_menu_item(element_id, item)
+            return {"context_menu_item_selected": item, "selected_by": selected_by, **used}
+
+        if normalized == "select_column":
+            target_column = column or value or ""
+            if not target_column:
+                raise SapGuiError("컬럼 선택에는 column 또는 value가 필요합니다.")
+            self.select_table_column(element_id, target_column, selected=True)
+            return {"column_selected": target_column, **used}
+
+        if normalized == "deselect_column":
+            target_column = column or value or ""
+            if not target_column:
+                raise SapGuiError("컬럼 선택 해제에는 column 또는 value가 필요합니다.")
+            self.select_table_column(element_id, target_column, selected=False)
+            return {"column_deselected": target_column, **used}
+
+        if normalized == "clear_selection":
+            self.clear_table_selection(element_id)
+            return {"selection_cleared": True, **used}
+
         if normalized == "toggle":
             if component_type != "GuiCheckBox" and "/chk" not in element_id:
                 raise SapGuiError(f"toggle은 체크박스에만 사용할 수 있습니다: {component_type}")
@@ -2080,6 +2127,111 @@ class SapGuiWrapper:
             raise SapGuiError(
                 f"테이블 셀 읽기 실패 [{element_id}, row={row}, col={col}]: {e}"
             ) from e
+
+    def set_current_table_cell(self, element_id: str, row: int, col: str) -> str:
+        """테이블/그리드 현재 셀 지정."""
+        try:
+            table = self.session.FindById(element_id)
+            ttype = str(table.Type)
+            if ttype == "GuiGridView" or (
+                ttype == "GuiShell" and self._safe_attr(table, "SubType", "") == "GridView"
+            ):
+                if not col:
+                    col = str(table.ColumnOrder(0))
+                table.SetCurrentCell(row, col)
+                return col
+            table.GetAbsoluteRow(row).Selected = True
+            return col
+        except Exception as e:
+            raise SapGuiError(
+                f"현재 셀 설정 실패 [{element_id}, row={row}, col={col}]: {e}"
+            ) from e
+
+    def click_table_cell(self, element_id: str, row: int, col: str) -> str:
+        """테이블/그리드 셀 클릭."""
+        try:
+            table = self.session.FindById(element_id)
+            ttype = str(table.Type)
+            if ttype == "GuiGridView" or (
+                ttype == "GuiShell" and self._safe_attr(table, "SubType", "") == "GridView"
+            ):
+                col = self.set_current_table_cell(element_id, row, col)
+                if hasattr(table, "ClickCurrentCell"):
+                    table.ClickCurrentCell()
+                else:
+                    table.Click(row, col)
+                return col
+            table.Click(row, col)
+            return col
+        except Exception as e:
+            raise SapGuiError(
+                f"테이블 셀 클릭 실패 [{element_id}, row={row}, col={col}]: {e}"
+            ) from e
+
+    def open_context_menu(self, element_id: str, *, row: int | None = None, col: str = "") -> str:
+        """요소 또는 테이블 셀의 context menu 열기."""
+        try:
+            element = self.session.FindById(element_id)
+            used_col = col
+            if row is not None:
+                try:
+                    used_col = self.set_current_table_cell(element_id, row, col)
+                except Exception:
+                    used_col = col
+            for method in ("ContextMenu", "DefaultContextMenu"):
+                try:
+                    getattr(element, method)()
+                    return used_col
+                except Exception:
+                    continue
+            raise SapGuiError("ContextMenu/DefaultContextMenu 메서드를 찾을 수 없습니다.")
+        except SapGuiError:
+            raise
+        except Exception as e:
+            raise SapGuiError(f"컨텍스트 메뉴 열기 실패 [{element_id}]: {e}") from e
+
+    def select_context_menu_item(self, element_id: str, item: str) -> str:
+        """Context menu 항목 선택."""
+        try:
+            element = self.session.FindById(element_id)
+            attempts: list[tuple[str, Any]] = [
+                ("SelectContextMenuItem", item),
+                ("SelectContextMenuItemByText", item),
+            ]
+            try:
+                attempts.append(("SelectContextMenuItemByPosition", int(item)))
+            except ValueError:
+                pass
+            errors = []
+            for method, arg in attempts:
+                try:
+                    getattr(element, method)(arg)
+                    return method
+                except Exception as exc:
+                    errors.append(f"{method}: {exc}")
+            raise SapGuiError("; ".join(errors))
+        except SapGuiError:
+            raise
+        except Exception as e:
+            raise SapGuiError(f"컨텍스트 메뉴 항목 선택 실패 [{element_id}, item={item}]: {e}") from e
+
+    def select_table_column(self, element_id: str, col: str, *, selected: bool = True) -> None:
+        """테이블/그리드 컬럼 선택/해제."""
+        try:
+            table = self.session.FindById(element_id)
+            method = "SelectColumn" if selected else "DeselectColumn"
+            getattr(table, method)(col)
+        except Exception as e:
+            action = "선택" if selected else "선택 해제"
+            raise SapGuiError(f"테이블 컬럼 {action} 실패 [{element_id}, col={col}]: {e}") from e
+
+    def clear_table_selection(self, element_id: str) -> None:
+        """테이블/그리드 선택 초기화."""
+        try:
+            table = self.session.FindById(element_id)
+            table.ClearSelection()
+        except Exception as e:
+            raise SapGuiError(f"테이블 선택 초기화 실패 [{element_id}]: {e}") from e
 
     def select_table_row(self, element_id: str, row: int) -> None:
         """테이블에서 행 선택."""
