@@ -753,6 +753,27 @@ class SapGuiWrapper:
             self.send_vkey(16)
             return {"search_help": True, **used}
 
+        if normalized in {"scroll", "scroll_to", "scroll_to_row", "scroll_down", "scroll_up", "page_down", "page_up"}:
+            scroll_value = value or normalized
+            if row is not None and normalized in {"scroll", "scroll_to", "scroll_to_row"}:
+                scroll_value = str(row)
+            scroll_result = self.scroll_element(element_id, scroll_value, orientation=column or "vertical")
+            return {"scrolled": True, **scroll_result, **used}
+
+        if normalized == "append_text":
+            if value is None:
+                raise SapGuiError("append_text에는 value가 필요합니다.")
+            new_text = self.append_text(element_id, value)
+            return {"text_appended": True, "text": new_text, **used}
+
+        if normalized == "clear_text":
+            self.set_field(element_id, "")
+            return {"text_cleared": True, **used}
+
+        if normalized in {"maximize", "restore", "minimize", "close"}:
+            method = self.perform_window_action(element_id, normalized)
+            return {"window_action": normalized, "method": method, **used}
+
         if normalized == "select_node":
             key = node_key or value or ""
             if not key:
@@ -2253,6 +2274,102 @@ class SapGuiWrapper:
             table.ClearSelection()
         except Exception as e:
             raise SapGuiError(f"테이블 선택 초기화 실패 [{element_id}]: {e}") from e
+
+    def scroll_element(self, element_id: str, value: str, *, orientation: str = "vertical") -> dict[str, Any]:
+        """Scroll an element via FirstVisibleRow or scrollbar Position."""
+        try:
+            element = self.session.FindById(element_id)
+            normalized = value.strip().lower()
+            orientation = (orientation or "vertical").strip().lower()
+            current = self._scroll_current_position(element, orientation)
+            step = self._scroll_step(element, normalized)
+            if normalized in {"scroll_down", "down", "page_down", "pagedown", "+", "+1"}:
+                target = current + step
+            elif normalized in {"scroll_up", "up", "page_up", "pageup", "-", "-1"}:
+                target = max(0, current - step)
+            elif normalized.startswith(("+", "-")):
+                target = max(0, current + int(normalized))
+            else:
+                target = max(0, int(normalized))
+
+            self._set_scroll_position(element, target, orientation)
+            return {"orientation": orientation, "position": target, "previous_position": current}
+        except Exception as e:
+            raise SapGuiError(f"스크롤 실패 [{element_id}, value={value}, orientation={orientation}]: {e}") from e
+
+    def _scroll_current_position(self, element: Any, orientation: str) -> int:
+        if orientation.startswith("v"):
+            try:
+                return int(self._safe_attr(element, "FirstVisibleRow", 0))
+            except Exception:
+                pass
+        scrollbar = self._scrollbar(element, orientation)
+        if scrollbar is not None:
+            return int(self._safe_attr(scrollbar, "Position", 0))
+        return 0
+
+    def _scroll_step(self, element: Any, value: str) -> int:
+        if value in {"page_down", "pagedown", "page_up", "pageup"}:
+            try:
+                return max(1, int(self._safe_attr(element, "VisibleRowCount", 0)))
+            except Exception:
+                return 10
+        return 1
+
+    def _set_scroll_position(self, element: Any, target: int, orientation: str) -> None:
+        if orientation.startswith("v"):
+            try:
+                element.FirstVisibleRow = target
+                return
+            except Exception:
+                pass
+        scrollbar = self._scrollbar(element, orientation)
+        if scrollbar is None:
+            raise SapGuiError(f"{orientation} scrollbar를 찾을 수 없습니다.")
+        scrollbar.Position = target
+
+    @staticmethod
+    def _scrollbar(element: Any, orientation: str) -> Any | None:
+        names = (
+            ("VerticalScrollbar", "verticalScrollbar", "VScrollbar", "vScrollbar")
+            if orientation.startswith("v")
+            else ("HorizontalScrollbar", "horizontalScrollbar", "HScrollbar", "hScrollbar")
+        )
+        for name in names:
+            try:
+                return getattr(element, name)
+            except Exception:
+                continue
+        return None
+
+    def append_text(self, element_id: str, text: str) -> str:
+        """Append text to Text/TextEdit-like components."""
+        try:
+            element = self.session.FindById(element_id)
+            current = str(self._safe_attr(element, "Text", ""))
+            new_text = current + text
+            element.Text = new_text
+            return new_text
+        except Exception as e:
+            raise SapGuiError(f"텍스트 추가 실패 [{element_id}]: {e}") from e
+
+    def perform_window_action(self, element_id: str, action: str) -> str:
+        """Execute a basic GuiFrameWindow action."""
+        method_map = {
+            "maximize": ("Maximize",),
+            "restore": ("Restore",),
+            "minimize": ("Iconify", "Minimize"),
+            "close": ("Close",),
+        }
+        element = self.session.FindById(element_id)
+        errors = []
+        for method in method_map[action]:
+            try:
+                getattr(element, method)()
+                return method
+            except Exception as exc:
+                errors.append(f"{method}: {exc}")
+        raise SapGuiError("; ".join(errors))
 
     def press_toolbar_button(self, element_id: str, button_id: str) -> None:
         """ALV/Grid toolbar button 실행."""

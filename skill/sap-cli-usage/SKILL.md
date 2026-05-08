@@ -59,6 +59,10 @@ sap act "wnd[0]/usr/cntlGRID/shellcont/shell" clear_selection
 sap act "wnd[0]/usr/cntlGRID/shellcont/shell" press_toolbar_button "&SORT_ASC"
 sap act "wnd[0]/usr/cntlGRID/shellcont/shell" press_toolbar_context_button "&MB_EXPORT"
 sap act "wnd[0]/usr/cntlGRID/shellcont/shell" select_toolbar_menu_item "&XXL"
+sap act "wnd[0]/usr/cntlGRID/shellcont/shell" page_down
+sap act "wnd[0]/usr/cntlGRID/shellcont/shell" scroll 50
+sap act "wnd[0]/usr/cntlEDITOR/shell" append_text "추가 텍스트"
+sap act "wnd[0]" maximize
 ```
 
 MCP:

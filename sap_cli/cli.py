@@ -296,7 +296,7 @@ def scripting_query(
 @app.command("act")
 def ui_action(
     element_id: str = typer.Argument(help="대상 SAP GUI element ID"),
-    action: str = typer.Argument(help="액션 (set/select/press/focus/read/read_table/read_cell/set_cell/click_cell/context_menu/context_menu_item/select_column/press_toolbar_button/select_toolbar_menu_item/search_help/select_node/select_row/doubleclick_cell 등)"),
+    action: str = typer.Argument(help="액션 (set/select/press/focus/read/read_table/read_cell/set_cell/click_cell/context_menu/context_menu_item/select_column/press_toolbar_button/select_toolbar_menu_item/scroll/page_down/append_text/maximize/search_help/select_node/select_row/doubleclick_cell 등)"),
     value: str | None = typer.Argument(None, help="액션 값 (필드값, 콤보값, node_key, row 등)"),
     node_key: str = typer.Option("", "--node-key", help="트리 node_key"),
     column: str = typer.Option("", "--column", help="트리 press_node 컬럼 또는 테이블 컬럼"),

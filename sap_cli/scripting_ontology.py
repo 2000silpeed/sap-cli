@@ -57,6 +57,26 @@ COMPONENT_CAPABILITIES: dict[str, dict[str, Any]] = {
         "write": [],
         "actions": ["press", "focus"],
     },
+    "GuiTextedit": {
+        "read": ["Text"],
+        "write": ["Text"],
+        "actions": ["read", "set", "append_text", "clear_text", "focus"],
+    },
+    "GuiFrameWindow": {
+        "read": ["Text"],
+        "write": ["Maximize", "Restore", "Iconify", "Close"],
+        "actions": ["maximize", "restore", "minimize", "close", "focus"],
+    },
+    "GuiMainWindow": {
+        "read": ["Text"],
+        "write": ["Maximize", "Restore", "Iconify", "Close"],
+        "actions": ["maximize", "restore", "minimize", "close", "focus"],
+    },
+    "GuiModalWindow": {
+        "read": ["Text"],
+        "write": ["Close"],
+        "actions": ["close", "focus"],
+    },
     "GuiGridView": {
         "read": ["RowCount", "ColumnCount", "GetCellValue"],
         "write": [
@@ -70,7 +90,8 @@ COMPONENT_CAPABILITIES: dict[str, dict[str, Any]] = {
             "select_row", "doubleclick_cell", "context_menu", "context_menu_item",
             "select_context_menu_item", "select_column", "deselect_column",
             "clear_selection", "press_toolbar_button", "press_toolbar_context_button",
-            "select_toolbar_menu_item", "focus",
+            "select_toolbar_menu_item", "scroll", "scroll_to", "scroll_to_row", "scroll_down",
+            "scroll_up", "page_down", "page_up", "focus",
         ],
     },
     "GuiTableControl": {
@@ -115,7 +136,8 @@ COMPONENT_CAPABILITIES: dict[str, dict[str, Any]] = {
                     "select_row", "doubleclick_cell", "context_menu", "context_menu_item",
                     "select_context_menu_item", "select_column", "deselect_column",
                     "clear_selection", "press_toolbar_button", "press_toolbar_context_button",
-                    "select_toolbar_menu_item",
+                    "select_toolbar_menu_item", "scroll", "scroll_to", "scroll_to_row", "scroll_down",
+                    "scroll_up", "page_down", "page_up",
                 ],
             },
             "Tree": {
@@ -198,6 +220,26 @@ ACTION_ALIASES: dict[str, str] = {
     "toolbar-menu": "select_toolbar_menu_item",
     "toolbar-menu-item": "select_toolbar_menu_item",
     "select-toolbar-menu-item": "select_toolbar_menu_item",
+    "scroll-to": "scroll_to",
+    "scroll_to_position": "scroll_to",
+    "scroll-to-position": "scroll_to",
+    "scroll_to_row": "scroll_to_row",
+    "scroll-to-row": "scroll_to_row",
+    "scroll_down": "scroll_down",
+    "scroll-down": "scroll_down",
+    "scroll_up": "scroll_up",
+    "scroll-up": "scroll_up",
+    "page_down": "page_down",
+    "page-down": "page_down",
+    "pagedown": "page_down",
+    "page_up": "page_up",
+    "page-up": "page_up",
+    "pageup": "page_up",
+    "append-text": "append_text",
+    "clear-text": "clear_text",
+    "clear": "clear_text",
+    "max": "maximize",
+    "min": "minimize",
 }
 
 
