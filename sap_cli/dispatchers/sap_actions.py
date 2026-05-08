@@ -6,6 +6,7 @@ keeps facade routing and compatibility wrappers.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -221,6 +222,9 @@ def dispatch_ui_action(
         row=None if args.get("row") is None else int(args["row"]),
         max_rows=int(args.get("max_rows", 50)),
         columns=_normalize_columns(args.get("columns")),
+        method_args=_normalize_method_args(args.get("method_args") or args.get("args_json")),
+        property_name=str(args.get("property_name", "")),
+        property_value=args.get("property_value"),
     )
     return with_post_action(payload, sap, "ui_action", ctx)
 
@@ -233,6 +237,22 @@ def _normalize_columns(value: Any) -> list[str] | None:
     if isinstance(value, list):
         return [str(part).strip() for part in value if str(part).strip()]
     return [str(value)]
+
+
+def _normalize_method_args(value: Any) -> list[Any] | None:
+    if value in (None, "", []):
+        return None
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return [value]
+        if isinstance(parsed, list):
+            return parsed
+        return [parsed]
+    return [value]
 
 
 def _safe_action_context(

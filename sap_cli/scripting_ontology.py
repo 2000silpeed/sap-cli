@@ -91,7 +91,8 @@ COMPONENT_CAPABILITIES: dict[str, dict[str, Any]] = {
             "select_context_menu_item", "select_column", "deselect_column",
             "clear_selection", "press_toolbar_button", "press_toolbar_context_button",
             "select_toolbar_menu_item", "scroll", "scroll_to", "scroll_to_row", "scroll_down",
-            "scroll_up", "page_down", "page_up", "focus",
+            "scroll_up", "page_down", "page_up", "call_method", "get_property",
+            "set_property", "focus",
         ],
     },
     "GuiTableControl": {
@@ -137,7 +138,8 @@ COMPONENT_CAPABILITIES: dict[str, dict[str, Any]] = {
                     "select_context_menu_item", "select_column", "deselect_column",
                     "clear_selection", "press_toolbar_button", "press_toolbar_context_button",
                     "select_toolbar_menu_item", "scroll", "scroll_to", "scroll_to_row", "scroll_down",
-                    "scroll_up", "page_down", "page_up",
+                    "scroll_up", "page_down", "page_up", "call_method", "get_property",
+                    "set_property",
                 ],
             },
             "Tree": {
@@ -240,6 +242,13 @@ ACTION_ALIASES: dict[str, str] = {
     "clear": "clear_text",
     "max": "maximize",
     "min": "minimize",
+    "invoke": "call_method",
+    "call-method": "call_method",
+    "method": "call_method",
+    "get-prop": "get_property",
+    "get_property": "get_property",
+    "set-prop": "set_property",
+    "set_property": "set_property",
 }
 
 
@@ -273,6 +282,6 @@ def component_capability(component_type: str, subtype: str = "") -> dict[str, An
     return base or {
         "read": [],
         "write": [],
-        "actions": ["inspect", "focus"],
+        "actions": ["inspect", "focus", "call_method", "get_property", "set_property"],
         "notes": ["Unknown SAP GUI component type; inspect live properties before acting."],
     }

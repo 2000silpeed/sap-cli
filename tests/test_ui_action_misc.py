@@ -52,6 +52,18 @@ class FakeWindow:
         self.called.append("Iconify")
 
 
+class FakeGenericComponent:
+    Type = "GuiShell"
+    SubType = "Custom"
+    Name = "CUSTOM"
+
+    def __init__(self) -> None:
+        self.SomeProperty = "old"
+
+    def Echo(self, prefix: str, count: int) -> dict:
+        return {"prefix": prefix, "count": count}
+
+
 def _wrapper_with(element):
     with patch.object(SapGuiWrapper, "__init__", lambda self: None):
         wrapper = SapGuiWrapper()
@@ -112,3 +124,37 @@ def test_ui_action_performs_window_actions():
     assert restored["method"] == "Restore"
     assert minimized["method"] == "Iconify"
     assert window.called == ["Maximize", "Restore", "Iconify"]
+
+
+def test_ui_action_calls_explicit_method_and_get_sets_property():
+    component = FakeGenericComponent()
+    wrapper = _wrapper_with(component)
+
+    called = wrapper.perform_ui_action(
+        "wnd[0]/usr/custom",
+        "call_method",
+        "Echo",
+        method_args=["A", 3],
+    )
+    read_old = wrapper.perform_ui_action(
+        "wnd[0]/usr/custom",
+        "get_property",
+        property_name="SomeProperty",
+    )
+    written = wrapper.perform_ui_action(
+        "wnd[0]/usr/custom",
+        "set_property",
+        "new",
+        property_name="SomeProperty",
+    )
+    read_new = wrapper.perform_ui_action(
+        "wnd[0]/usr/custom",
+        "get_property",
+        property_name="SomeProperty",
+    )
+
+    assert called["method_called"] == "Echo"
+    assert called["result"] == {"prefix": "A", "count": 3}
+    assert read_old["value"] == "old"
+    assert written["property_set"] == "SomeProperty"
+    assert read_new["value"] == "new"

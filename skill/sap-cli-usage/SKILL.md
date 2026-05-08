@@ -63,6 +63,9 @@ sap act "wnd[0]/usr/cntlGRID/shellcont/shell" page_down
 sap act "wnd[0]/usr/cntlGRID/shellcont/shell" scroll 50
 sap act "wnd[0]/usr/cntlEDITOR/shell" append_text "추가 텍스트"
 sap act "wnd[0]" maximize
+sap act "wnd[0]/usr/cntlGRID/shellcont/shell" call_method "GetCellValue" --args-json "[0,\"MATNR\"]"
+sap act "wnd[0]/usr/cntlGRID/shellcont/shell" get_property --property-name RowCount
+sap act "wnd[0]/usr/cntlGRID/shellcont/shell" set_property 10 --property-name FirstVisibleRow
 ```
 
 MCP:

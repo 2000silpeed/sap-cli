@@ -164,6 +164,9 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
    sap_ui_action(element_id="...", action="scroll", value="50")
    sap_ui_action(element_id="...", action="append_text", value="추가 텍스트")
    sap_ui_action(element_id="wnd[0]", action="maximize")
+   sap_ui_action(element_id="...", action="call_method", value="GetCellValue", method_args=[0, "MATNR"])
+   sap_ui_action(element_id="...", action="get_property", property_name="RowCount")
+   sap_ui_action(element_id="...", action="set_property", value=10, property_name="FirstVisibleRow")
 ```
 
 `sap_set_field`, `sap_press`, `sap_ui_action` 응답에는 `ontology_preflight`가

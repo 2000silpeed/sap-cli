@@ -586,6 +586,9 @@ class SapGuiWrapper:
         row: int | None = None,
         max_rows: int = 50,
         columns: list[str] | None = None,
+        method_args: list[Any] | None = None,
+        property_name: str = "",
+        property_value: Any = None,
     ) -> dict[str, Any]:
         """Perform a generic UI action using live component capabilities.
 
@@ -773,6 +776,28 @@ class SapGuiWrapper:
         if normalized in {"maximize", "restore", "minimize", "close"}:
             method = self.perform_window_action(element_id, normalized)
             return {"window_action": normalized, "method": method, **used}
+
+        if normalized == "call_method":
+            method_name = value or column
+            if not method_name:
+                raise SapGuiError("call_method에는 value 또는 column(method name)이 필요합니다.")
+            result = self.call_component_method(element_id, method_name, method_args or [])
+            return {"method_called": method_name, "result": result, **used}
+
+        if normalized == "get_property":
+            prop = property_name or value or column
+            if not prop:
+                raise SapGuiError("get_property에는 property_name 또는 value가 필요합니다.")
+            result = self.get_component_property(element_id, prop)
+            return {"property": prop, "value": result, **used}
+
+        if normalized == "set_property":
+            prop = property_name or column
+            if not prop:
+                raise SapGuiError("set_property에는 property_name 또는 column이 필요합니다.")
+            prop_value = property_value if property_value is not None else value
+            self.set_component_property(element_id, prop, prop_value)
+            return {"property_set": prop, "value": self._json_safe(prop_value), **used}
 
         if normalized == "select_node":
             key = node_key or value or ""
@@ -2370,6 +2395,61 @@ class SapGuiWrapper:
             except Exception as exc:
                 errors.append(f"{method}: {exc}")
         raise SapGuiError("; ".join(errors))
+
+    def call_component_method(self, element_id: str, method_name: str, args: list[Any]) -> Any:
+        """Call an explicit public SAP GUI Scripting method on a live element."""
+        if method_name.startswith("_"):
+            raise SapGuiError("private/internal method names are not allowed")
+        try:
+            element = self.session.FindById(element_id)
+            method = getattr(element, method_name)
+            if not callable(method):
+                raise SapGuiError(f"{method_name} is not callable")
+            return self._json_safe(method(*args))
+        except SapGuiError:
+            raise
+        except Exception as e:
+            raise SapGuiError(
+                f"메서드 호출 실패 [{element_id}, method={method_name}, args={args}]: {e}"
+            ) from e
+
+    def get_component_property(self, element_id: str, property_name: str) -> Any:
+        """Read an explicit public SAP GUI Scripting property."""
+        if property_name.startswith("_"):
+            raise SapGuiError("private/internal property names are not allowed")
+        try:
+            element = self.session.FindById(element_id)
+            return self._json_safe(getattr(element, property_name))
+        except Exception as e:
+            raise SapGuiError(
+                f"속성 읽기 실패 [{element_id}, property={property_name}]: {e}"
+            ) from e
+
+    def set_component_property(self, element_id: str, property_name: str, value: Any) -> None:
+        """Set an explicit public SAP GUI Scripting property."""
+        if property_name.startswith("_"):
+            raise SapGuiError("private/internal property names are not allowed")
+        try:
+            element = self.session.FindById(element_id)
+            setattr(element, property_name, value)
+        except Exception as e:
+            raise SapGuiError(
+                f"속성 설정 실패 [{element_id}, property={property_name}, value={value}]: {e}"
+            ) from e
+
+    @classmethod
+    def _json_safe(cls, value: Any) -> Any:
+        """Best-effort JSON-safe conversion for COM return values."""
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, (list, tuple)):
+            return [cls._json_safe(item) for item in value]
+        if isinstance(value, dict):
+            return {str(key): cls._json_safe(item) for key, item in value.items()}
+        try:
+            return str(value)
+        except Exception:
+            return repr(value)
 
     def press_toolbar_button(self, element_id: str, button_id: str) -> None:
         """ALV/Grid toolbar button 실행."""
