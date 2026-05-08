@@ -37,6 +37,33 @@ class FakeEntries:
         return self._entries[index]
 
 
+class FakeOneBasedEntries:
+    def __init__(self, entries: list[FakeEntry]) -> None:
+        self._entries = entries
+
+    def Count(self) -> int:
+        return len(self._entries)
+
+    def Item(self, index: int) -> FakeEntry:
+        if index < 1 or index > len(self._entries):
+            raise IndexError(index)
+        return self._entries[index - 1]
+
+
+class FakeComboWithMethodEntries:
+    Type = "GuiComboBox"
+    Key = ""
+    Value = ""
+    Text = ""
+    Name = "LFART"
+
+    def Entries(self) -> FakeOneBasedEntries:
+        return FakeOneBasedEntries([
+            FakeEntry("A", "Alpha", 1),
+            FakeEntry("B", "Beta", 2),
+        ])
+
+
 class FakeTextField:
     Type = "GuiTextField"
 
@@ -99,6 +126,16 @@ def test_get_combo_entries():
     assert wrapper.get_combo_entries("wnd[0]/usr/cmbLFART") == [
         {"key": "LF", "value": "Standard Delivery", "pos": "1"},
         {"key": "NL", "value": "Normal Delivery", "pos": "2"},
+    ]
+
+
+def test_get_combo_entries_handles_method_and_one_based_collection():
+    combo = FakeComboWithMethodEntries()
+    wrapper = _wrapper_with(combo)
+
+    assert wrapper.get_combo_entries("wnd[0]/usr/cmbLFART") == [
+        {"key": "A", "value": "Alpha", "pos": "1"},
+        {"key": "B", "value": "Beta", "pos": "2"},
     ]
 
 

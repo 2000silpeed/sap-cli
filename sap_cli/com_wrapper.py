@@ -792,39 +792,94 @@ class SapGuiWrapper:
     @staticmethod
     def _get_combo_entries(element: Any) -> list[dict[str, Any]]:
         """Extract combo entries from SAP GUI's Entries collection if available."""
-        try:
-            entries = getattr(element, "Entries")
-        except Exception:
-            try:
-                entries = getattr(element, "entries")
-            except Exception:
-                return []
+        for entries in SapGuiWrapper._entries_collections(element):
+            result = SapGuiWrapper._collection_entries(entries)
+            if result:
+                return result
+        return []
 
-        count = SapGuiWrapper._collection_count(entries)
-        result: list[dict[str, Any]] = []
-        for i in range(count):
-            entry = SapGuiWrapper._collection_item(entries, i)
-            if entry is None:
+    @staticmethod
+    def _entries_collections(element: Any) -> list[Any]:
+        """Return possible Entries collection objects from SAP COM wrappers."""
+        candidates: list[Any] = []
+        for attr in ("Entries", "entries"):
+            try:
+                raw = getattr(element, attr)
+            except Exception:
                 continue
-            key = SapGuiWrapper._entry_attr(entry, "Key", "key")
-            value = SapGuiWrapper._entry_attr(entry, "Value", "value")
-            pos = SapGuiWrapper._entry_attr(entry, "Pos", "pos")
-            result.append(
-                {
-                    "key": key,
-                    "value": value,
-                    **({"pos": pos} if pos != "" else {}),
-                }
-            )
+            candidates.append(raw)
+            if callable(raw):
+                try:
+                    candidates.append(raw())
+                except Exception:
+                    pass
+        return candidates
+
+    @staticmethod
+    def _collection_entries(collection: Any) -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = []
+        seen: set[int] = set()
+        count = SapGuiWrapper._collection_count(collection)
+
+        index_ranges = []
+        if count > 0:
+            # SAP COM collections can appear as either 0-based or 1-based
+            # depending on the wrapper. Try both and de-duplicate by object id.
+            index_ranges.extend([range(count), range(1, count + 1)])
+
+        for index_range in index_ranges:
+            for i in index_range:
+                entry = SapGuiWrapper._collection_item(collection, i)
+                SapGuiWrapper._append_combo_entry(result, seen, entry)
+
+        if not result:
+            try:
+                for entry in collection:
+                    SapGuiWrapper._append_combo_entry(result, seen, entry)
+            except Exception:
+                pass
+
         return result
+
+    @staticmethod
+    def _append_combo_entry(
+        result: list[dict[str, Any]],
+        seen: set[int],
+        entry: Any | None,
+    ) -> None:
+        if entry is None:
+            return
+        marker = id(entry)
+        if marker in seen:
+            return
+        seen.add(marker)
+        key = SapGuiWrapper._entry_attr(entry, "Key", "key")
+        value = SapGuiWrapper._entry_attr(entry, "Value", "value")
+        pos = SapGuiWrapper._entry_attr(entry, "Pos", "pos")
+        if key == "" and value == "":
+            return
+        result.append(
+            {
+                "key": key,
+                "value": value,
+                **({"pos": pos} if pos != "" else {}),
+            }
+        )
 
     @staticmethod
     def _collection_count(collection: Any) -> int:
         for attr in ("Count", "count", "Length", "length"):
             try:
-                return int(getattr(collection, attr))
+                value = getattr(collection, attr)
+                if callable(value):
+                    value = value()
+                return int(value)
             except Exception:
                 continue
+        try:
+            return len(collection)
+        except Exception:
+            pass
         return 0
 
     @staticmethod
@@ -846,7 +901,10 @@ class SapGuiWrapper:
     def _entry_attr(entry: Any, *names: str) -> str:
         for name in names:
             try:
-                return str(getattr(entry, name))
+                value = getattr(entry, name)
+                if callable(value):
+                    value = value()
+                return str(value)
             except Exception:
                 continue
         return ""
