@@ -18,15 +18,8 @@ from sap_cli.mcp_server import TOOL_DEFINITIONS, _visible_tool_names_for_checker
 
 
 # Dispatcher 내부 기능이지만 MCP tool로 직접 노출하지 않는 명령.
-# - sap_capture / sap_capture_list: CLI/dispatcher 기반 화면 캡처 관리
-# - sap_ontology_ask: 자연어 질의용 내부 dispatcher 표면
-# - sap_ontology_rebuild: 로컬 ontology 재구성 관리 작업
-DISPATCHER_ONLY_TOOLS = {
-    "sap_capture",
-    "sap_capture_list",
-    "sap_ontology_ask",
-    "sap_ontology_rebuild",
-}
+# 현재는 CLI/daemon/session에서 가능한 주요 기능을 MCP에도 최대한 노출한다.
+DISPATCHER_ONLY_TOOLS: set[str] = set()
 
 # MCP에는 노출하지만 아직 별도 CLI subcommand를 만들지 않은 명령.
 # 대부분 agent/daemon/MCP 자동화 흐름에서 쓰는 write/admin 계열 recipe 관리와

@@ -101,6 +101,20 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_combo_entries",
+        "description": (
+            "GuiComboBox의 선택 가능한 Entries(key/value/pos)를 직접 조회합니다. "
+            "SAP COM의 Entries/Entries()/0-base/1-base 컬렉션 변형을 모두 시도합니다."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "element_id": {"type": "string", "description": "조회할 GuiComboBox element ID"},
+            },
+            "required": ["element_id"],
+        },
+    },
+    {
         "name": "sap_scripting_query",
         "description": (
             "프로젝트에 내장된 SAP GUI Scripting API 그래프 온톨로지를 조회합니다. "
@@ -432,6 +446,17 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_ontology_ask",
+        "description": "학습된 SAP 온톨로지에 자연어로 질문하고 그래프 기반 답변을 받습니다. 예: 'VA01이 뭐야?', 'MATNR 어디서 사용?'",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "온톨로지에 물어볼 자연어 질문"},
+            },
+            "required": ["question"],
+        },
+    },
+    {
         "name": "sap_ontology_relationships",
         "description": "크로스 트랜잭션 필드 관계를 조회합니다. 특정 필드(MATNR 등)가 어떤 트랜잭션/화면에서 쓰이는지 한번에 확인합니다.",
         "inputSchema": {
@@ -477,6 +502,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_ontology_rebuild",
+        "description": "온톨로지 전체 인덱스를 재구축합니다: field registry, field dependencies, document flow. 관리자 권한이 필요합니다.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "sap_transcript_query",
         "description": "기록된 transcript를 조회합니다. 최근 성공/실패/승인요청 흐름을 확인할 때 사용합니다.",
         "inputSchema": {
@@ -512,6 +542,27 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "name": "sap_learn",
         "description": "현재 SAP 화면을 스캔하여 온톨로지로 학습합니다. Tooltip, LeftLabel 등 SAP COM 속성에서 시맨틱 정보를 자동 추출합니다.",
         "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "sap_capture",
+        "description": "현재 SAP GUI 화면을 스크린샷으로 캡처하고 저장 경로를 반환합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "label": {"type": "string", "description": "스크린샷 라벨"},
+                "output": {"type": "string", "description": "저장 경로. 생략 시 자동 생성"},
+            },
+        },
+    },
+    {
+        "name": "sap_capture_list",
+        "description": "저장된 SAP GUI 스크린샷 목록을 조회합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tcode": {"type": "string", "description": "트랜잭션 코드 필터"},
+            },
+        },
     },
     {
         "name": "sap_annotate_field",

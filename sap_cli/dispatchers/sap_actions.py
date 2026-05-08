@@ -19,6 +19,7 @@ REPORT_EXECUTE_VKEY = 8
 SAP_ACTION_COMMANDS: frozenset[str] = frozenset(
     {
         "command",
+        "combo_entries",
         "get",
         "inspect",
         "press",
@@ -72,6 +73,8 @@ def dispatch_sap_action_command(
         return dispatch_ui_action(args, ctx, get_sap, with_post_action)
     if command == "get":
         return dispatch_get(args, ctx, get_sap)
+    if command == "combo_entries":
+        return dispatch_combo_entries(args, ctx, get_sap)
     if command == "press":
         return dispatch_press(args, ctx, get_sap, with_post_action)
     if command == "vkey":
@@ -250,6 +253,20 @@ def dispatch_get(args: dict[str, Any], ctx: Any, get_sap: Factory) -> Any:
     if len(element_ids) == 1:
         return sap.get_field_info(element_ids[0])
     return [sap.get_field_info(eid) for eid in element_ids]
+
+
+def dispatch_combo_entries(args: dict[str, Any], ctx: Any, get_sap: Factory) -> dict[str, Any]:
+    """Read combo box entries through the robust GuiComboBox Entries adapter."""
+    sap = get_sap(ctx.slot_id)
+    element_id = str(args["element_id"])
+    preflight = _safe_action_context(sap, element_id, "read")
+    entries = sap.get_combo_entries(element_id)
+    return {
+        "element_id": element_id,
+        "entries": entries,
+        "count": len(entries),
+        "ontology_preflight": preflight,
+    }
 
 
 def dispatch_press(

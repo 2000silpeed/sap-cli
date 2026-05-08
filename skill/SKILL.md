@@ -56,6 +56,7 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
 | `sap_screen` | 현재 화면 UI 구조 (JSON) | `fields_only=true`, `actions_only=true` |
 | `sap_inspect_element` | 단일 요소의 SAP GUI Scripting capability 검사 | `element_id` |
 | `sap_scripting_query` | SAP GUI Scripting API 그래프 subgraph 조회 | `component_type`, `intent`, `node_id` |
+| `sap_combo_entries` | GuiComboBox entries(key/value/pos) 직접 조회 | `element_id` |
 | `sap_ui_action` | Type/SubType 기반 범용 UI 액션 fallback | `element_id`, `action`, `value` |
 | `sap_run` | 트랜잭션 실행 | `tcode` (필수) |
 | `sap_set_field` | 필드 값 설정 (1개) | `element_id`, `value` (필수) |
@@ -146,6 +147,7 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
 4. 전용 도구가 없거나 컴포넌트 조작법이 애매하면:
    sap_scripting_query(component_type="GuiComboBox", intent="select", depth=2)
    sap_inspect_element(element_id="...")  # Type/SubType/capability/entries 확인
+   sap_combo_entries(element_id="...")    # 콤보 entries 직접 조회
    sap_ui_action(element_id="...", action="set", value="...")  # live type 기반 실행
 ```
 

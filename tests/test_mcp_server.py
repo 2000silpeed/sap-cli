@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from sap_cli.auth.policy import AgentPolicy, Policy, Relation, RelationBinding
-from sap_cli.mcp_server import get_visible_tool_names
+from sap_cli.dispatchers.registry import COMMAND_REGISTRY
+from sap_cli.mcp_server import TOOL_DEFINITIONS, get_visible_tool_names
 
 
 
@@ -34,6 +35,7 @@ def test_verifier_profile_gets_readonly_surface(monkeypatch):
     assert "sap_session" in names
     assert "sap_screen" in names
     assert "sap_modal" in names
+    assert "sap_combo_entries" in names
     assert "sap_get_status" in names
     assert "sap_transcript_query" in names
     assert "sap_transcript_plan" in names
@@ -41,6 +43,17 @@ def test_verifier_profile_gets_readonly_surface(monkeypatch):
     assert "sap_command" not in names
     assert "sap_set_field" not in names
     assert "sap_connect" not in names
+
+
+def test_mcp_tool_definitions_cover_exposed_registry():
+    defined = {definition["name"] for definition in TOOL_DEFINITIONS}
+    expected = {
+        command.tool_name
+        for command in COMMAND_REGISTRY.values()
+        if command.expose_mcp
+    }
+
+    assert expected - defined == set()
 
 
 

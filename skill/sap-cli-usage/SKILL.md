@@ -42,6 +42,7 @@ overlay 로드 여부를 확인한다.
 
 ```powershell
 sap inspect "wnd[0]/usr/cmbLFART"
+sap combo-entries "wnd[0]/usr/cmbLFART"
 sap scripting-query --type GuiComboBox --intent select --depth 2
 sap act "wnd[0]/usr/cmbLFART" set "Standard Delivery"
 sap act "wnd[0]/usr/chkSELECT" set true
@@ -53,6 +54,7 @@ MCP:
 
 ```python
 sap_inspect_element(element_id="wnd[0]/usr/cmbLFART")
+sap_combo_entries(element_id="wnd[0]/usr/cmbLFART")
 sap_scripting_query(component_type="GuiComboBox", intent="select", depth=2)
 sap_ui_action(element_id="wnd[0]/usr/cmbLFART", action="set", value="Standard Delivery")
 ```
@@ -96,6 +98,7 @@ intent/action 지도는 그대로 유지된다.
 
 ```powershell
 sap get "wnd[0]/usr/cmbLFART"
+sap combo-entries "wnd[0]/usr/cmbLFART"
 sap set "wnd[0]/usr/cmbLFART" "LF"
 sap set "wnd[0]/usr/cmbLFART" "Standard Delivery"
 sap act "wnd[0]/usr/cmbLFART" set "Standard Delivery"

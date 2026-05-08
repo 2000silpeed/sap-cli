@@ -265,6 +265,14 @@ def inspect_element(
     _run_command("inspect", {"element_id": element_id}, allow_daemon=True)
 
 
+@app.command("combo-entries")
+def combo_entries(
+    element_id: str = typer.Argument(help="조회할 GuiComboBox element ID"),
+) -> None:
+    """콤보박스 선택 가능 entries(key/value)를 조회."""
+    _run_command("combo_entries", {"element_id": element_id}, allow_daemon=True)
+
+
 @app.command("scripting-query")
 def scripting_query(
     component_type: str = typer.Option("", "--type", "-t", help="SAP GUI Scripting Type (예: GuiComboBox)"),

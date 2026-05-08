@@ -32,6 +32,7 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "inspect": CommandDef("sap_inspect_element", Permission.READ),
     "scripting_query": CommandDef("sap_scripting_query", Permission.READ),
     "ui_action": CommandDef("sap_ui_action", Permission.WRITE),
+    "combo_entries": CommandDef("sap_combo_entries", Permission.READ),
     "run": CommandDef("sap_run", Permission.EXECUTE),
     "set": CommandDef("sap_set_field", Permission.WRITE),
     "get": CommandDef("sap_get_field", Permission.READ),
@@ -72,7 +73,6 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "ontology_ask": CommandDef(
         "sap_ontology_ask",
         Permission.READ,
-        expose_mcp=False,
         category="ontology",
         risk_level="low",
     ),
@@ -83,21 +83,18 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "ontology_rebuild": CommandDef(
         "sap_ontology_rebuild",
         Permission.ADMIN,
-        expose_mcp=False,
         category="ontology",
         risk_level="high",
     ),
     "capture": CommandDef(
         "sap_capture",
         Permission.READ,
-        expose_mcp=False,
         category="capture",
         risk_level="low",
     ),
     "capture_list": CommandDef(
         "sap_capture_list",
         Permission.READ,
-        expose_mcp=False,
         category="capture",
         risk_level="low",
     ),
