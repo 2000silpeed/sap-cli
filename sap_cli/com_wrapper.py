@@ -716,6 +716,27 @@ class SapGuiWrapper:
             self.clear_table_selection(element_id)
             return {"selection_cleared": True, **used}
 
+        if normalized == "press_toolbar_button":
+            button_id = value or column
+            if not button_id:
+                raise SapGuiError("툴바 버튼 실행에는 value 또는 column(button id)이 필요합니다.")
+            self.press_toolbar_button(element_id, button_id)
+            return {"toolbar_button_pressed": button_id, **used}
+
+        if normalized == "press_toolbar_context_button":
+            button_id = value or column
+            if not button_id:
+                raise SapGuiError("툴바 context 버튼 실행에는 value 또는 column(button id)이 필요합니다.")
+            self.press_toolbar_context_button(element_id, button_id)
+            return {"toolbar_context_button_pressed": button_id, **used}
+
+        if normalized == "select_toolbar_menu_item":
+            item = value or column
+            if not item:
+                raise SapGuiError("툴바 메뉴 항목 선택에는 value 또는 column(item id/text)이 필요합니다.")
+            selected_by = self.select_toolbar_menu_item(element_id, item)
+            return {"toolbar_menu_item_selected": item, "selected_by": selected_by, **used}
+
         if normalized == "toggle":
             if component_type != "GuiCheckBox" and "/chk" not in element_id:
                 raise SapGuiError(f"toggle은 체크박스에만 사용할 수 있습니다: {component_type}")
@@ -2232,6 +2253,45 @@ class SapGuiWrapper:
             table.ClearSelection()
         except Exception as e:
             raise SapGuiError(f"테이블 선택 초기화 실패 [{element_id}]: {e}") from e
+
+    def press_toolbar_button(self, element_id: str, button_id: str) -> None:
+        """ALV/Grid toolbar button 실행."""
+        try:
+            element = self.session.FindById(element_id)
+            element.PressToolbarButton(button_id)
+        except Exception as e:
+            raise SapGuiError(
+                f"툴바 버튼 실행 실패 [{element_id}, button={button_id}]: {e}"
+            ) from e
+
+    def press_toolbar_context_button(self, element_id: str, button_id: str) -> None:
+        """ALV/Grid toolbar context button 실행."""
+        try:
+            element = self.session.FindById(element_id)
+            element.PressToolbarContextButton(button_id)
+        except Exception as e:
+            raise SapGuiError(
+                f"툴바 context 버튼 실행 실패 [{element_id}, button={button_id}]: {e}"
+            ) from e
+
+    def select_toolbar_menu_item(self, element_id: str, item: str) -> str:
+        """ALV/Grid toolbar menu 항목 선택."""
+        try:
+            element = self.session.FindById(element_id)
+            errors = []
+            for method in ("SelectToolbarMenuItem", "SelectToolbarMenuItemByText"):
+                try:
+                    getattr(element, method)(item)
+                    return method
+                except Exception as exc:
+                    errors.append(f"{method}: {exc}")
+            raise SapGuiError("; ".join(errors))
+        except SapGuiError:
+            raise
+        except Exception as e:
+            raise SapGuiError(
+                f"툴바 메뉴 항목 선택 실패 [{element_id}, item={item}]: {e}"
+            ) from e
 
     def select_table_row(self, element_id: str, row: int) -> None:
         """테이블에서 행 선택."""

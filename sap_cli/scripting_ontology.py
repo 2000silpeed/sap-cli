@@ -62,13 +62,15 @@ COMPONENT_CAPABILITIES: dict[str, dict[str, Any]] = {
         "write": [
             "ModifyCell", "SelectedRows", "SetCurrentCell", "ClickCurrentCell",
             "DoubleClickCurrentCell", "ContextMenu", "SelectContextMenuItem",
-            "SelectColumn", "DeselectColumn", "ClearSelection",
+            "SelectColumn", "DeselectColumn", "ClearSelection", "PressToolbarButton",
+            "PressToolbarContextButton", "SelectToolbarMenuItem",
         ],
         "actions": [
             "read_table", "read_cell", "set_cell", "set_current_cell", "click_cell",
             "select_row", "doubleclick_cell", "context_menu", "context_menu_item",
             "select_context_menu_item", "select_column", "deselect_column",
-            "clear_selection", "focus",
+            "clear_selection", "press_toolbar_button", "press_toolbar_context_button",
+            "select_toolbar_menu_item", "focus",
         ],
     },
     "GuiTableControl": {
@@ -105,13 +107,15 @@ COMPONENT_CAPABILITIES: dict[str, dict[str, Any]] = {
                 "write": [
                     "ModifyCell", "SelectedRows", "SetCurrentCell", "ClickCurrentCell",
                     "DoubleClickCurrentCell", "ContextMenu", "SelectContextMenuItem",
-                    "SelectColumn", "DeselectColumn", "ClearSelection",
+                    "SelectColumn", "DeselectColumn", "ClearSelection", "PressToolbarButton",
+                    "PressToolbarContextButton", "SelectToolbarMenuItem",
                 ],
                 "actions": [
                     "read_table", "read_cell", "set_cell", "set_current_cell", "click_cell",
                     "select_row", "doubleclick_cell", "context_menu", "context_menu_item",
                     "select_context_menu_item", "select_column", "deselect_column",
-                    "clear_selection",
+                    "clear_selection", "press_toolbar_button", "press_toolbar_context_button",
+                    "select_toolbar_menu_item",
                 ],
             },
             "Tree": {
@@ -182,6 +186,18 @@ ACTION_ALIASES: dict[str, str] = {
     "clear-selection": "clear_selection",
     "clear_table_selection": "clear_selection",
     "clear-table-selection": "clear_selection",
+    "toolbar_press": "press_toolbar_button",
+    "toolbar-press": "press_toolbar_button",
+    "press-toolbar": "press_toolbar_button",
+    "press-toolbar-button": "press_toolbar_button",
+    "toolbar_context": "press_toolbar_context_button",
+    "toolbar-context": "press_toolbar_context_button",
+    "press-toolbar-context": "press_toolbar_context_button",
+    "press-toolbar-context-button": "press_toolbar_context_button",
+    "toolbar_menu": "select_toolbar_menu_item",
+    "toolbar-menu": "select_toolbar_menu_item",
+    "toolbar-menu-item": "select_toolbar_menu_item",
+    "select-toolbar-menu-item": "select_toolbar_menu_item",
 }
 
 

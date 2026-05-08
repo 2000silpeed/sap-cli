@@ -56,6 +56,9 @@ sap act "wnd[0]/usr/cntlGRID/shellcont/shell" doubleclick_cell --row 0 --column 
 sap act "wnd[0]/usr/cntlGRID/shellcont/shell" context_menu_item "SORT_ASC" --row 0 --column MATNR
 sap act "wnd[0]/usr/cntlGRID/shellcont/shell" select_column --column MATNR
 sap act "wnd[0]/usr/cntlGRID/shellcont/shell" clear_selection
+sap act "wnd[0]/usr/cntlGRID/shellcont/shell" press_toolbar_button "&SORT_ASC"
+sap act "wnd[0]/usr/cntlGRID/shellcont/shell" press_toolbar_context_button "&MB_EXPORT"
+sap act "wnd[0]/usr/cntlGRID/shellcont/shell" select_toolbar_menu_item "&XXL"
 ```
 
 MCP:

@@ -157,6 +157,9 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
    sap_ui_action(element_id="...", action="context_menu_item", value="SORT_ASC", row=0, column="MATNR")
    sap_ui_action(element_id="...", action="select_column", column="MATNR")
    sap_ui_action(element_id="...", action="clear_selection")
+   sap_ui_action(element_id="...", action="press_toolbar_button", value="&SORT_ASC")
+   sap_ui_action(element_id="...", action="press_toolbar_context_button", value="&MB_EXPORT")
+   sap_ui_action(element_id="...", action="select_toolbar_menu_item", value="&XXL")
 ```
 
 `sap_set_field`, `sap_press`, `sap_ui_action` 응답에는 `ontology_preflight`가

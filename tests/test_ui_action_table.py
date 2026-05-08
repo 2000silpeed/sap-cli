@@ -30,6 +30,9 @@ class FakeGridView:
         self.context_item = None
         self.selected_columns = set()
         self.selection_cleared = False
+        self.toolbar_button = None
+        self.toolbar_context_button = None
+        self.toolbar_menu_item = None
 
     def ColumnOrder(self, index: int) -> str:
         return ["MATNR", "MAKTX"][index]
@@ -66,6 +69,15 @@ class FakeGridView:
 
     def ClearSelection(self) -> None:
         self.selection_cleared = True
+
+    def PressToolbarButton(self, button_id: str) -> None:
+        self.toolbar_button = button_id
+
+    def PressToolbarContextButton(self, button_id: str) -> None:
+        self.toolbar_context_button = button_id
+
+    def SelectToolbarMenuItem(self, item: str) -> None:
+        self.toolbar_menu_item = ("id", item)
 
 
 def _wrapper_with(element):
@@ -189,3 +201,32 @@ def test_ui_action_handles_grid_context_menu_and_column_selection():
     assert "MATNR" not in grid.selected_columns
     assert clear["selection_cleared"] is True
     assert grid.selection_cleared is True
+
+
+def test_ui_action_handles_grid_toolbar_buttons_and_menu_items():
+    grid = FakeGridView()
+    wrapper = _wrapper_with(grid)
+
+    press = wrapper.perform_ui_action(
+        "wnd[0]/usr/cntlGRID/shellcont/shell",
+        "press_toolbar_button",
+        "&SORT_ASC",
+    )
+    context_press = wrapper.perform_ui_action(
+        "wnd[0]/usr/cntlGRID/shellcont/shell",
+        "press_toolbar_context_button",
+        "&MB_EXPORT",
+    )
+    menu = wrapper.perform_ui_action(
+        "wnd[0]/usr/cntlGRID/shellcont/shell",
+        "select_toolbar_menu_item",
+        "&XXL",
+    )
+
+    assert press["toolbar_button_pressed"] == "&SORT_ASC"
+    assert context_press["toolbar_context_button_pressed"] == "&MB_EXPORT"
+    assert menu["toolbar_menu_item_selected"] == "&XXL"
+    assert menu["selected_by"] == "SelectToolbarMenuItem"
+    assert grid.toolbar_button == "&SORT_ASC"
+    assert grid.toolbar_context_button == "&MB_EXPORT"
+    assert grid.toolbar_menu_item == ("id", "&XXL")
