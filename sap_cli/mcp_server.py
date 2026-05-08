@@ -1212,6 +1212,34 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_session_excel",
+        "description": (
+            "Excel 파일 조작/준비/검증 단계를 현재 실행 세션에 간단 기록합니다. "
+            "SAP 작업 전후의 엑셀 열기, 값 입력, 필터, 복사/붙여넣기, export 확인 같은 "
+            "비SAP 단계를 recipe가 따라갈 수 있도록 step_kind=excel로 저장합니다."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "대상 세션 ID"},
+                "text": {"type": "string", "description": "엑셀 step 설명"},
+                "action": {"type": "string", "description": "open/read/write/filter/copy/paste/export/check 등"},
+                "workbook": {"type": "string", "description": "엑셀 파일 경로/이름"},
+                "sheet": {"type": "string", "description": "시트 이름"},
+                "range_ref": {"type": "string", "description": "셀/범위 예: A1, A1:D20"},
+                "value": {"type": "string", "description": "입력/확인할 값"},
+                "cli_invocation": {"type": "string", "description": "실제 실행할 외부 CLI/bash 원문"},
+                "raw_argv": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "cli_invocation의 argv 배열 표현",
+                },
+                "followable": {"type": "boolean", "description": "recipe가 따라야 하는 단계인지 여부 (기본 true)"},
+            },
+            "required": ["session_id", "text"],
+        },
+    },
+    {
         "name": "sap_session_list",
         "description": "기록된 AI 실행 세션 목록을 조회합니다.",
         "inputSchema": {

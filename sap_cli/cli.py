@@ -731,6 +731,53 @@ def session_mark_cmd(
     _output_json(result)
 
 
+@app.command("session-excel")
+def session_excel_cmd(
+    text: str = typer.Argument(help="엑셀 조작 step 설명"),
+    action: str = typer.Option("note", "--action", "-a", help="open/read/write/filter/copy/paste/export/check 등"),
+    workbook: Optional[str] = typer.Option(None, "--workbook", "-w", help="엑셀 파일 경로/이름"),
+    sheet: Optional[str] = typer.Option(None, "--sheet", "-s", help="시트 이름"),
+    range_ref: Optional[str] = typer.Option(None, "--range", "-r", help="셀/범위 예: A1, A1:D20"),
+    value: Optional[str] = typer.Option(None, "--value", "-v", help="입력/확인할 값"),
+    cli_invocation: Optional[str] = typer.Option(None, "--cli", help="실제 실행할 외부 CLI/bash 원문"),
+    raw_argv_json: Optional[str] = typer.Option(None, "--argv-json", help="raw argv JSON 배열"),
+    session_id: Optional[str] = typer.Option(None, "--session-id", help="대상 session_id. 생략하면 active session 사용"),
+    followable: bool = typer.Option(True, "--followable/--not-followable", help="recipe가 따라야 하는 단계인지 여부"),
+) -> None:
+    """Excel 조작/준비/검증 단계를 recipe용 세션 step으로 간단 기록."""
+    import json as _json
+
+    sid = session_id or _read_active_cli_session_id()
+    if not sid:
+        _handle_error(RuntimeError("active session이 없습니다. 먼저 sap session-start 를 실행하세요."))
+    raw_argv: list[str] = []
+    if raw_argv_json:
+        parsed = _json.loads(raw_argv_json)
+        if not isinstance(parsed, list):
+            _handle_error(ValueError("--argv-json은 JSON 배열이어야 합니다"))
+        raw_argv = [str(item) for item in parsed]
+    elif cli_invocation:
+        raw_argv = shlex.split(cli_invocation)
+    result = _dispatch_local(
+        "session_excel",
+        {
+            "session_id": sid,
+            "text": text,
+            "action": action,
+            "workbook": workbook,
+            "sheet": sheet,
+            "range_ref": range_ref,
+            "value": value,
+            "cli_invocation": cli_invocation or "",
+            "raw_argv": raw_argv,
+            "followable": followable,
+            "requires_sap": False,
+            "source": "cli",
+        },
+    )
+    _output_json(result)
+
+
 @app.command("session-end")
 def session_end_cmd(
     session_id: Optional[str] = typer.Argument(None, help="종료할 session_id. 생략하면 active session 사용"),

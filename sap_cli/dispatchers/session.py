@@ -27,6 +27,7 @@ SESSION_COMMANDS: frozenset[str] = frozenset(
         "session_candidates",
         "session_approve",
         "session_mark",
+        "session_excel",
     }
 )
 
@@ -39,6 +40,7 @@ SESSION_SKIP_COMMANDS: frozenset[str] = frozenset(
         "session_candidates",
         "session_approve",
         "session_mark",
+        "session_excel",
         "transcript_query",
         "transcript_plan",
         "ontology_query",
@@ -89,6 +91,8 @@ def dispatch_session_command(
         )
     if command == "session_mark":
         return dispatch_session_mark(args, ctx, get_session_store)
+    if command == "session_excel":
+        return dispatch_session_excel(args, ctx, get_session_store)
     raise ValueError(f"미구현 session 명령: {command}")
 
 
@@ -130,19 +134,23 @@ def dispatch_session_start(
     }
 
 
-def dispatch_session_mark(
+def _append_marker_step(
     args: dict[str, Any],
     ctx: Any,
     get_session_store: SessionStoreFactory,
+    *,
+    command: str,
+    tool_name: str,
+    default_kind: str,
+    extra_arguments: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Append an explicit followable/non-SAP marker step to a running session."""
     store = get_session_store()
     session_id = str(args.get("session_id") or getattr(ctx, "session_id", "") or "")
     if not session_id:
         return {"error": "session_id가 필요합니다"}
 
     text = str(args.get("text") or args.get("message") or "").strip()
-    step_kind = str(args.get("step_kind") or args.get("kind") or "note").strip() or "note"
+    step_kind = str(args.get("step_kind") or args.get("kind") or default_kind).strip() or default_kind
     followable = bool(args.get("followable", True))
     requires_sap = bool(args.get("requires_sap", False))
     cli_invocation = str(args.get("cli_invocation") or "").strip()
@@ -156,6 +164,8 @@ def dispatch_session_mark(
         "followable": followable,
         "requires_sap": requires_sap,
     }
+    if extra_arguments:
+        marker_args.update({k: v for k, v in extra_arguments.items() if v not in (None, "")})
     if cli_invocation:
         marker_args["cli_invocation"] = cli_invocation
     if raw_argv:
@@ -163,8 +173,8 @@ def dispatch_session_mark(
 
     step = store.add_step(
         session_id,
-        command="session_mark",
-        tool_name="sap_session_mark",
+        command=command,
+        tool_name=tool_name,
         arguments=marker_args,
         source=source,
         cli_invocation=cli_invocation,
@@ -182,6 +192,49 @@ def dispatch_session_mark(
         "marked": True,
         "step": step.model_dump(mode="json", exclude_none=True),
     }
+
+
+def dispatch_session_mark(
+    args: dict[str, Any],
+    ctx: Any,
+    get_session_store: SessionStoreFactory,
+) -> dict[str, Any]:
+    """Append an explicit followable/non-SAP marker step to a running session."""
+    return _append_marker_step(
+        args,
+        ctx,
+        get_session_store,
+        command="session_mark",
+        tool_name="sap_session_mark",
+        default_kind="note",
+    )
+
+
+def dispatch_session_excel(
+    args: dict[str, Any],
+    ctx: Any,
+    get_session_store: SessionStoreFactory,
+) -> dict[str, Any]:
+    """Append an Excel-related non-SAP step marker to a running session."""
+    extra = {
+        "excel_action": args.get("excel_action") or args.get("action"),
+        "workbook": args.get("workbook"),
+        "sheet": args.get("sheet"),
+        "range": args.get("range") or args.get("range_ref"),
+        "value": args.get("value"),
+    }
+    normalized = dict(args)
+    normalized.setdefault("step_kind", "excel")
+    normalized.setdefault("requires_sap", False)
+    return _append_marker_step(
+        normalized,
+        ctx,
+        get_session_store,
+        command="session_excel",
+        tool_name="sap_session_excel",
+        default_kind="excel",
+        extra_arguments=extra,
+    )
 
 
 def dispatch_session_end(

@@ -195,6 +195,35 @@ class TestSessionEndAutoSuggest:
         assert step.requires_sap is False
         assert step.cli_invocation == "pdftotext -v"
 
+    def test_session_excel_command_appends_excel_step(self, isolated_store: SessionStore):
+        session = isolated_store.create_session(user_request="엑셀 준비 후 SAP 실행", source="cli")
+
+        result = dispatch_command(
+            "session_excel",
+            {
+                "session_id": session.id,
+                "text": "업로드 대상 범위 확인",
+                "action": "check",
+                "workbook": "input.xlsx",
+                "sheet": "Sheet1",
+                "range_ref": "A1:D20",
+                "value": "MATNR 목록",
+                "followable": True,
+            },
+            DispatchContext(source="cli"),
+        )
+
+        assert result["marked"] is True
+        loaded = isolated_store.load(session.id)
+        assert loaded is not None
+        step = loaded.steps[0]
+        assert step.tool_name == "sap_session_excel"
+        assert step.step_kind == "excel"
+        assert step.requires_sap is False
+        assert step.arguments["excel_action"] == "check"
+        assert step.arguments["workbook"] == "input.xlsx"
+        assert step.arguments["range"] == "A1:D20"
+
 
 class TestRecipePending:
     def test_lists_unapproved_candidates(self, isolated_store: SessionStore):

@@ -90,9 +90,17 @@ sap session-mark "입력 CSV 생성" --kind bash --cli "python scripts/prepare_i
 sap session-mark "사용자 승인 확인 후 저장 진행" --kind manual --not-followable --no-requires-sap
 ```
 
+Excel 조작/검증은 shorthand로 더 간단히 남긴다.
+
+```powershell
+sap session-excel "업로드 대상 범위 확인" --action check --workbook input.xlsx --sheet Sheet1 --range A1:D20
+sap session-excel "MATNR 목록 붙여넣기" --action paste --workbook input.xlsx --sheet Upload --range A2:A100
+```
+
 운영 규칙:
 - recipe로 남길 작업은 `sap session-start` → 실제 `sap ...` bash 명령들 → `sap session-end` 순서로 수행한다.
 - SAP 외부 단계는 `sap session-mark`로 남겨 `step_kind`, `followable`, `requires_sap`를 명확히 표시한다.
+- Excel 단계는 `sap session-excel`로 남기면 `step_kind=excel`, `requires_sap=false`가 자동 지정된다.
 - `sap session-end` 응답의 `recipe_suggestion`이 나오면 `sap session-approve <session_id>`로 recipe 저장을 승인한다.
 - 이미 외부에서 세션 ID를 관리한다면 `SAP_CLI_SESSION_ID=<id>` 환경변수로도 CLI step 기록이 가능하다.
 

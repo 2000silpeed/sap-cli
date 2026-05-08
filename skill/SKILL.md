@@ -76,6 +76,7 @@ SAP 조작이 아니지만 recipe가 따라야 할 준비/검증/외부 CLI 단�
 ```powershell
 sap session-mark "입력 파일 생성" --kind bash --cli "python scripts/prepare_input.py" --no-requires-sap
 sap session-mark "사용자 승인 확인" --kind manual --not-followable --no-requires-sap
+sap session-excel "업로드 대상 범위 확인" --action check --workbook input.xlsx --sheet Sheet1 --range A1:D20
 ```
 
 ---
