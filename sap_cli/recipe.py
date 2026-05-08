@@ -215,37 +215,14 @@ class RecipeStore:
         return results
 
     def search(self, query: str, include_disabled: bool = False) -> list[Recipe]:
-        query_lower = query.lower()
-        query_words = query_lower.split()
-        results: list[tuple[int, Recipe]] = []
+        from .recipe_retrieval import hybrid_recipe_search
 
-        for path in self._dir.glob("*.json"):
-            r = self._safe_read(path)
-            if r is None:
-                continue
-            if r.disabled and not include_disabled:
-                continue
-
-            score = 0
-            desc_lower = r.description.lower()
-            ctx_lower = r.context.lower()
-            kw_lower = [k.lower() for k in r.keywords]
-
-            for word in query_words:
-                if any(word in k for k in kw_lower):
-                    score += 3
-                if word in desc_lower:
-                    score += 1
-                if word in ctx_lower:
-                    score += 2
-                if word in r.id.lower():
-                    score += 2
-
-            if score > 0:
-                results.append((score, r))
-
-        results.sort(key=lambda x: (-x[0], -efficiency_score(x[1]), -x[1].success_count))
-        return [r for _, r in results]
+        results = hybrid_recipe_search(
+            self._load_all(),
+            keywords=query,
+            include_disabled=include_disabled,
+        )
+        return [result.recipe for result in results]
 
     def increment_success(self, recipe_id: str) -> None:
         recipe = self.load(recipe_id)
@@ -505,44 +482,32 @@ class RecipeStore:
         tcode: str | None = None,
         keywords: str | None = None,
         include_disabled: bool = False,
-    ) -> list[tuple[int, Recipe]]:
-        """tcode + 키워드 통합 검색. (score, Recipe) 반환."""
-        all_recipes = self._load_all()
-        results: list[tuple[int, Recipe]] = []
-        tcode_upper = tcode.upper() if tcode else None
-        kw_words = keywords.lower().split() if keywords else []
+    ) -> list[tuple[float, Recipe]]:
+        """tcode + 키워드 하이브리드 검색. (score, Recipe) 반환."""
+        return [
+            (result.final_score, result.recipe)
+            for result in self.query_for_ai_detailed(
+                tcode=tcode,
+                keywords=keywords,
+                include_disabled=include_disabled,
+            )
+        ]
 
-        for r in all_recipes:
-            if r.disabled and not include_disabled:
-                continue
-            score = 0
-            if tcode_upper:
-                for s in r.steps:
-                    if s.tool in ("sap_run", "sap_command"):
-                        val = str(s.args.get("tcode", s.args.get("cmd", ""))).upper()
-                        if tcode_upper in val:
-                            score += 5
-                            break
-                if tcode_upper in r.id.upper():
-                    score += 3
+    def query_for_ai_detailed(
+        self,
+        tcode: str | None = None,
+        keywords: str | None = None,
+        include_disabled: bool = False,
+    ):
+        """tcode + 키워드 하이브리드 검색 상세 결과."""
+        from .recipe_retrieval import hybrid_recipe_search
 
-            if kw_words:
-                desc_lower = r.description.lower()
-                ctx_lower = r.context.lower()
-                kw_lower = [k.lower() for k in r.keywords]
-                for word in kw_words:
-                    if any(word in k for k in kw_lower):
-                        score += 3
-                    if word in desc_lower:
-                        score += 1
-                    if word in ctx_lower:
-                        score += 2
-
-            if score > 0:
-                results.append((score, r))
-
-        results.sort(key=lambda x: (-x[0], -efficiency_score(x[1]), -x[1].success_count))
-        return results
+        return hybrid_recipe_search(
+            self._load_all(),
+            tcode=tcode,
+            keywords=keywords,
+            include_disabled=include_disabled,
+        )
 
     def _load_all(self) -> list[Recipe]:
         recipes = []

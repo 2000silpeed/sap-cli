@@ -130,6 +130,48 @@ class TestQueryForAi:
         results = store.query_for_ai(keywords="shipping point")
         assert len(results) == 1
 
+    def test_hybrid_search_matches_excel_marker_step(self, store: RecipeStore):
+        r1 = _make_recipe(
+            "excel_upload_recipe",
+            description="SAP 업로드 전 엑셀 준비",
+            keywords=["업로드"],
+            extra_steps=[
+                RecipeStep(
+                    tool="sap_session_excel",
+                    args={
+                        "excel_action": "check",
+                        "workbook": "input.xlsx",
+                        "sheet": "Upload",
+                        "range": "A1:D20",
+                    },
+                    hint="업로드 대상 범위 확인",
+                    step_kind="excel",
+                    requires_sap=False,
+                ),
+                RecipeStep(tool="sap_run", args={"tcode": "MM03"}, hint="SAP 조회"),
+            ],
+        )
+        r2 = _make_recipe("plain_sap_recipe", tcode="VA01", description="일반 SAP 수주 생성")
+        store.save(r1)
+        store.save(r2)
+
+        results = store.query_for_ai(keywords="엑셀 업로드 범위")
+
+        assert results
+        assert results[0][1].id == "excel_upload_recipe"
+
+    def test_query_for_ai_detailed_exposes_hybrid_scores(self, store: RecipeStore):
+        r1 = _make_recipe("VA01_recipe", tcode="VA01", description="수주 생성")
+        store.save(r1)
+
+        results = store.query_for_ai_detailed(tcode="VA01")
+
+        assert len(results) == 1
+        meta = results[0].metadata()
+        assert meta["mode"] == "hybrid_bm25"
+        assert "bm25" in meta["match_reasons"]
+        assert meta["tcode_score"] == 1.0
+
 
 # ---------------------------------------------------------------
 # _dispatch_recipe_query

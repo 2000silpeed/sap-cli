@@ -1023,7 +1023,9 @@ def dispatch_recipe_query(
     if not tcode and not keywords:
         raise ValueError("tcode 또는 keywords 중 하나는 필수입니다.")
 
-    scored = store.query_for_ai(tcode=tcode, keywords=keywords)
+    detailed_results = store.query_for_ai_detailed(tcode=tcode, keywords=keywords)
+    scored = [(result.final_score, result.recipe) for result in detailed_results]
+    retrieval_by_id = {result.recipe.id: result.metadata() for result in detailed_results}
     if not scored:
         return {
             "tcode": tcode,
@@ -1031,6 +1033,7 @@ def dispatch_recipe_query(
             "count": 0,
             "recipes": [],
             "hint": "일치하는 레시피가 없습니다. 직접 트랜잭션을 탐색하세요.",
+            "retrieval_mode": "hybrid_bm25",
         }
 
     if len(scored) == 1:
@@ -1040,12 +1043,15 @@ def dispatch_recipe_query(
             "keywords": keywords,
             "count": 1,
             "exact_match": True,
+            "retrieval_mode": "hybrid_bm25",
             "recipe_id": r.id,
             "description": r.description,
             "context": r.context,
             "success_count": r.success_count,
             "quality_score": efficiency_score(r),
             "replay_quality": replay_quality_summary(r),
+            "relevance_score": _score,
+            "retrieval": retrieval_by_id.get(r.id, {}),
             "execution_plan": _execution_plan(r),
             "instruction": (
                 f"레시피 '{r.id}'가 검색되었습니다. "
@@ -1067,12 +1073,14 @@ def dispatch_recipe_query(
             "quality_score": efficiency_score(r),
             "replay_quality": replay_quality_summary(r),
             "relevance_score": score,
+            "retrieval": retrieval_by_id.get(r.id, {}),
         })
     return {
         "tcode": tcode,
         "keywords": keywords,
         "count": len(recipes),
         "exact_match": False,
+        "retrieval_mode": "hybrid_bm25",
         "recipes": recipes,
         "hint": (
             "여러 레시피가 검색되었습니다. description과 context를 비교하여 "

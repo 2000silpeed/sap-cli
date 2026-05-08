@@ -42,6 +42,7 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
 7. **화면 전환 후 재확인**: 버튼/VKey 실행 후 모든 UI 요소 참조가 무효화되므로, 반드시 `sap_screen`으로 새 화면을 다시 읽는다
 8. **재시도 전 transcript 검토**: 직전 실패/경고/승인요청이 있으면 `sap_transcript_query`와 `sap_transcript_plan`으로 먼저 검토한다
 9. **온톨로지와 transcript를 같이 본다**: 온톨로지는 일반 구조를, transcript는 직전 실행 사실을 보여주므로 둘 중 하나만 믿지 않는다
+10. **직접 탐색 전 recipe RAG 검색**: 유사 작업은 `sap_recipe_query`로 먼저 검색한다. 검색은 BM25 + semantic overlap + tcode/step_kind boost + 품질점수 기반 hybrid reranking이며, `retrieval.match_reasons`를 보고 선택한다
 
 ## Daemon 기본 실행
 

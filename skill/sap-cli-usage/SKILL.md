@@ -56,6 +56,20 @@ sap vkey 0
 sap status
 ```
 
+## 레시피 RAG 검색
+
+직접 화면을 탐색하기 전에 기존 recipe를 먼저 찾는다. `sap recipe-query`는
+BM25 lexical search, lightweight semantic overlap, tcode/step_kind boost,
+recipe quality score를 섞어 hybrid reranking한다.
+
+```powershell
+sap recipe-query --tcode MM03 --keywords "엑셀 업로드 자재 조회"
+sap recipe-query --keywords "shipping point 설정"
+```
+
+응답의 `retrieval.match_reasons`, `retrieval.matched_snippets`,
+`relevance_score`, `quality_score`를 같이 보고 가장 맞는 recipe를 선택한다.
+
 ## CLI/bash 실행을 레시피로 기록
 
 bash에서 직접 실행한 `sap ...` 명령을 재사용 가능한 recipe 후보로 남기려면

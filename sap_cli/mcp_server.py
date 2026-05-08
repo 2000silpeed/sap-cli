@@ -912,9 +912,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "name": "sap_recipe_query",
         "description": (
             "트랜잭션 코드와/또는 키워드로 레시피를 통합 검색합니다. "
-            "sap_recipe_search보다 정밀한 검색으로, tcode 기반 매칭과 키워드 매칭을 함께 수행합니다. "
+            "BM25 lexical search, lightweight semantic overlap, tcode/step_kind boost, recipe quality score를 "
+            "섞은 hybrid reranking으로 sap_recipe_search보다 정밀하게 검색합니다. "
             "사용자의 SAP 작업 요청을 받았을 때, 직접 탐색 전에 이 도구로 기존 레시피를 먼저 확인하세요. "
-            "결과가 1개면 execution_plan이 바로 포함됩니다. "
+            "결과에는 retrieval 점수와 match_reasons가 포함되며, 결과가 1개면 execution_plan이 바로 포함됩니다. "
             "여러 개면 context를 비교하여 sap_recipe_show로 상세 조회하세요."
         ),
         "inputSchema": {

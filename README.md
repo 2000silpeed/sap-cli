@@ -375,6 +375,9 @@ sap recipe-search "가격결정"
 # tcode/키워드 기반 통합 검색
 sap recipe-query --tcode SPRO --keywords "가격결정"
 
+# recipe-query는 BM25 + semantic overlap + tcode/step_kind boost + 품질점수로 hybrid reranking합니다.
+# 응답의 retrieval.match_reasons / matched_snippets로 왜 매칭됐는지 확인할 수 있습니다.
+
 # 특정 레시피 상세 실행 계획 조회
 sap recipe-show "spro-pricing-condition"
 
