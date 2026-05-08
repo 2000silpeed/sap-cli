@@ -32,6 +32,8 @@ def test_default_graph_lists_api_objects_when_no_query():
 
     assert any(node["id"] == "object:GuiSession" for node in result["nodes"])
     assert any(node["id"] == "intent:set" for node in result["nodes"])
+    assert result["runtime"]["nodes_total"] >= len(result["nodes"])
+    assert "generated_overlay_loaded" in result["runtime"]
 
 
 def test_build_graph_parses_numbered_pdf_headings_and_signatures():
@@ -100,6 +102,7 @@ def test_merge_graph_data_preserves_seed_and_adds_generated_members():
     edge_tuples = {(edge["source"], edge["target"], edge["type"]) for edge in merged["edges"]}
 
     assert nodes["object:GuiComboBox"]["curated"] is True
+    assert merged["runtime"]["generated_overlay_loaded"] is True
     assert "property:GuiComboBox.Value" in nodes
     assert ("object:GuiComboBox", "intent:select", "SUPPORTS_ACTION") in edge_tuples
     assert ("object:GuiComboBox", "property:GuiComboBox.Value", "HAS_PROPERTY") in edge_tuples

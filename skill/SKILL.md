@@ -165,7 +165,11 @@ python scripts/build_sap_scripting_graph.py `
 
 생성 후 `sap_scripting_query(component_type="GuiGridView", depth=1)`처럼
 공식 API 객체/속성/메서드를 조회한다. PDF URL 입력에는 로컬
-`pdftotext`/poppler가 필요하다.
+`pdftotext`/poppler가 필요하다. 조회 결과에서
+`runtime.generated_overlay_loaded=true`, `runtime.nodes_total>=1000`이면 전체
+overlay가 로드된 것이다. `false`면 `graph.generated.json`이 없거나 현재 실행 중인
+`sap` CLI가 다른 설치 경로를 보고 있으므로 프로젝트 루트에서
+`python -m pip install -e .`로 editable 재설치 후 확인한다.
 
 ### 패턴 3: 저장 흐름
 

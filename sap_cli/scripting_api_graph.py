@@ -59,6 +59,7 @@ def merge_graph_data(*graphs: dict[str, Any]) -> dict[str, Any]:
     return {
         "version": "+".join(dict.fromkeys(versions)),
         "description": "Merged SAP GUI Scripting API graph.",
+        "runtime": {"generated_overlay_loaded": len([graph for graph in graphs if graph]) > 1},
         "sources": list(sources_by_key.values()),
         "nodes": list(node_by_id.values()),
         "edges": list(edge_by_key.values()),
@@ -118,9 +119,27 @@ class ScriptingApiGraph:
             edge for edge in self.edges
             if edge["source"] in visited and edge["target"] in visited
         ]
+        runtime = {
+            "nodes_total": len(self.nodes),
+            "edges_total": len(self.edges),
+            "generated_overlay_path": str(DEFAULT_GENERATED_GRAPH_PATH),
+            "generated_overlay_exists": DEFAULT_GENERATED_GRAPH_PATH.exists(),
+            "generated_overlay_loaded": bool(
+                self.data.get("runtime", {}).get("generated_overlay_loaded", False)
+            ),
+        }
+        warnings = []
+        if not runtime["generated_overlay_loaded"]:
+            warnings.append(
+                "graph.generated.json is not loaded; only the curated seed graph is available. "
+                "Generate sap_cli/ontology/knowledge/scripting_api/graph.generated.json from the official SAP PDF "
+                "to query the full API overlay."
+            )
         return {
             "version": self.data.get("version", ""),
             "sources": self.data.get("sources", []),
+            "runtime": runtime,
+            "warnings": warnings,
             "query": {
                 "node_id": node_id,
                 "component_type": component_type,

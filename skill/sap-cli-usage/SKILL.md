@@ -73,6 +73,16 @@ sap scripting-query --type GuiTree --depth 1
 sap scripting-query --type GuiComboBox --intent select --depth 2
 ```
 
+조회 결과의 `runtime.generated_overlay_loaded`가 `true`이고
+`runtime.nodes_total`이 1000개 이상이면 전체 overlay가 로드된 것이다. `false`면
+`graph.generated.json`이 없거나, 현재 실행 중인 `sap` CLI가 다른 설치 경로를 보고
+있는 것이다. 이 경우 프로젝트 루트에서 editable 재설치 후 다시 확인한다.
+
+```powershell
+python -m pip install -e .
+sap scripting-query --type GuiGridView --depth 1
+```
+
 PDF URL 입력에는 로컬 `pdftotext`/poppler가 필요하다. `graph.generated.json`은
 공식 문서에서 자동 추출된 overlay이고, 기존 `graph.json`의 curated
 intent/action 지도는 그대로 유지된다.
