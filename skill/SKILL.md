@@ -70,6 +70,13 @@ sap session-end --outcome success --summary "성공"
 `sap session-start` 이후의 CLI step은 active session에 자동 기록되고, recipe step에는
 `cli_invocation`/`raw_argv`가 보존된다. 현재 active session은 `sap session-active`로
 확인하고, 외부 세션 ID를 직접 지정하려면 `SAP_CLI_SESSION_ID=<id>`를 사용한다.
+SAP 조작이 아니지만 recipe가 따라야 할 준비/검증/외부 CLI 단계는 `sap session-mark`로
+따로 남긴다. 이 step은 `step_kind`, `followable`, `requires_sap`로 구분된다.
+
+```powershell
+sap session-mark "입력 파일 생성" --kind bash --cli "python scripts/prepare_input.py" --no-requires-sap
+sap session-mark "사용자 승인 확인" --kind manual --not-followable --no-requires-sap
+```
 
 ---
 

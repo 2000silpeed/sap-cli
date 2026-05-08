@@ -26,6 +26,7 @@ SESSION_COMMANDS: frozenset[str] = frozenset(
         "session_show",
         "session_candidates",
         "session_approve",
+        "session_mark",
     }
 )
 
@@ -37,6 +38,7 @@ SESSION_SKIP_COMMANDS: frozenset[str] = frozenset(
         "session_show",
         "session_candidates",
         "session_approve",
+        "session_mark",
         "transcript_query",
         "transcript_plan",
         "ontology_query",
@@ -85,6 +87,8 @@ def dispatch_session_command(
             get_recipe_store,
             link_recipe_to_ontology,
         )
+    if command == "session_mark":
+        return dispatch_session_mark(args, ctx, get_session_store)
     raise ValueError(f"미구현 session 명령: {command}")
 
 
@@ -123,6 +127,60 @@ def dispatch_session_start(
         "session_id": session.id,
         "status": session.status,
         "started_at": session.started_at,
+    }
+
+
+def dispatch_session_mark(
+    args: dict[str, Any],
+    ctx: Any,
+    get_session_store: SessionStoreFactory,
+) -> dict[str, Any]:
+    """Append an explicit followable/non-SAP marker step to a running session."""
+    store = get_session_store()
+    session_id = str(args.get("session_id") or getattr(ctx, "session_id", "") or "")
+    if not session_id:
+        return {"error": "session_id가 필요합니다"}
+
+    text = str(args.get("text") or args.get("message") or "").strip()
+    step_kind = str(args.get("step_kind") or args.get("kind") or "note").strip() or "note"
+    followable = bool(args.get("followable", True))
+    requires_sap = bool(args.get("requires_sap", False))
+    cli_invocation = str(args.get("cli_invocation") or "").strip()
+    raw_argv = args.get("raw_argv") if isinstance(args.get("raw_argv"), list) else []
+    raw_argv = [str(item) for item in raw_argv]
+    source = str(args.get("source") or getattr(ctx, "source", "") or "manual")
+
+    marker_args: dict[str, Any] = {
+        "text": text,
+        "step_kind": step_kind,
+        "followable": followable,
+        "requires_sap": requires_sap,
+    }
+    if cli_invocation:
+        marker_args["cli_invocation"] = cli_invocation
+    if raw_argv:
+        marker_args["raw_argv"] = raw_argv
+
+    step = store.add_step(
+        session_id,
+        command="session_mark",
+        tool_name="sap_session_mark",
+        arguments=marker_args,
+        source=source,
+        cli_invocation=cli_invocation,
+        raw_argv=raw_argv,
+        step_kind=step_kind,
+        followable=followable,
+        requires_sap=requires_sap,
+        intent=text,
+        outcome="marked",
+    )
+    if step is None:
+        return {"error": f"실행 중인 세션을 찾을 수 없습니다: {session_id}"}
+    return {
+        "session_id": session_id,
+        "marked": True,
+        "step": step.model_dump(mode="json", exclude_none=True),
     }
 
 
@@ -339,6 +397,9 @@ def log_session_step(
             source=getattr(ctx, "source", ""),
             cli_invocation=getattr(ctx, "cli_invocation", ""),
             raw_argv=getattr(ctx, "raw_argv", []) or [],
+            step_kind="sap",
+            followable=True,
+            requires_sap=True,
             outcome=outcome,
             error=error,
             before_state=before_state,

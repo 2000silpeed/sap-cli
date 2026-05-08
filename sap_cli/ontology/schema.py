@@ -676,6 +676,9 @@ class SessionStep(BaseModel):
     source: str = ""
     cli_invocation: str = ""
     raw_argv: list[str] = Field(default_factory=list)
+    step_kind: str = "sap"
+    followable: bool = True
+    requires_sap: bool = True
 
     intent: str = ""
 

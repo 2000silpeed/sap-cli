@@ -189,6 +189,13 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
         category="session",
         risk_level="high",
     ),
+    "session_mark": CommandDef(
+        "sap_session_mark",
+        Permission.WRITE,
+        expose_cli=True,
+        category="session",
+        risk_level="low",
+    ),
     "slots": CommandDef("sap_session_pool", Permission.READ),
     "slot_allocate": CommandDef(
         "sap_session_allocate",

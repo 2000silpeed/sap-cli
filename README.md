@@ -436,11 +436,16 @@ sap session-end --outcome success --summary "MM03 조회 성공"
 sap session-active
 sap session-use <session_id>
 sap session-clear
+sap session-mark "입력 CSV 생성" --kind bash --cli "python scripts/prepare_input.py" --no-requires-sap
 sap session-list
 sap session-show <session_id>
 sap session-candidates
 sap session-approve <session_id>
 ```
+
+`session-mark`는 SAP 화면 조작이 아니지만 recipe가 따라야 하는 준비/검증/외부 CLI
+단계를 남길 때 사용한다. 저장된 recipe step에는 `step_kind`, `followable`,
+`requires_sap`, `cli_invocation`이 함께 들어간다.
 
 CLI에는 조회 중심 recipe 명령과 운영자 품질관리용 `recipe-success`,
 `recipe-failure`, `recipe-enable`을 노출합니다. `recipe-version-up`은 steps JSON 입력 UX가

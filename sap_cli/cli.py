@@ -691,6 +691,46 @@ def session_clear_cmd() -> None:
     )
 
 
+@app.command("session-mark")
+def session_mark_cmd(
+    text: str = typer.Argument(help="세션/레시피에 남길 step 설명"),
+    kind: str = typer.Option("note", "--kind", "-k", help="note/bash/external/manual/check 등 step 종류"),
+    cli_invocation: Optional[str] = typer.Option(None, "--cli", help="따라 실행할 외부 CLI/bash 원문"),
+    raw_argv_json: Optional[str] = typer.Option(None, "--argv-json", help="raw argv JSON 배열"),
+    session_id: Optional[str] = typer.Option(None, "--session-id", help="대상 session_id. 생략하면 active session 사용"),
+    followable: bool = typer.Option(True, "--followable/--not-followable", help="recipe가 따라야 하는 단계인지 여부"),
+    requires_sap: bool = typer.Option(False, "--requires-sap/--no-requires-sap", help="SAP 연결/화면이 필요한 단계인지 여부"),
+) -> None:
+    """SAP 외부/수동/검증 단계도 recipe가 따를 수 있도록 세션에 표식 추가."""
+    import json as _json
+
+    sid = session_id or _read_active_cli_session_id()
+    if not sid:
+        _handle_error(RuntimeError("active session이 없습니다. 먼저 sap session-start 를 실행하세요."))
+    raw_argv: list[str] = []
+    if raw_argv_json:
+        parsed = _json.loads(raw_argv_json)
+        if not isinstance(parsed, list):
+            _handle_error(ValueError("--argv-json은 JSON 배열이어야 합니다"))
+        raw_argv = [str(item) for item in parsed]
+    elif cli_invocation:
+        raw_argv = shlex.split(cli_invocation)
+    result = _dispatch_local(
+        "session_mark",
+        {
+            "session_id": sid,
+            "text": text,
+            "step_kind": kind,
+            "cli_invocation": cli_invocation or "",
+            "raw_argv": raw_argv,
+            "followable": followable,
+            "requires_sap": requires_sap,
+            "source": "cli",
+        },
+    )
+    _output_json(result)
+
+
 @app.command("session-end")
 def session_end_cmd(
     session_id: Optional[str] = typer.Argument(None, help="종료할 session_id. 생략하면 active session 사용"),

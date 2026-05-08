@@ -227,6 +227,9 @@ def session_to_recipe(
             "hint": step_data.get("intent", ""),
             "cli_invocation": step_data.get("cli_invocation", ""),
             "raw_argv": step_data.get("raw_argv", []),
+            "step_kind": step_data.get("step_kind", "sap"),
+            "followable": step_data.get("followable", True),
+            "requires_sap": step_data.get("requires_sap", True),
         })
 
     recipe_id = _safe_recipe_id(tcode, session.id)

@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from sap_cli.auth.policy import SessionConfig
-from sap_cli.dispatcher import _dispatch_recipe_pending, _dispatch_session_end
+from sap_cli.dispatcher import DispatchContext, _dispatch_recipe_pending, _dispatch_session_end, dispatch_command
 from sap_cli.ontology.schema import McpSession, SessionStep
 from sap_cli.session_analyzer import session_to_recipe
 from sap_cli.session_store import SessionStore
@@ -141,6 +141,59 @@ class TestSessionEndAutoSuggest:
 
         assert recipe["steps"][0]["cli_invocation"] == "sap run VL33N"
         assert recipe["steps"][0]["raw_argv"] == ["run", "VL33N"]
+
+    def test_session_to_recipe_preserves_non_sap_marker_step(self):
+        session = _candidate_session()
+        marker = SessionStep(
+            step_number=99,
+            timestamp="2026-04-19T10:00:01",
+            command="session_mark",
+            tool_name="sap_session_mark",
+            source="cli",
+            cli_invocation="python scripts/prepare_input.py",
+            raw_argv=["python", "scripts/prepare_input.py"],
+            step_kind="bash",
+            followable=True,
+            requires_sap=False,
+            intent="입력 파일 생성",
+            outcome="marked",
+        )
+        session.steps.insert(1, marker)
+
+        recipe = session_to_recipe(session)
+
+        marked = [step for step in recipe["steps"] if step["tool"] == "sap_session_mark"]
+        assert marked
+        assert marked[0]["step_kind"] == "bash"
+        assert marked[0]["followable"] is True
+        assert marked[0]["requires_sap"] is False
+        assert marked[0]["cli_invocation"] == "python scripts/prepare_input.py"
+
+    def test_session_mark_command_appends_marker_step(self, isolated_store: SessionStore):
+        session = isolated_store.create_session(user_request="외부 준비 후 SAP 실행", source="cli")
+
+        result = dispatch_command(
+            "session_mark",
+            {
+                "session_id": session.id,
+                "text": "pdftotext 설치 확인",
+                "step_kind": "external",
+                "cli_invocation": "pdftotext -v",
+                "raw_argv": ["pdftotext", "-v"],
+                "followable": True,
+                "requires_sap": False,
+            },
+            DispatchContext(source="cli"),
+        )
+
+        assert result["marked"] is True
+        loaded = isolated_store.load(session.id)
+        assert loaded is not None
+        step = loaded.steps[0]
+        assert step.tool_name == "sap_session_mark"
+        assert step.step_kind == "external"
+        assert step.requires_sap is False
+        assert step.cli_invocation == "pdftotext -v"
 
 
 class TestRecipePending:

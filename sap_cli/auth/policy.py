@@ -114,6 +114,7 @@ TOOL_PERMISSION_MAP: dict[str, Permission] = {
     "sap_session_show": Permission.READ,
     "sap_session_candidates": Permission.READ,
     "sap_session_approve": Permission.ADMIN,
+    "sap_session_mark": Permission.WRITE,
     "sap_session_pool": Permission.READ,
     "sap_session_allocate": Permission.ADMIN,
     "sap_session_release": Permission.ADMIN,

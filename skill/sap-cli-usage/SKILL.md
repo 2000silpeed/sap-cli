@@ -81,8 +81,18 @@ sap session-use <session_id>
 sap session-clear
 ```
 
+SAP 조작은 아니지만 recipe가 따라야 하는 준비/검증/외부 CLI 단계는
+`session-mark`로 명시한다.
+
+```powershell
+sap session-mark "pdftotext 설치 여부 확인" --kind external --cli "pdftotext -v" --no-requires-sap
+sap session-mark "입력 CSV 생성" --kind bash --cli "python scripts/prepare_input.py" --no-requires-sap
+sap session-mark "사용자 승인 확인 후 저장 진행" --kind manual --not-followable --no-requires-sap
+```
+
 운영 규칙:
 - recipe로 남길 작업은 `sap session-start` → 실제 `sap ...` bash 명령들 → `sap session-end` 순서로 수행한다.
+- SAP 외부 단계는 `sap session-mark`로 남겨 `step_kind`, `followable`, `requires_sap`를 명확히 표시한다.
 - `sap session-end` 응답의 `recipe_suggestion`이 나오면 `sap session-approve <session_id>`로 recipe 저장을 승인한다.
 - 이미 외부에서 세션 ID를 관리한다면 `SAP_CLI_SESSION_ID=<id>` 환경변수로도 CLI step 기록이 가능하다.
 

@@ -1187,6 +1187,31 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_session_mark",
+        "description": (
+            "현재 실행 세션에 명시적인 표식 step을 추가합니다. SAP 화면 조작이 아니더라도 "
+            "파일 준비, 외부 bash/CLI, 사람 확인, 검증 절차처럼 recipe가 나중에 따라야 하는 "
+            "단계를 step_kind/followable/requires_sap와 함께 기록할 때 사용합니다."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "대상 세션 ID"},
+                "text": {"type": "string", "description": "표식 step 설명"},
+                "step_kind": {"type": "string", "description": "note/bash/external/manual/check 등 step 종류"},
+                "cli_invocation": {"type": "string", "description": "따라 실행할 외부 CLI/bash 원문"},
+                "raw_argv": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "cli_invocation의 argv 배열 표현",
+                },
+                "followable": {"type": "boolean", "description": "recipe가 따라야 하는 단계인지 여부 (기본 true)"},
+                "requires_sap": {"type": "boolean", "description": "SAP 연결/화면이 필요한 단계인지 여부 (기본 false)"},
+            },
+            "required": ["session_id", "text"],
+        },
+    },
+    {
         "name": "sap_session_list",
         "description": "기록된 AI 실행 세션 목록을 조회합니다.",
         "inputSchema": {
