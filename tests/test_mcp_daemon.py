@@ -249,6 +249,22 @@ class TestMcpHandleToolDaemon:
         assert data["error"] is True
         assert "COM disconnected" in data["message"]
 
+    def test_daemon_mode_fallback_on_unknown_command(self, monkeypatch):
+        """오래 떠 있던 daemon이 새 명령을 모르면 직접 dispatch로 fallback."""
+        monkeypatch.setenv("SAP_CLI_USE_DAEMON", "1")
+        monkeypatch.setattr("sap_cli.mcp_server.load_policy", lambda: None)
+
+        daemon_response = {"ok": False, "error": "알수 없는 명령: inspect"}
+        with patch("sap_cli.mcp_server._dispatch_via_daemon", return_value=daemon_response):
+            with patch("sap_cli.mcp_server.dispatch_command", return_value={"fallback": True}) as mock_direct:
+                from sap_cli.mcp_server import handle_tool
+                result = handle_tool("sap_inspect_element", {"element_id": "wnd[0]/usr/cmbTEST"})
+
+        mock_direct.assert_called_once()
+        import json
+        data = json.loads(result[0].text)
+        assert data["fallback"] is True
+
 
 # ---------------------------------------------------------------------------
 # _dispatch_via_daemon 단위 테스트

@@ -141,9 +141,23 @@ def _try_daemon(cmd: str, args: dict, slot_id: str = "ses0") -> bool:
         })
         raise typer.Exit(1)
     else:
+        if _is_unknown_daemon_command_error(str(result.get("error", ""))):
+            # A long-running daemon may be older than the CLI process after
+            # git pull / editable reinstall. Fall back to local dispatch so
+            # newly added commands such as inspect can still run.
+            return False
         _output_json({"error": True, "message": result["error"]})
         raise typer.Exit(1)
     return True
+
+
+def _is_unknown_daemon_command_error(message: str) -> bool:
+    normalized = message.lower()
+    return (
+        "unknown command" in normalized
+        or "알수 없는 명령" in message
+        or "알 수 없는 명령" in message
+    )
 
 
 # -------------------------------------------------------------------

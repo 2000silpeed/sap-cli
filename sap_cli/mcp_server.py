@@ -1307,6 +1307,15 @@ def _dispatch_via_daemon(
     return result
 
 
+def _is_unknown_daemon_command_error(message: str) -> bool:
+    normalized = message.lower()
+    return (
+        "unknown command" in normalized
+        or "알수 없는 명령" in message
+        or "알 수 없는 명령" in message
+    )
+
+
 def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     checker, effective_agent = _load_checker()
     visible_tool_names = set(_visible_tool_names_for_checker(checker))
@@ -1349,7 +1358,12 @@ def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                         "tool": daemon_result.get("tool"),
                         "reason": daemon_result.get("reason", ""),
                     })
-                return _error_result(daemon_result.get("error", "daemon error"))
+                daemon_error = str(daemon_result.get("error", "daemon error"))
+                if not _is_unknown_daemon_command_error(daemon_error):
+                    return _error_result(daemon_error)
+                # Running daemon can be older than the MCP server process after
+                # an update. If it does not know a new command, fall back to
+                # direct dispatch instead of surfacing a stale-daemon error.
             # daemon 사용 불가 → fallback to direct dispatch
 
         ctx = DispatchContext(
