@@ -110,6 +110,8 @@ def test_inspect_element_returns_combo_capability():
 
     assert inspected["type"] == "GuiComboBox"
     assert "set" in inspected["capability"]["actions"]
+    assert inspected["ontology_preflight"]["type"] == "GuiComboBox"
+    assert inspected["ontology_preflight"]["api_graph"]["runtime"]["nodes_total"] >= 1
     assert inspected["entries"][1] == {"key": "NL", "value": "Normal Delivery", "pos": "2"}
 
 
@@ -125,7 +127,21 @@ def test_perform_ui_action_sets_combo_by_display_value():
 
     assert result["action"] == "set"
     assert result["type"] == "GuiComboBox"
+    assert result["ontology_preflight"]["normalized_action"] == "set"
+    assert "set" in result["ontology_preflight"]["capability"]["actions"]
     assert combo.Key == "NL"
+
+
+def test_build_action_context_includes_scripting_graph_summary():
+    combo = FakeCombo()
+    wrapper = _wrapper_with(combo)
+
+    context = wrapper.build_action_context("wnd[0]/usr/cmbLFART", "set", "LF")
+
+    assert context["type"] == "GuiComboBox"
+    assert context["normalized_action"] == "set"
+    assert context["api_graph"]["query"]["component_type"] == "GuiComboBox"
+    assert context["api_graph"]["node_count"] >= 1
 
 
 def test_set_field_keeps_text_field_behavior():

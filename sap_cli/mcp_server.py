@@ -89,7 +89,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "name": "sap_inspect_element",
         "description": (
             "SAP GUI element_id 하나를 live로 검사해 Type/SubType, 값, changeable, "
-            "사용 가능한 Scripting capability, 콤보 entries 등을 반환합니다. "
+            "사용 가능한 Scripting capability, SAP GUI Scripting API graph preflight, 콤보 entries 등을 반환합니다. "
             "전용 도구가 없거나 어떤 조작이 가능한지 모를 때 먼저 사용하세요."
         ),
         "inputSchema": {
@@ -121,6 +121,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "name": "sap_ui_action",
         "description": (
             "SAP GUI Scripting capability 지도와 live element Type을 기반으로 범용 UI 액션을 수행합니다. "
+            "실행 전에 ontology_preflight로 Type/SubType, capability, API graph 요약을 자동 조회해 응답에 포함합니다. "
             "set/select/press/focus/read/search_help, 트리 node 액션(select_node/expand_node/collapse_node/doubleclick_node/press_node), "
             "테이블 select_row 등을 지원합니다. 전용 도구가 없을 때의 fallback 실행 도구입니다."
         ),
@@ -187,7 +188,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_set_field",
-        "description": "SAP 화면의 필드 값을 설정합니다. GuiComboBox 콤보박스도 element_id로 직접 설정할 수 있습니다.",
+        "description": (
+            "SAP 화면의 필드 값을 설정합니다. GuiComboBox 콤보박스도 element_id로 직접 설정할 수 있습니다. "
+            "실행 전에 live Type/SubType과 Scripting API graph를 ontology_preflight로 자동 조회해 응답에 포함합니다."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -234,7 +238,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_press",
-        "description": "SAP 화면의 버튼을 클릭하거나 탭을 선택합니다. GuiTab이면 자동으로 Select()를 호출합니다.",
+        "description": (
+            "SAP 화면의 버튼을 클릭하거나 탭을 선택합니다. GuiTab이면 자동으로 Select()를 호출합니다. "
+            "실행 전에 live Type/SubType과 Scripting API graph를 ontology_preflight로 자동 조회해 응답에 포함합니다."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {

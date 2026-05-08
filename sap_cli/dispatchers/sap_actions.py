@@ -166,6 +166,7 @@ def dispatch_set(
     sap = get_sap(ctx.slot_id)
     element_id = str(args["element_id"])
     value = str(args["value"])
+    ontology_preflight = _safe_action_context(sap, element_id, "set", value)
     if "/chk" in element_id:
         checked = value.lower() not in ("", "0", "false", "off", "no")
         sap.set_checkbox(element_id, checked)
@@ -177,6 +178,7 @@ def dispatch_set(
         "field": element_id,
         "value_set": value,
         "actual_value": sap.get_field(element_id),
+        "ontology_preflight": ontology_preflight,
     }
     return with_post_action(payload, sap, "set", ctx)
 
@@ -218,6 +220,29 @@ def dispatch_ui_action(
     return with_post_action(payload, sap, "ui_action", ctx)
 
 
+def _safe_action_context(
+    sap: Any,
+    element_id: str,
+    action: str,
+    value: str | None = None,
+) -> dict[str, Any]:
+    """Best-effort ontology preflight context for direct action tools."""
+    builder = getattr(sap, "build_action_context", None)
+    if not callable(builder):
+        return {
+            "available": False,
+            "reason": "Sap wrapper does not expose build_action_context.",
+        }
+    try:
+        return builder(element_id, action, value)
+    except Exception as exc:  # pragma: no cover - defensive context should not block action
+        return {
+            "available": False,
+            "error": True,
+            "message": str(exc),
+        }
+
+
 def dispatch_get(args: dict[str, Any], ctx: Any, get_sap: Factory) -> Any:
     """Get one or more field info payloads."""
     sap = get_sap(ctx.slot_id)
@@ -236,8 +261,9 @@ def dispatch_press(
     """Press a SAP GUI element."""
     sap = get_sap(ctx.slot_id)
     element_id = str(args["element_id"])
+    ontology_preflight = _safe_action_context(sap, element_id, "press")
     sap.press(element_id)
-    payload = {"pressed": element_id}
+    payload = {"pressed": element_id, "ontology_preflight": ontology_preflight}
     return with_post_action(payload, sap, "press", ctx)
 
 

@@ -149,6 +149,10 @@ SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 �
    sap_ui_action(element_id="...", action="set", value="...")  # live type 기반 실행
 ```
 
+`sap_set_field`, `sap_press`, `sap_ui_action` 응답에는 `ontology_preflight`가
+자동 포함된다. 여기서 live Type/SubType, capability, API graph 요약,
+`runtime.generated_overlay_loaded`를 확인한 뒤 다음 행동을 결정한다.
+
 콤보박스는 표시값을 직접 Text에 쓰지 말고, `sap_inspect_element` 또는
 `sap_get_field`로 entries를 확인한 뒤 `sap_ui_action(action="set")` 또는
 `sap_set_field`에 key/표시값을 넘긴다. 내부에서 entries의 표시값을 key로 매핑한다.

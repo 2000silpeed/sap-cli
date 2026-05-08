@@ -36,6 +36,7 @@ from .ontology.schema import (
     SemanticContext,
     StatusMessageType,
 )
+from .scripting_api_graph import query_default_graph
 from .scripting_ontology import component_capability, normalize_action
 
 # win32com은 Windows 전용 - 임포트 실패 시 스텁 제공
@@ -501,6 +502,53 @@ class SapGuiWrapper:
     # Scripting Ontology / Generic UI Action
     # -------------------------------------------------------------------
 
+    def build_action_context(
+        self,
+        element_id: str,
+        action: str = "",
+        value: str | None = None,
+    ) -> dict[str, Any]:
+        """Build live element + scripting API graph context before acting."""
+        element = self.session.FindById(element_id)
+        component_type = str(self._safe_attr(element, "Type", "Unknown"))
+        subtype = str(self._safe_attr(element, "SubType", ""))
+        normalized = normalize_action(action) if action else ""
+        capability = component_capability(component_type, subtype)
+        graph = query_default_graph(
+            component_type="" if component_type == "Unknown" else component_type,
+            intent=normalized,
+            depth=1,
+        )
+        graph_nodes = graph.get("nodes", [])
+        graph_edges = graph.get("edges", [])
+        actions = set(capability.get("actions", []))
+        warnings = list(graph.get("warnings", []))
+        if normalized and normalized != "inspect" and actions and normalized not in actions:
+            warnings.append(
+                f"Action '{normalized}' is not listed in capability actions for {component_type}; "
+                "inspect live component and prefer sap_ui_action fallback."
+            )
+
+        return {
+            "element_id": element_id,
+            "requested_action": action,
+            "normalized_action": normalized,
+            **({"requested_value": value} if value is not None else {}),
+            "type": component_type,
+            **({"sub_type": subtype} if subtype else {}),
+            "capability": capability,
+            "api_graph": {
+                "query": graph.get("query", {}),
+                "runtime": graph.get("runtime", {}),
+                "node_count": len(graph_nodes),
+                "edge_count": len(graph_edges),
+                "nodes": graph_nodes[:40],
+                "edges": graph_edges[:80],
+                "truncated": len(graph_nodes) > 40 or len(graph_edges) > 80,
+            },
+            "warnings": warnings,
+        }
+
     def inspect_element(self, element_id: str) -> dict[str, Any]:
         """Inspect one SAP GUI component and return live capability metadata."""
         try:
@@ -518,6 +566,7 @@ class SapGuiWrapper:
                 "selected": self._safe_attr(element, "Selected", ""),
                 "value": self._element_value(element, element_id),
                 "capability": component_capability(component_type, subtype),
+                "ontology_preflight": self.build_action_context(element_id, "inspect"),
             }
             if self._is_combo_box(element, element_id):
                 payload["key"] = self._safe_attr(element, "Key", "")
@@ -552,6 +601,7 @@ class SapGuiWrapper:
             "action": normalized,
             "type": component_type,
             **({"sub_type": subtype} if subtype else {}),
+            "ontology_preflight": self.build_action_context(element_id, normalized, value),
         }
 
         if normalized == "inspect":

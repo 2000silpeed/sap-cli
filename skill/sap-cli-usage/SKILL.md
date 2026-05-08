@@ -36,6 +36,9 @@ sap status
 ## 범용 Scripting capability fallback
 
 전용 명령이 없거나 read-only처럼 보이는 컴포넌트는 먼저 검사한다.
+`sap set`, `sap press`, `sap act` 응답에는 `ontology_preflight`가 자동 포함된다.
+이 값에서 live Type/SubType, capability, Scripting API graph 요약, generated
+overlay 로드 여부를 확인한다.
 
 ```powershell
 sap inspect "wnd[0]/usr/cmbLFART"
