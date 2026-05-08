@@ -28,12 +28,6 @@ MCP_ONLY_COMMANDS = {
     "recipe_replay_execute",
     "recipe_replay_plan",
     "recipe_version_up",
-    "session_approve",
-    "session_candidates",
-    "session_end",
-    "session_list",
-    "session_show",
-    "session_start",
     "slot_allocate",
     "slot_release",
 }

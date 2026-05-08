@@ -412,6 +412,36 @@ sap recipe-save "va02-change" "VA02 수주 변경" '[{"tool":"sap_run","args":{"
 sap recipe-delete "spro-pricing-condition"
 ```
 
+### CLI/bash 실행을 recipe 후보로 기록
+
+터미널에서 직접 수행한 `sap ...` 명령을 recipe 후보로 남기려면 작업 앞뒤를
+`session-start` / `session-end`로 감싼다. 세션 중 실행된 CLI step에는 원문
+`cli_invocation`과 `raw_argv`가 같이 저장되어, 나중에 어떤 bash 명령을 실행했는지
+그대로 확인할 수 있다.
+
+```powershell
+sap session-start "MM03 자재 조회 성공 경로"
+sap connect --system PR1
+sap run MM03
+sap screen --fields-only
+sap set "wnd[0]/usr/ctxtRMMG1-MATNR" "100-100"
+sap vkey 0
+sap status
+sap session-end --outcome success --summary "MM03 조회 성공"
+```
+
+보조 명령:
+
+```powershell
+sap session-active
+sap session-use <session_id>
+sap session-clear
+sap session-list
+sap session-show <session_id>
+sap session-candidates
+sap session-approve <session_id>
+```
+
 CLI에는 조회 중심 recipe 명령과 운영자 품질관리용 `recipe-success`,
 `recipe-failure`, `recipe-enable`을 노출합니다. `recipe-version-up`은 steps JSON 입력 UX가
 복잡하므로 현재는 MCP/dispatcher 자동화 흐름 중심으로 유지합니다.

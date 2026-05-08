@@ -29,6 +29,8 @@ class RecipeStep(BaseModel):
     args: dict[str, Any] = Field(default_factory=dict)
     hint: str = ""
     precondition: dict[str, Any] = Field(default_factory=dict)
+    cli_invocation: str = ""
+    raw_argv: list[str] = Field(default_factory=list)
 
 
 class Recipe(BaseModel):

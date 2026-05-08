@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -50,6 +51,7 @@ app.add_typer(auth_app, name="auth")
 
 # 글로벌 슬롯 ID — @app.callback()에서 설정
 _global_slot_id: str = "ses0"
+_ACTIVE_CLI_SESSION_PATH = Path.home() / ".sap_cli" / "active_cli_session.json"
 
 
 @app.callback()
@@ -106,9 +108,72 @@ def _handle_approval_required(e: ApprovalRequiredError) -> None:
     raise typer.Exit(1)
 
 
+def _cli_invocation() -> str:
+    """Return the exact CLI command shape users expect to replay in a shell."""
+    return shlex.join(["sap", *sys.argv[1:]])
+
+
+def _read_active_cli_session_id() -> str | None:
+    env_session_id = (os.getenv("SAP_CLI_SESSION_ID") or "").strip()
+    if env_session_id:
+        return env_session_id
+    try:
+        data = json.loads(_ACTIVE_CLI_SESSION_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    session_id = str(data.get("session_id") or "").strip()
+    return session_id or None
+
+
+def _write_active_cli_session_id(session_id: str) -> None:
+    _ACTIVE_CLI_SESSION_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"session_id": session_id}
+    _ACTIVE_CLI_SESSION_PATH.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _clear_active_cli_session_id(session_id: str | None = None) -> bool:
+    active = _read_active_cli_session_id()
+    if session_id and active and session_id != active:
+        return False
+    try:
+        _ACTIVE_CLI_SESSION_PATH.unlink()
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return False
+
+
+def _cli_context(slot_id: str = "ses0") -> DispatchContext:
+    session_id = _read_active_cli_session_id()
+    return DispatchContext(
+        source="cli",
+        slot_id=slot_id,
+        session_id=session_id,
+        cli_invocation=_cli_invocation(),
+        raw_argv=list(sys.argv[1:]),
+    )
+
+
+def _daemon_context(slot_id: str = "ses0") -> dict[str, Any]:
+    ctx: dict[str, Any] = {
+        "source": "cli",
+        "slot_id": slot_id,
+        "cli_invocation": _cli_invocation(),
+        "raw_argv": list(sys.argv[1:]),
+    }
+    session_id = _read_active_cli_session_id()
+    if session_id:
+        ctx["session_id"] = session_id
+    return ctx
+
+
 def _dispatch_local(cmd: str, args: dict, slot_id: str = "ses0") -> dict:
     try:
-        return dispatch_command(cmd, args, DispatchContext(source="cli", slot_id=slot_id))
+        return dispatch_command(cmd, args, _cli_context(slot_id))
     except ApprovalRequiredError as e:
         _handle_approval_required(e)
     except (PermissionDeniedError, ValueError, RuntimeError) as e:
@@ -134,10 +199,10 @@ def _use_daemon_default() -> bool:
 def _try_daemon(cmd: str, args: dict, slot_id: str = "ses0") -> bool:
     """데몬으로 명령 전송 시도. 성공하면 결과 출력 후 True 반환."""
     from . import daemon
-    result = daemon.send_command(cmd, args, context={"slot_id": slot_id})
+    result = daemon.send_command(cmd, args, context=_daemon_context(slot_id))
     if result is None and os.getenv("SAP_CLI_DAEMON_AUTOSTART", "1").strip().lower() not in {"0", "false", "no", "off"}:
         if daemon.start_daemon():
-            result = daemon.send_command(cmd, args, context={"slot_id": slot_id})
+            result = daemon.send_command(cmd, args, context=_daemon_context(slot_id))
     if result is None:
         return False
     if result["ok"]:
@@ -555,6 +620,144 @@ def transcript_plan_cmd(
             },
         )
     )
+
+
+# -------------------------------------------------------------------
+# Session Recording Commands
+# -------------------------------------------------------------------
+
+@app.command("session-start")
+def session_start_cmd(
+    user_request: Optional[str] = typer.Argument(None, help="이번 SAP 작업 목표/요청"),
+    ai_reasoning: str = typer.Option("", "--reasoning", "-r", help="AI 판단/맥락 메모"),
+) -> None:
+    """CLI/bash 실행을 recipe 후보 세션으로 기록 시작."""
+    result = _dispatch_local(
+        "session_start",
+        {
+            "user_request": user_request or "",
+            "ai_reasoning": ai_reasoning,
+        },
+    )
+    session_id = str(result.get("session_id") or "")
+    if session_id:
+        _write_active_cli_session_id(session_id)
+        result["active_cli_session"] = True
+        result["active_session_file"] = str(_ACTIVE_CLI_SESSION_PATH)
+        result["note"] = "이후 sap CLI 명령은 이 세션에 자동 기록됩니다. 끝나면 sap session-end 를 실행하세요."
+    _output_json(result)
+
+
+@app.command("session-use")
+def session_use_cmd(
+    session_id: str = typer.Argument(help="활성화할 session_id"),
+) -> None:
+    """이미 시작된 세션을 현재 CLI active session으로 지정."""
+    _write_active_cli_session_id(session_id)
+    _output_json(
+        {
+            "session_id": session_id,
+            "active_cli_session": True,
+            "active_session_file": str(_ACTIVE_CLI_SESSION_PATH),
+        }
+    )
+
+
+@app.command("session-active")
+def session_active_cmd() -> None:
+    """현재 CLI active session 조회."""
+    session_id = _read_active_cli_session_id()
+    _output_json(
+        {
+            "session_id": session_id,
+            "active_cli_session": bool(session_id),
+            "active_session_file": str(_ACTIVE_CLI_SESSION_PATH),
+        }
+    )
+
+
+@app.command("session-clear")
+def session_clear_cmd() -> None:
+    """CLI active session 포인터만 제거."""
+    session_id = _read_active_cli_session_id()
+    removed = _clear_active_cli_session_id()
+    _output_json(
+        {
+            "session_id": session_id,
+            "active_cli_session": False,
+            "cleared": removed,
+            "active_session_file": str(_ACTIVE_CLI_SESSION_PATH),
+        }
+    )
+
+
+@app.command("session-end")
+def session_end_cmd(
+    session_id: Optional[str] = typer.Argument(None, help="종료할 session_id. 생략하면 active session 사용"),
+    outcome: str = typer.Option("success", "--outcome", "-o", help="success / failed 등"),
+    summary: str = typer.Option("", "--summary", "-s", help="작업 결과 요약"),
+) -> None:
+    """CLI/bash 기록 세션 종료 및 recipe 후보 생성."""
+    sid = session_id or _read_active_cli_session_id()
+    if not sid:
+        _handle_error(RuntimeError("active session이 없습니다. 먼저 sap session-start 를 실행하세요."))
+    result = _dispatch_local(
+        "session_end",
+        {
+            "session_id": sid,
+            "outcome": outcome,
+            "outcome_summary": summary,
+        },
+    )
+    if "error" not in result:
+        _clear_active_cli_session_id(sid)
+        result["active_cli_session"] = False
+    _output_json(result)
+
+
+@app.command("session-list")
+def session_list_cmd(
+    date: Optional[str] = typer.Option(None, "--date", help="YYYY-MM-DD"),
+    status: Optional[str] = typer.Option(None, "--status", help="running/completed 등"),
+    limit: int = typer.Option(20, "--limit", "-n", help="조회할 최대 세션 수"),
+) -> None:
+    """기록된 작업 세션 목록 조회."""
+    _run_command("session_list", {"date": date, "status": status, "limit": limit})
+
+
+@app.command("session-show")
+def session_show_cmd(
+    session_id: str = typer.Argument(help="조회할 session_id"),
+) -> None:
+    """작업 세션 상세 조회."""
+    _run_command("session_show", {"session_id": session_id})
+
+
+@app.command("session-candidates")
+def session_candidates_cmd(
+    limit: int = typer.Option(20, "--limit", "-n", help="조회할 최대 후보 수"),
+) -> None:
+    """레시피 승인 후보 세션 조회."""
+    _run_command("session_candidates", {"limit": limit})
+
+
+@app.command("session-approve")
+def session_approve_cmd(
+    session_id: str = typer.Argument(help="승인할 session_id"),
+    approved_by: str = typer.Option("cli", "--approved-by", help="승인자"),
+    success_criteria_json: Optional[str] = typer.Option(
+        None,
+        "--replay-success-criteria",
+        help="replay 성공 기준 JSON",
+    ),
+) -> None:
+    """후보 세션을 recipe로 승인 저장."""
+    import json as _json
+
+    params: dict[str, Any] = {"session_id": session_id, "approved_by": approved_by}
+    if success_criteria_json:
+        params["replay_success_criteria"] = _json.loads(success_criteria_json)
+    _run_command("session_approve", params)
 
 
 # -------------------------------------------------------------------

@@ -51,6 +51,26 @@ CLI/MCP는 기본적으로 daemon 경유를 우선 사용한다. daemon이 없�
 기본값이 켜지며, 명시하려면 `SAP_CLI_USE_DAEMON=1`,
 `SAP_CLI_DAEMON_AUTOSTART=1`을 MCP env에 넣는다.
 
+## CLI/bash 실행 기록 원칙
+
+Codex/Claude가 터미널을 사용할 수 있으면 `sap` CLI 예시는 실제 bash/PowerShell
+명령으로 실행한다. 레시피 후보로 남길 작업은 다음 순서를 지킨다.
+
+```powershell
+sap session-start "작업 목표"
+sap connect --system PR1
+sap run MM03
+sap screen --fields-only
+sap set "wnd[0]/usr/ctxtRMMG1-MATNR" "100-100"
+sap vkey 0
+sap status
+sap session-end --outcome success --summary "성공"
+```
+
+`sap session-start` 이후의 CLI step은 active session에 자동 기록되고, recipe step에는
+`cli_invocation`/`raw_argv`가 보존된다. 현재 active session은 `sap session-active`로
+확인하고, 외부 세션 ID를 직접 지정하려면 `SAP_CLI_SESSION_ID=<id>`를 사용한다.
+
 ---
 
 ## MCP 도구 레퍼런스

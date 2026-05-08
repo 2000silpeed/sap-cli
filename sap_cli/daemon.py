@@ -163,9 +163,11 @@ class _DaemonServer(socketserver.TCPServer):
         # DispatchContext 구성 — 클라이언트가 보낸 context가 있으면 반영
         ctx = DispatchContext(source="daemon")
         if ctx_dict:
-            for field in ("source", "tool_name", "agent_name"):
+            for field in ("source", "tool_name", "agent_name", "cli_invocation"):
                 if field in ctx_dict:
-                    setattr(ctx, field, ctx_dict[field])
+                    setattr(ctx, field, str(ctx_dict[field]))
+            if "raw_argv" in ctx_dict and isinstance(ctx_dict["raw_argv"], list):
+                ctx.raw_argv = [str(item) for item in ctx_dict["raw_argv"]]
             if "include_screen_summary" in ctx_dict:
                 ctx.include_screen_summary = bool(ctx_dict["include_screen_summary"])
             if "slot_id" in ctx_dict:

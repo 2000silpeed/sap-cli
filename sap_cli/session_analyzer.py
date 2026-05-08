@@ -225,6 +225,8 @@ def session_to_recipe(
             "tool": step_data.get("tool_name", ""),
             "args": generalized_args,
             "hint": step_data.get("intent", ""),
+            "cli_invocation": step_data.get("cli_invocation", ""),
+            "raw_argv": step_data.get("raw_argv", []),
         })
 
     recipe_id = _safe_recipe_id(tcode, session.id)

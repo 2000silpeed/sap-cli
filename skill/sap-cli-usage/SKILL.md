@@ -39,6 +39,9 @@ Claude/Codex MCP 설정에서 별도 env를 안 넣어도 daemon 기본값은 �
 
 ## CLI 핵심 명령
 
+Codex/Claude가 터미널을 사용할 수 있으면 CLI 예시는 **반드시 실제 bash/PowerShell
+명령으로 실행**한다. `sap_run(...)` 같은 의사코드로 바꾸지 않는다.
+
 ```powershell
 sap connect
 sap connect --system PR1
@@ -52,6 +55,36 @@ sap fill MATNR=100-100 WERKS=1000
 sap vkey 0
 sap status
 ```
+
+## CLI/bash 실행을 레시피로 기록
+
+bash에서 직접 실행한 `sap ...` 명령을 재사용 가능한 recipe 후보로 남기려면
+작업 시작 전에 CLI 세션을 연다. 이후 실행되는 `sap` CLI 명령은 active session에
+자동 기록되며, 각 step에는 재실행용 원문 `cli_invocation`과 `raw_argv`가 함께 저장된다.
+
+```powershell
+sap session-start "MM03 자재 조회 성공 경로"
+sap connect --system PR1
+sap run MM03
+sap screen --fields-only
+sap set "wnd[0]/usr/ctxtRMMG1-MATNR" "100-100"
+sap vkey 0
+sap status
+sap session-end --outcome success --summary "MM03 조회 성공"
+```
+
+현재 active session 확인/변경:
+
+```powershell
+sap session-active
+sap session-use <session_id>
+sap session-clear
+```
+
+운영 규칙:
+- recipe로 남길 작업은 `sap session-start` → 실제 `sap ...` bash 명령들 → `sap session-end` 순서로 수행한다.
+- `sap session-end` 응답의 `recipe_suggestion`이 나오면 `sap session-approve <session_id>`로 recipe 저장을 승인한다.
+- 이미 외부에서 세션 ID를 관리한다면 `SAP_CLI_SESSION_ID=<id>` 환경변수로도 CLI step 기록이 가능하다.
 
 ## 범용 Scripting capability fallback
 

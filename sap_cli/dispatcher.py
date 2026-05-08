@@ -233,6 +233,8 @@ class DispatchContext:
     include_screen_summary: bool = False
     session_id: str | None = None
     slot_id: str = "ses0"
+    cli_invocation: str = ""
+    raw_argv: list[str] = field(default_factory=list)
 
 
 def dispatch_command(

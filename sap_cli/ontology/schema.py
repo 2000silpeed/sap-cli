@@ -673,6 +673,9 @@ class SessionStep(BaseModel):
     command: str = ""
     tool_name: str = ""
     arguments: dict[str, Any] = Field(default_factory=dict)
+    source: str = ""
+    cli_invocation: str = ""
+    raw_argv: list[str] = Field(default_factory=list)
 
     intent: str = ""
 

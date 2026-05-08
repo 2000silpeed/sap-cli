@@ -10,6 +10,7 @@ import pytest
 from sap_cli.auth.policy import SessionConfig
 from sap_cli.dispatcher import _dispatch_recipe_pending, _dispatch_session_end
 from sap_cli.ontology.schema import McpSession, SessionStep
+from sap_cli.session_analyzer import session_to_recipe
 from sap_cli.session_store import SessionStore
 
 
@@ -129,6 +130,17 @@ class TestSessionEndAutoSuggest:
 
         assert "error" in result
         assert "recipe_suggestion" not in result
+
+    def test_session_to_recipe_preserves_cli_invocation(self):
+        session = _candidate_session()
+        session.steps[0].source = "cli"
+        session.steps[0].cli_invocation = "sap run VL33N"
+        session.steps[0].raw_argv = ["run", "VL33N"]
+
+        recipe = session_to_recipe(session)
+
+        assert recipe["steps"][0]["cli_invocation"] == "sap run VL33N"
+        assert recipe["steps"][0]["raw_argv"] == ["run", "VL33N"]
 
 
 class TestRecipePending:
