@@ -92,6 +92,21 @@ def _parse_vars(raw: str) -> dict[str, Any]:
     return result
 
 
+def _load_json_argument(raw: str, *, label: str) -> Any:
+    """JSON 문자열 또는 @파일 경로를 파싱한다.
+
+    Recipe version-up/replay CLI는 steps나 success criteria처럼 긴 JSON을 자주
+    받으므로, 직접 JSON 문자열과 ``@path/to/file.json`` 입력을 모두 허용한다.
+    """
+    payload = raw
+    if raw.startswith("@"):
+        payload = Path(raw[1:]).expanduser().read_text(encoding="utf-8")
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(f"{label} JSON 파싱 실패: {exc}") from exc
+
+
 def _output_json(data: dict | list) -> None:
     """JSON 출력 (AI 파싱 최적화)."""
     print(json.dumps(data, ensure_ascii=False, indent=2))
@@ -365,6 +380,45 @@ def scripting_query(
         },
         allow_daemon=False,
     )
+
+
+@app.command("scripting-graph-build")
+def scripting_graph_build(
+    input_source: str = typer.Argument(help="Text/Markdown export, local file, stdin '-' 또는 공식 HTTP(S) URL"),
+    out: Optional[str] = typer.Option(
+        None,
+        "--out",
+        "-o",
+        help="생성 graph JSON 경로. 기본값: 패키지 overlay graph.generated.json",
+    ),
+    source: str = typer.Option("", "--source", help="graph metadata에 기록할 공식 source URL override"),
+) -> None:
+    """SAP GUI Scripting API 문서에서 generated graph overlay를 생성."""
+    from scripts.build_sap_scripting_graph import build_graph, read_source, write_graph
+
+    default_out = (
+        Path(__file__).resolve().parent
+        / "ontology"
+        / "knowledge"
+        / "scripting_api"
+        / "graph.generated.json"
+    )
+    out_path = out or str(default_out)
+    if out_path == "-":
+        raise typer.BadParameter("CLI 명령은 JSON summary를 출력해야 하므로 --out '-'는 지원하지 않습니다.")
+
+    text, detected_source = read_source(input_source)
+    graph = build_graph(text, source=source or detected_source)
+    write_graph(graph, out_path)
+    _output_json({
+        "status": "ok",
+        "nodes": len(graph["nodes"]),
+        "edges": len(graph["edges"]),
+        "out": str(Path(out_path).expanduser()),
+        "source": source or detected_source,
+        "overlay_loaded_by_runtime": Path(out_path).resolve() == default_out.resolve(),
+        "next_check": "sap scripting-query --type GuiSession --depth 1",
+    })
 
 
 @app.command("act")
@@ -930,6 +984,98 @@ def recipe_history(
 ) -> None:
     """레시피 버전 이력 조회."""
     _run_command("recipe_history", {"recipe_id": recipe_id})
+
+
+@app.command("recipe-version-up")
+def recipe_version_up(
+    recipe_id: str = typer.Argument(help="버전업할 레시피 ID"),
+    new_steps_json: str = typer.Argument(help="새 steps JSON 배열 또는 @steps.json"),
+    new_context: str = typer.Option("", "--context", "-c", help="새 context. 비우면 기존 context 유지"),
+    change_note: str = typer.Option("", "--change-note", "-m", help="변경 사유 메모"),
+    replay_success_criteria_json: Optional[str] = typer.Option(
+        None,
+        "--replay-success-criteria",
+        help="새 replay 검증 기준 JSON 또는 @criteria.json. '{}'를 주면 기준 초기화",
+    ),
+) -> None:
+    """기존 레시피를 새 steps로 버전업하고 이전 버전을 archive에 보존."""
+    params: dict[str, Any] = {
+        "recipe_id": recipe_id,
+        "new_steps": _load_json_argument(new_steps_json, label="new_steps"),
+    }
+    if new_context:
+        params["new_context"] = new_context
+    if change_note:
+        params["change_note"] = change_note
+    if replay_success_criteria_json is not None:
+        params["replay_success_criteria"] = _load_json_argument(
+            replay_success_criteria_json,
+            label="replay_success_criteria",
+        )
+    _run_command("recipe_version_up", params)
+
+
+@app.command("recipe-replay-plan")
+def recipe_replay_plan(
+    recipe_id: str = typer.Argument(help="replay 계획을 만들 레시피 ID"),
+    current_tcode: str = typer.Option("", "--current-tcode", "-t", help="현재 SAP tcode. 제공 시 시작 조건과 비교"),
+    current_screen: str = typer.Option("", "--current-screen", "-s", help="현재 화면 번호/요약 식별자"),
+    allow_disabled: bool = typer.Option(False, "--allow-disabled", help="disabled 레시피도 blocked 처리 없이 계획 반환"),
+) -> None:
+    """레시피 실행 전 precheck/dry-run/verify/report 계획을 생성."""
+    _run_command(
+        "recipe_replay_plan",
+        {
+            "recipe_id": recipe_id,
+            "current_tcode": current_tcode,
+            "current_screen": current_screen,
+            "allow_disabled": allow_disabled,
+        },
+    )
+
+
+@app.command("recipe-replay-execute")
+def recipe_replay_execute(
+    recipe_id: str = typer.Argument(help="실행할 레시피 ID"),
+    current_tcode: str = typer.Option("", "--current-tcode", "-t", help="현재 SAP tcode. 제공 시 시작 조건과 비교"),
+    current_screen: str = typer.Option("", "--current-screen", "-s", help="현재 화면 번호/요약 식별자"),
+    allow_disabled: bool = typer.Option(False, "--allow-disabled", help="disabled 레시피도 실행 허용"),
+    allow_modal: bool = typer.Option(False, "--allow-modal", help="실행 후 modal dialog가 남아 있어도 verify 실패로 보지 않음"),
+    auto_report: bool = typer.Option(True, "--auto-report/--no-auto-report", help="성공/실패 카운터 자동 기록 여부"),
+    success_criteria_json: Optional[str] = typer.Option(
+        None,
+        "--success-criteria",
+        help="실행 후 검증 기준 JSON 또는 @criteria.json",
+    ),
+    save_success_criteria: Optional[bool] = typer.Option(
+        None,
+        "--save-success-criteria/--no-save-success-criteria",
+        help="success criteria를 recipe metadata에 저장할지 여부",
+    ),
+    observation_scope: str = typer.Option(
+        "final",
+        "--observation-scope",
+        help="final/status/screen 중 하나. step별 관찰값 저장 범위",
+    ),
+) -> None:
+    """레시피 replay 계획을 실제로 실행하고 결과를 자동 검증/보고."""
+    params: dict[str, Any] = {
+        "recipe_id": recipe_id,
+        "current_tcode": current_tcode,
+        "current_screen": current_screen,
+        "allow_disabled": allow_disabled,
+        "allow_modal": allow_modal,
+        "auto_report": auto_report,
+        "observation_scope": observation_scope,
+    }
+    if success_criteria_json is not None:
+        params["success_criteria"] = _load_json_argument(
+            success_criteria_json,
+            label="success_criteria",
+        )
+    if save_success_criteria is not None:
+        params["save_success_criteria"] = save_success_criteria
+    _run_command("recipe_replay_execute", params, allow_daemon=True)
 
 
 @app.command("recipe-chain")

@@ -22,12 +22,8 @@ from sap_cli.mcp_server import TOOL_DEFINITIONS, _visible_tool_names_for_checker
 DISPATCHER_ONLY_TOOLS: set[str] = set()
 
 # MCP에는 노출하지만 아직 별도 CLI subcommand를 만들지 않은 명령.
-# 대부분 agent/daemon/MCP 자동화 흐름에서 쓰는 write/admin 계열 recipe 관리와
-# session lifecycle API다. read-only recipe 조회 명령은 Phase B-2에서 CLI에 노출했다.
+# recipe replay/version-up은 CLI에도 노출되었고, slot allocate/release만 MCP 중심으로 유지한다.
 MCP_ONLY_COMMANDS = {
-    "recipe_replay_execute",
-    "recipe_replay_plan",
-    "recipe_version_up",
     "slot_allocate",
     "slot_release",
 }

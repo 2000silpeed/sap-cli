@@ -1,5 +1,70 @@
 # SAP CLI 작업 이력
 
+## 2026-05-09: 현재 계획 현행화
+
+### 현재 기준
+
+- 전체 자동 테스트: `599 passed`
+- PRD/TRD/유저 시나리오 3개 문서 작성 완료
+- 각 문서에 Mermaid 다이어그램 추가 완료
+- Recipe replay CLI 표면 확장 완료
+  - `sap recipe-replay-plan`
+  - `sap recipe-replay-execute`
+  - `sap recipe-version-up`
+- SAP GUI Scripting API graph 생성 CLI 추가 완료
+  - `sap scripting-graph-build`
+- SAP GUI Scripting generated graph 실제 생성/검증 완료
+  - output: `sap_cli/ontology/knowledge/scripting_api/graph.generated.json`
+  - generated nodes: 1550
+  - generated edges: 1507
+  - runtime merged graph: nodes 1567, edges 1548
+  - `generated_overlay_loaded=true` 확인
+
+### 현재 남은 실제 작업
+
+1. Windows SAP GUI 실기 검증
+   - `WINDOWS_SAP_VERIFICATION.md` 기준으로 실제 Windows + SAP GUI COM 환경에서 검증
+   - 자동 테스트로 대체할 수 없는 `connect/screen/table/tree/capture/MCP/daemon/slot` 확인
+
+2. generated graph 품질 리뷰
+   - 생성 그래프는 `generated-review-required` 상태
+   - parser artifact로 보이는 node/event가 있는지 샘플 리뷰
+   - 필요 시 builder parser 보정
+
+3. ADT 온톨로지 통합 전제 조건 확인
+   - `/sap/bc/adt` SICF 활성화 여부
+   - ADT 읽기 권한 계정
+   - Basic Auth/SSO 방식
+   - `requests` 의존성 도입 여부
+
+4. 멀티유저 거버넌스 착수 조건 충족 여부 확인
+   - recipe 30~50개 이상 축적
+   - owner/share 요구 발생
+   - audit/transcript 저장 정책 확정
+
+### 2026-05-09 generated graph 실행 결과
+
+```text
+sap scripting-graph-build \
+  https://help.sap.com/doc/9215986e54174174854b0af6bb14305a/800.08/en-US/sap_gui_scripting_api.pdf \
+  --out sap_cli/ontology/knowledge/scripting_api/graph.generated.json
+
+결과:
+- nodes: 1550
+- edges: 1507
+- overlay_loaded_by_runtime: true
+
+검증:
+- sap scripting-query --type GuiSession --depth 1
+- runtime.generated_overlay_exists: true
+- runtime.generated_overlay_loaded: true
+- runtime.nodes_total: 1567
+- runtime.edges_total: 1548
+- pytest: 599 passed
+```
+
+---
+
 ## 2026-03-31: Codex 리뷰 기반 전면 개선
 
 ### Phase 1: Codex 코드 리뷰 (10건 발견)
@@ -485,11 +550,17 @@ Phase 14-4 (Recipe 활용) ← 14-3 완료 후
 - [x] 시나리오 8: 업무 프로세스 조회 및 관리
 - [x] 시나리오 9: 업무 프로세스 실행 (ProcessExecutor)
 - [x] 시나리오 10: 시드 트랜잭션 온톨로지 검증 (7개)
-- [ ] 시나리오 16: 필드 레지스트리 / 종속성 / 문서 흐름 (Phase 11)
-- [ ] 시나리오 17: MCP 세션 로깅 + 분석 + 레시피 승인 (Phase 14)
-- [ ] 시나리오 18: 온톨로지 Q&A — 자연어 질문 (Phase 15)
-- [ ] 시나리오 19: 멀티 시스템 연결 + 세션 복구 (Phase 16)
-- [ ] 시나리오 20: 병렬 멀티 세션 — 슬롯 기반 (Phase 17)
+
+2026-05-09 현행화:
+
+- 아래 시나리오 16~20은 코드 구현과 자동 테스트 기준으로는 완료 상태다.
+- 단, 실제 Windows + SAP GUI COM 환경의 end-to-end 실기 검증은 `WINDOWS_SAP_VERIFICATION.md` 기준으로 별도 수행해야 한다.
+
+- [x] 시나리오 16: 필드 레지스트리 / 종속성 / 문서 흐름 (Phase 11) — 구현/자동 테스트 완료, 실기 재검증 필요
+- [x] 시나리오 17: MCP 세션 로깅 + 분석 + 레시피 승인 (Phase 14) — 구현/자동 테스트 완료, 실기 재검증 필요
+- [x] 시나리오 18: 온톨로지 Q&A — 자연어 질문 (Phase 15) — 구현/자동 테스트 완료
+- [x] 시나리오 19: 멀티 시스템 연결 + 세션 복구 (Phase 16) — 구현/자동 테스트 완료, 실기 재검증 필요
+- [x] 시나리오 20: 병렬 멀티 세션 — 슬롯 기반 (Phase 17) — 구현/자동 테스트 완료, 실기 재검증 필요
 
 ### 추가 온톨로지 보강 (SAP 환경 필요)
 - MM03 추가 화면 (MRP, 구매, 판매, 저장위치 뷰)

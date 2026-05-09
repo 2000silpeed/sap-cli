@@ -5,6 +5,33 @@
 
 ---
 
+## 2026-05-09 현행화 요약
+
+현재 기준:
+
+- 전체 자동 테스트: `599 passed`
+- Recipe replay CLI 노출 완료
+  - `sap recipe-replay-plan`
+  - `sap recipe-replay-execute`
+  - `sap recipe-version-up`
+- SAP GUI Scripting API graph 생성 CLI 추가 완료
+  - `sap scripting-graph-build`
+- SAP GUI Scripting generated graph 실제 생성/검증 완료
+  - output: `sap_cli/ontology/knowledge/scripting_api/graph.generated.json`
+  - generated nodes: 1550
+  - generated edges: 1507
+  - runtime overlay loaded: true
+- PRD/TRD/유저 시나리오 문서와 다이어그램 정리 완료
+
+현재 가장 중요한 남은 작업:
+
+1. `WINDOWS_SAP_VERIFICATION.md` 기준으로 Windows + SAP GUI COM 실기 검증을 수행한다.
+2. generated graph 품질을 샘플 리뷰하고 parser artifact가 있으면 builder를 보정한다.
+3. ADT 통합 전제 조건을 사내 SAP 환경에서 확인한다.
+4. recipe 30~50개 이상 축적 후 멀티유저 거버넌스 Phase 21 착수 여부를 판단한다.
+
+---
+
 ## 현재 진단 요약
 
 현재 `sap_cli`는 단순 SAP GUI 자동화 CLI를 넘어 다음 계층까지 확장되어 있다.
@@ -23,9 +50,9 @@
 
 최근 점검 기준:
 
-- 전체 테스트: `482 passed`
+- 전체 테스트: `599 passed`
 - 실패: 없음
-- 주요 구조 이슈: `COMMAND_REGISTRY` / MCP tool definition / `TOOL_PERMISSION_MAP` 불일치 1차 정리 완료
+- 주요 구조 이슈: `COMMAND_REGISTRY` / MCP tool definition / `TOOL_PERMISSION_MAP` / CLI dispatch 표면 불일치 방지 테스트 유지
 
 ---
 
@@ -1113,10 +1140,17 @@ _enum_value
 - [x] 최근 성공률
 - [x] 마지막 성공 시각
 - [x] 마지막 실패 시각
-- [ ] 평균 실행 시간
-- [ ] 특정 SAP system/client 성공 여부
-- [ ] 실패 사유 유형
+- [x] 평균 실행 시간
+- [x] 특정 SAP system/client 성공 여부
+- [x] 실패 사유 유형
 - [x] disabled 여부 penalty
+
+### 2026-05-09 현행화 메모
+
+- replay execute에서 전체/step별 실행 시간이 응답과 recipe replay metric에 반영된다.
+- system/client별 replay 성공/실패 집계가 recipe metadata에 저장된다.
+- verify/precondition/auth/report 실패 유형이 `replay_failure_type_counts`에 누적된다.
+- 따라서 E-1의 품질 점수 개선 후보는 현재 구현 기준으로 완료 상태다.
 
 ### 완료 기준
 
@@ -1126,7 +1160,7 @@ _enum_value
 
 ## E-2. Recipe replay 검증 플로우 설계
 
-상태: 진행 중 — `sap_recipe_replay_plan` 1차, `sap_recipe_replay_execute` 실행 래퍼, replay 품질 메타, 위험 분류, success criteria 저장/재사용 도입 완료.
+상태: 완료 — `sap_recipe_replay_plan`, `sap_recipe_replay_execute`, replay 품질 메타, 위험 분류, success criteria 저장/재사용, CLI 노출까지 완료.
 
 ### 목표
 
@@ -1201,6 +1235,11 @@ precheck → dry-run plan → execute → verify → report
   - `sap_run`/MCP/CLI에 `report`/`program`, `report_field_id`, `execute_report` 입력을 추가해 SA38/SE38 report launcher에서 report명을 실제 SAP GUI 필드에 입력하고 선택적으로 Execute(F8)를 전송할 수 있게 했다.
   - `PermissionChecker`가 동일 호출에서 transaction risk와 report risk를 함께 평가하되, `deny` transaction은 우선 차단하고 approval/report metadata는 더 구체적인 `DangerousReport` 기준을 노출하도록 정리했다.
   - replay execute preflight가 recipe step의 `sap_run` report/program 인자를 기반으로 DangerousReport 위험을 구조화해 차단/승인 필요 사유를 반환하는 테스트를 추가했다.
+- [x] E-2 CLI 표면 노출
+  - `sap recipe-replay-plan`을 추가해 CLI에서도 precheck/dry-run/verify/report 계획을 조회할 수 있게 했다.
+  - `sap recipe-replay-execute`를 추가해 CLI에서도 replay 실행, 자동 검증, 자동 success/failure 보고를 수행할 수 있게 했다.
+  - `sap recipe-version-up`을 추가해 CLI에서도 변경된 steps로 recipe 버전업을 수행할 수 있게 했다.
+  - 긴 JSON 입력은 `@steps.json`, `@criteria.json` 형식의 파일 입력을 지원한다.
 
 ### 완료 기준
 
@@ -1213,6 +1252,7 @@ precheck → dry-run plan → execute → verify → report
   - replay success criteria는 recipe metadata로 저장되어 다음 실행에서 재사용할 수 있다.
   - replay success criteria는 recipe 저장, 버전업, session approve 기반 자동 레시피 변환 시점에도 설정/승계/자동 추론된다.
   - dangerous tcode/report는 auth/preflight에서 구조화된 risk category/code로 분류되며, `sap_run` report/program 실행 입력 경로에서도 같은 정책이 적용된다.
+  - replay plan/execute/version-up은 CLI와 MCP 양쪽에서 사용할 수 있다.
 
 ---
 
@@ -1431,82 +1471,59 @@ ADT는 강력하지만 인증/권한/시스템 설정 의존성이 추가된다.
 
 ---
 
-# 추천 실행 순서
+# 2026-05-09 이후 추천 실행 순서
 
-## Sprint 1: 안정화
+## Sprint 6: Generated graph 실사용 검증
 
-1. A-1 ALV 테스트 실패 해결
-2. A-2 `TOOL_PERMISSION_MAP` 누락 보강
-3. A-3 consistency 테스트 추가
+상태: 생성/로드 검증 완료, 품질 리뷰 필요.
 
-완료 기준:
-
-- 전체 테스트 통과
-- registry/policy/MCP drift 자동 감지
-
----
-
-## Sprint 2: 명령 표면 정리
-
-1. B-1 registry 단일 진실 공급원화
-2. B-2 recipe CLI 확장 여부 결정 및 구현
-3. B-3 auth 진단 명령 추가
+1. [x] 공식 SAP GUI Scripting API PDF 확보
+2. [x] `sap scripting-graph-build`로 `graph.generated.json` 생성
+3. [x] `sap scripting-query --type GuiSession --depth 1`로 overlay 로드 확인
+4. [ ] generated graph가 실제 `sap inspect` / `sap act` preflight에 유용하게 병합되는지 Windows SAP GUI 환경에서 확인
+5. [ ] parser artifact 샘플 리뷰 및 필요 시 builder 보정
 
 완료 기준:
 
-- CLI/MCP/권한 표면이 설명 가능해짐
+- [x] generated graph 생성 명령이 실제 문서 입력에서 동작한다.
+- [x] runtime query 결과에서 generated overlay가 로드된다.
+- [ ] Windows SAP GUI 환경에서 live inspect/action preflight에 도움되는지 확인한다.
 
 ---
 
-## Sprint 3: 저장 안정성 통일
+## Sprint 7: Windows SAP GUI 실기 검증
 
-1. C-1 storage 유틸 추가
-2. C-2 RecipeStore 이관
-3. C-3 MacroStore 강화
-4. C-4 SessionStore 강화
-5. C-5 OntologyStore 검토
+1. `WINDOWS_SAP_VERIFICATION.md` 기준으로 Windows + SAP GUI COM 환경 검증
+2. `WINDOWS_SAP_VERIFICATION_REPORT_TEMPLATE.md`에 결과 기록
+3. FAIL/PARTIAL 항목을 환경 문제, SAP 권한, SAP 화면 차이, sap_cli 버그로 분류
+4. sap_cli 버그로 분류된 항목만 별도 수정 task로 분리
 
 완료 기준:
 
-- 주요 JSON 자산 저장 방식이 통일됨
+- 운영 예정 방식 기준으로 connect/screen/run/fill/status/table/tree/capture/MCP/daemon/slot 검증 결과가 기록된다.
 
 ---
 
-## Sprint 4: 구조 분리
+## Sprint 8: ADT 통합 착수 여부 판단
 
-1. D-1 dispatcher 분리 설계
-2. D-2 recipe dispatch 분리
-3. D-3 registry 분리
-4. D-4 session dispatch 분리
-5. D-5 ontology/process dispatch 분리
-6. D-6 macro dispatch 분리
-7. D-7 slot dispatch 분리
+1. `/sap/bc/adt` SICF 활성화 여부 확인
+2. ADT 읽기 권한 계정 확인
+3. Basic Auth/SSO 방식 확인
+4. `requests` 의존성 도입 여부 결정
+5. recipe 축적량과 실제 ABAP metadata 필요성을 확인한 뒤 착수 여부 결정
 
 완료 기준:
 
-- dispatcher.py가 중앙 라우터 역할로 축소됨
+- ADT 통합을 바로 시작할 수 있는지, 아니면 recipe 축적 이후로 미룰지 결정된다.
 
 ---
 
-## Sprint 5: 운영 고도화
-
-1. E-1 recipe 품질 점수 개선
-2. E-2 recipe replay 검증 설계
-3. F-1 data status 명령
-4. G-1 Windows SAP 검증 문서
-
-완료 기준:
-
-- 사내 운영/검증/데이터 관리가 쉬워짐
-
----
-
-# 가장 먼저 할 3개 작업
+## 가장 먼저 할 3개 작업
 
 ```text
-1. ALV 테스트 실패 해결
-2. TOOL_PERMISSION_MAP 누락 16개 보강
-3. registry/policy/MCP consistency 테스트 추가
+1. Windows SAP GUI 실기 검증 실행 및 리포트 작성
+2. generated graph 품질 샘플 리뷰 / builder 보정 여부 결정
+3. ADT 통합 전제 조건 확인
 ```
 
-이 3개를 먼저 끝내면 현재 코드베이스의 안정성과 운영 신뢰도가 즉시 올라간다.
+이 3개를 끝내면 현재 코드베이스는 자동 테스트 통과 상태를 넘어 실제 SAP 운영 환경 검증과 장기 확장 판단 단계로 넘어간다.

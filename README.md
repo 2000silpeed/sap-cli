@@ -276,6 +276,12 @@ sap_cli/ontology/knowledge/scripting_api/graph.json
 공식 SAP GUI Scripting API 문서 export에서 그래프를 재생성하려면:
 
 ```powershell
+# CLI에서 바로 generated overlay 생성
+sap scripting-graph-build sap_gui_scripting_api.txt `
+  --out sap_cli/ontology/knowledge/scripting_api/graph.generated.json `
+  --source "https://help.sap.com/doc/9215986e54174174854b0af6bb14305a/800.08/en-US/sap_gui_scripting_api.pdf"
+
+# 기존 독립 스크립트도 계속 사용 가능
 python scripts/build_sap_scripting_graph.py sap_gui_scripting_api.txt `
   --out sap_cli/ontology/knowledge/scripting_api/graph.generated.json `
   --source "https://help.sap.com/doc/9215986e54174174854b0af6bb14305a/800.08/en-US/sap_gui_scripting_api.pdf"
@@ -411,6 +417,18 @@ sap recipe-save "spro-pricing-condition" "SPRO > SD > 가격결정" '[{"tool":"s
 # replay 최종 검증 기준까지 함께 저장
 sap recipe-save "va02-change" "VA02 수주 변경" '[{"tool":"sap_run","args":{"tcode":"VA02"}}]' --replay-success-criteria '{"expected_tcode":"VA02","expected_screen_number":"4001"}'
 
+# replay 실행 전 계획 검토
+sap recipe-replay-plan "va02-change" --current-tcode VA02 --current-screen 4001
+
+# replay 실제 실행 + 자동 검증/성공·실패 보고
+sap recipe-replay-execute "va02-change" --success-criteria '{"expected_tcode":"VA02"}'
+
+# 긴 JSON은 @파일 입력 가능
+sap recipe-replay-execute "va02-change" --success-criteria @criteria.json --no-save-success-criteria
+
+# SAP 화면 변경 후 새 steps로 버전업
+sap recipe-version-up "va02-change" @steps.json --change-note "화면 버튼 ID 변경"
+
 # 레시피 삭제
 sap recipe-delete "spro-pricing-condition"
 ```
@@ -454,8 +472,9 @@ Excel 관련 단계는 `session-excel`로 더 간단히 남길 수 있으며 `st
 `requires_sap=false`가 자동 지정된다.
 
 CLI에는 조회 중심 recipe 명령과 운영자 품질관리용 `recipe-success`,
-`recipe-failure`, `recipe-enable`을 노출합니다. `recipe-version-up`은 steps JSON 입력 UX가
-복잡하므로 현재는 MCP/dispatcher 자동화 흐름 중심으로 유지합니다.
+`recipe-failure`, `recipe-enable`을 노출합니다. 또한 replay 운영을 위해
+`recipe-replay-plan`, `recipe-replay-execute`, `recipe-version-up`도 CLI에서 사용할 수
+있습니다. 긴 steps/success criteria JSON은 `@steps.json`, `@criteria.json`처럼 파일로 넘길 수 있습니다.
 
 AI MCP 사용 흐름:
 1. 사용자 요청 → AI가 `sap_ontology_query(tcode, action_search="키워드")`로 온톨로지 내 경로 검색
