@@ -1519,7 +1519,14 @@ ADT는 강력하지만 인증/권한/시스템 설정 의존성이 추가된다.
 2. [x] `sap scripting-graph-build`로 `graph.generated.json` 생성
 3. [x] `sap scripting-query --type GuiSession --depth 1`로 overlay 로드 확인
 4. [ ] generated graph가 실제 `sap inspect` / `sap act` preflight에 유용하게 병합되는지 Windows SAP GUI 환경에서 확인
-5. [ ] parser artifact 샘플 리뷰 및 필요 시 builder 보정
+5. [x] parser artifact 샘플 리뷰 및 필요 시 builder 보정
+   - 2026-05-17 샘플 리뷰: duplicate node 없음, bad edge ref 없음, orphan은 enum/constant 계열 object 10개로 확인.
+   - `GuiGridView` method에 `ContextMenu`, `Example`, `Error`, `Button`, `Ascending`, `Descending`, `GUI` 같은 PDF 표/예제 artifact가 섞이는 문제 확인.
+   - `GuiMainWindow.Remarks` artifact도 확인.
+   - `scripts/build_sap_scripting_graph.py`의 `SKIP_MEMBERS`에 명확한 artifact 단어를 추가했다.
+   - `tests/test_scripting_api_graph.py`에 artifact skip 회귀 테스트를 추가했다.
+   - 검증: `python -m pytest tests/test_scripting_api_graph.py tests/test_scripting_graph_build_cli.py -q` → 7 passed.
+   - 검증: `python -m pytest -q` → 600 passed.
 
 완료 기준:
 

@@ -75,6 +75,42 @@ def test_build_graph_parses_numbered_pdf_headings_and_signatures():
     assert ("object:GuiTextField", "method:GuiTextField.GetListProperty", "HAS_METHOD") in edge_tuples
 
 
+def test_build_graph_skips_pdf_table_and_example_artifacts():
+    graph = build_graph(
+        """
+        1.2.30 GuiGridView Object
+        Methods
+        ContextMenu
+        Example
+        Error
+        Button
+        Ascending
+        Descending
+        GUI
+        Public Sub DoubleClickCurrentCell()
+        1.2.40 GuiMainWindow Object
+        Methods
+        Remarks
+        Public Sub SendVKey( _
+        ) As Void
+        """,
+        source="https://help.sap.com/example.pdf",
+    )
+
+    node_ids = {node["id"] for node in graph["nodes"]}
+
+    assert "method:GuiGridView.DoubleClickCurrentCell" in node_ids
+    assert "method:GuiMainWindow.SendVKey" in node_ids
+    assert "method:GuiGridView.ContextMenu" not in node_ids
+    assert "method:GuiGridView.Example" not in node_ids
+    assert "method:GuiGridView.Error" not in node_ids
+    assert "method:GuiGridView.Button" not in node_ids
+    assert "method:GuiGridView.Ascending" not in node_ids
+    assert "method:GuiGridView.Descending" not in node_ids
+    assert "method:GuiGridView.GUI" not in node_ids
+    assert "method:GuiMainWindow.Remarks" not in node_ids
+
+
 def test_merge_graph_data_preserves_seed_and_adds_generated_members():
     seed = {
         "version": "seed",
