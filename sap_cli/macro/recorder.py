@@ -15,6 +15,7 @@ from pathlib import Path
 
 from sap_cli.ontology.schema import ActionType
 from sap_cli.macro.schema import Macro, MacroStep, MacroVariable
+from sap_cli.storage import atomic_write_json
 
 # 변수 치환 불필요한 액션 (값이 시스템 식별자인 경우)
 _SYSTEM_ACTIONS = {ActionType.PRESS_BUTTON, ActionType.SEND_VKEY, ActionType.SELECT_TAB}
@@ -278,14 +279,13 @@ class MacroRecorder:
 
     def _save_state(self) -> None:
         """녹화 상태를 파일에 저장."""
-        self._state_file.parent.mkdir(parents=True, exist_ok=True)
         state = {
             "recording": self._recording,
             "name": self._name,
             "tcode": self._tcode,
             "steps": [s.model_dump(mode="json") for s in self._steps],
         }
-        self._state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        atomic_write_json(self._state_file, state, mode=0o644)
 
     def _load_state(self) -> None:
         """파일에서 녹화 상태 복원."""

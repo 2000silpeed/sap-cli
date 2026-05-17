@@ -39,6 +39,7 @@ from .dispatcher import (
     dispatch_command,
     _resolve_agent_name,
 )
+from .storage import atomic_write_json
 
 app = typer.Typer(
     name="sap",
@@ -141,12 +142,7 @@ def _read_active_cli_session_id() -> str | None:
 
 
 def _write_active_cli_session_id(session_id: str) -> None:
-    _ACTIVE_CLI_SESSION_PATH.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"session_id": session_id}
-    _ACTIVE_CLI_SESSION_PATH.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    atomic_write_json(_ACTIVE_CLI_SESSION_PATH, {"session_id": session_id}, mode=0o644)
 
 
 def _clear_active_cli_session_id(session_id: str | None = None) -> bool:

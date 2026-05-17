@@ -8,7 +8,6 @@ BusinessProcess의 스텝을 순서대로 실행하면서:
 
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +19,7 @@ from .schema import (
     SapStatusMessage,
     StepResult,
 )
+from ..storage import atomic_write_json
 
 
 class ProcessExecutor:
@@ -194,7 +194,7 @@ class ProcessExecutor:
         filename = f"{self.process.id}_{ts}.json"
         path = self.executions_dir / filename
         data = self.execution.model_dump(mode="json", exclude_none=True)
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(path, data, mode=0o644)
         return path
 
 

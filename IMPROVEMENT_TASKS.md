@@ -524,6 +524,32 @@ sap auth-check sap_recipe_query
 
 ---
 
+## C-6. 잔여 직접 JSON write 경로 공통화
+
+### 진행 상태
+
+진행일: 2026-05-17
+
+- `ProcessExecutor._save()`를 `atomic_write_json()`으로 변경했다.
+- CLI active session state 저장을 `atomic_write_json()`으로 변경했다.
+- `MacroRecorder._save_state()`를 `atomic_write_json()`으로 변경했다.
+- `sap_cli` 내부의 남은 `write_text()` 직접 호출이 공통 storage 유틸/RecipeStore/MacroStore 사용처뿐인지 확인했다.
+- 관련 테스트 통과: `tests/test_process_executor.py tests/test_recorder.py tests/test_auth_cli.py` → `36 passed`
+
+### 작업
+
+- [x] process execution 결과 저장 경로를 공통 atomic write로 이관
+- [x] CLI active session state 저장 경로를 공통 atomic write로 이관
+- [x] macro recorder state 저장 경로를 공통 atomic write로 이관
+- [x] 직접 `write_text()` 잔여 경로 점검
+
+### 완료 기준
+
+- [x] 주요 JSON/state 저장 경로가 공통 storage 유틸을 사용한다.
+- [x] 관련 테스트가 통과한다.
+
+---
+
 # Phase D: Dispatcher 구조 분리
 
 목표: 3000줄 이상의 `dispatcher.py`를 기능별로 분리해 유지보수성을 높인다.
@@ -1082,7 +1108,7 @@ _enum_value
 ### 종료 결정
 
 - [x] Phase D는 D-16까지의 dispatcher/helper 분리 작업을 기준으로 종료한다.
-- [x] 추가 후보였던 `dispatch_command` 주변 audit/transcript/session logging 분리는 다음 단계로 넘긴다.
+- [x] 추가 후보였던 `dispatch_command` 주변 audit/transcript/session logging 분리는 2026-05-17 후속 정리에서 처리했다.
 
 ### 종료 사유
 
@@ -1091,6 +1117,18 @@ _enum_value
 - `dispatch_command` 주변은 중앙 오케스트레이션 성격이 강해, Phase D에서 더 분리하면 흐름 추적 비용이 커질 수 있다.
 - `dispatcher.py`는 Phase D 진행 중 1500줄대에서 1171줄까지 감소했다.
 - 마지막 전체 검증 기준: `uv run pytest` → 505 passed.
+
+### 후속 정리 (2026-05-17)
+
+- `sap_cli/dispatchers/execution_logging.py`를 추가했다.
+- audit authorization 기록 구현을 `execution_logging.audit_authorization()`으로 이동했다.
+- transcript 기록 구현을 `execution_logging.log_transcript()`로 이동했다.
+- transcript/session용 SAP state capture 구현을 `execution_logging.capture_transcript_state()`로 이동했다.
+- post-action result에서 transcript state를 추출하는 구현을 `execution_logging.extract_transcript_state_from_result()`로 이동했다.
+- `sap_cli.dispatcher`에는 `_audit_authorization`, `_log_transcript`, `_capture_transcript_state`, `_extract_transcript_state_from_result` compatibility wrapper를 유지했다.
+- `dispatch_command()`의 제어 흐름은 유지하고 기록/상태 캡처 구현만 분리했다.
+- 검증: `python -m pytest tests/test_dispatcher.py tests/test_transcript_store.py tests/test_transcript_planner.py tests/test_session_store.py tests/test_command_surface_consistency.py -q` → 44 passed.
+- 검증: `python -m pytest -q` → 599 passed.
 
 ### 다음 단계
 

@@ -62,6 +62,12 @@ from .post_action import (
     collect_screen_summary,
     with_post_action,
 )
+from .execution_logging import (
+    audit_authorization,
+    capture_transcript_state,
+    extract_transcript_state_from_result,
+    log_transcript,
+)
 from .sap_actions import (
     SAP_ACTION_COMMANDS,
     dispatch_sap_action_command,
@@ -105,6 +111,10 @@ __all__ = [
     "collect_post_action",
     "collect_screen_summary",
     "with_post_action",
+    "audit_authorization",
+    "capture_transcript_state",
+    "extract_transcript_state_from_result",
+    "log_transcript",
     "SAP_ACTION_COMMANDS",
     "dispatch_sap_action_command",
     "is_sap_action_command",

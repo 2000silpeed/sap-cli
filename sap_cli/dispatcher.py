@@ -14,7 +14,6 @@ from typing import Any
 
 _logger = logging.getLogger(__name__)
 
-from .auth.audit import AuditLogger
 from .auth.checker import PermissionChecker
 from .auth.policy import TOOL_PERMISSION_MAP, Permission, Policy, load_policy
 from .auth.transcript import TranscriptLogger
@@ -143,6 +142,12 @@ from .dispatchers.post_action import (
     summarize_action as _summarize_action_impl,
     summarize_field as _summarize_field_impl,
     with_post_action as _with_post_action_impl,
+)
+from .dispatchers.execution_logging import (
+    audit_authorization as _audit_authorization_impl,
+    capture_transcript_state as _capture_transcript_state_impl,
+    extract_transcript_state_from_result as _extract_transcript_state_from_result_impl,
+    log_transcript as _log_transcript_impl,
 )
 from .dispatchers.sap_actions import (
     dispatch_command_text as _dispatch_command_text_impl,
@@ -1612,38 +1617,7 @@ def _audit_authorization(
     tool_name: str,
     arguments: dict[str, Any],
 ) -> None:
-    auditor = AuditLogger(policy.audit if policy else None)
-    if not authz.allowed:
-        auditor.log(
-            agent=authz.agent,
-            tool_name=tool_name,
-            arguments=arguments,
-            allowed=False,
-            reason=authz.reason,
-            permission=authz.permission,
-            resource=authz.resource,
-        )
-        return
-    if authz.approval_required:
-        auditor.log(
-            agent=authz.agent,
-            tool_name=tool_name,
-            arguments=arguments,
-            allowed=False,
-            reason=f"approval_required: {authz.approval_reason}",
-            permission=authz.permission,
-            resource=authz.resource,
-        )
-        return
-    auditor.log(
-        agent=authz.agent,
-        tool_name=tool_name,
-        arguments=arguments,
-        allowed=True,
-        reason=authz.reason,
-        permission=authz.permission,
-        resource=authz.resource,
-    )
+    _audit_authorization_impl(policy, authz, tool_name, arguments)
 
 
 def _resolve_agent_name(policy: Any, explicit_agent_name: str | None) -> str | None:
@@ -1671,39 +1645,18 @@ def _log_transcript(
     result: dict[str, Any] | None = None,
     error: str = "",
 ) -> None:
-    if not should_log_transcript:
-        return
-
-    def _has_session(state: dict[str, Any] | None) -> bool:
-        return bool(state and isinstance(state.get("session"), dict))
-
-    if not _has_session(before_state) and not _has_session(after_state):
-        sap = _get_existing_sap(ctx.slot_id)
-        if sap is not None:
-            try:
-                session = sap.get_session_info().model_dump(mode="json")
-                if before_state is None:
-                    before_state = {"session": session}
-                else:
-                    before_state["session"] = session
-            except Exception:
-                pass
-
-    reason = authz.approval_reason if authz.approval_required else authz.reason
-    transcript.log(
-        source=ctx.source,
+    _log_transcript_impl(
+        transcript,
+        should_log_transcript=should_log_transcript,
+        ctx=ctx,
         command=command,
         tool_name=tool_name,
-        agent=authz.agent,
+        authz=authz,
         arguments=arguments,
-        permission=authz.permission,
-        resource=authz.resource,
-        allowed=authz.allowed,
-        approval_required=authz.approval_required,
-        reason=reason,
         outcome=outcome,
-        before=before_state,
-        after=after_state,
+        get_existing_sap=_get_existing_sap,
+        before_state=before_state,
+        after_state=after_state,
         result=result,
         error=error,
     )
@@ -1740,39 +1693,19 @@ def _capture_transcript_state(
     include_screen_summary: bool,
     slot_id: str = "ses0",
 ) -> dict[str, Any] | None:
-    if command not in COMMAND_REGISTRY:
-        return None
-    if command in {"ontology_query", "ontology_ask", "macro_control", "macro_list", "macro_show", "macro_delete", "transcript_query", "transcript_plan"}:
-        return None
-
-    sap = _get_existing_sap(slot_id)
-    if sap is None:
-        return None
-
-    try:
-        state = {
-            "session": sap.get_session_info().model_dump(mode="json"),
-            "status": sap.get_status().model_dump(mode="json"),
-            "modal": _collect_modal(sap),
-        }
-        if include_screen_summary:
-            state["screen_summary"] = _collect_screen_summary(sap)
-        return state
-    except Exception as exc:  # pragma: no cover - defensive path
-        return {"capture_error": str(exc)}
+    return _capture_transcript_state_impl(
+        command,
+        include_screen_summary=include_screen_summary,
+        slot_id=slot_id,
+        command_registry=COMMAND_REGISTRY,
+        get_existing_sap=_get_existing_sap,
+        collect_modal=_collect_modal,
+        collect_screen_summary=_collect_screen_summary,
+    )
 
 
 def _extract_transcript_state_from_result(result: dict[str, Any]) -> dict[str, Any] | None:
-    post_action = result.get("post_action")
-    if not isinstance(post_action, dict):
-        return None
-
-    state: dict[str, Any] = {}
-    for key in ("session", "status", "modal", "screen_summary"):
-        value = post_action.get(key)
-        if value is not None:
-            state[key] = value
-    return state or None
+    return _extract_transcript_state_from_result_impl(result)
 
 
 def _get_existing_sap(slot_id: str = "ses0") -> SapGuiWrapper | None:
