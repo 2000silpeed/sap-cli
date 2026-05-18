@@ -280,6 +280,175 @@ class TestScanChildrenComplexScreen:
         assert screen.fields[0].label == "Material Number"
         assert screen.fields[0].semantic.raw_label == "Material Number"
 
+    def test_table_control_editable_cells_are_collected(self, wrapper):
+        """SE16 selection-option 팝업의 table-control 입력 셀을 필드로 노출한다."""
+        option = _make_element(
+            "wnd[1]/usr/tblSAPLALDBSINGLE/ctxtRSCSEL_255-OPTION[1,0]",
+            "GuiCTextField",
+            text="GT",
+            changeable=True,
+            max_length=2,
+        )
+        low = _make_element(
+            "wnd[1]/usr/tblSAPLALDBSINGLE/ctxtRSCSEL_255-SLOW_I[2,0]",
+            "GuiCTextField",
+            text="20240101",
+            changeable=True,
+            max_length=8,
+        )
+        table = _make_element(
+            "wnd[1]/usr/tblSAPLALDBSINGLE",
+            "GuiTableControl",
+            row_count=1,
+            column_count=3,
+            visible_row_count=1,
+            children=FakeChildren([option, low]),
+        )
+        container = _make_element(
+            "wnd[1]/usr",
+            "GuiUserArea",
+            children=FakeChildren([table]),
+        )
+        screen = _empty_screen()
+
+        wrapper._scan_children(container, screen)
+
+        assert [table.id for table in screen.tables] == ["wnd[1]/usr/tblSAPLALDBSINGLE"]
+        field_ids = {field.id for field in screen.fields}
+        assert "wnd[1]/usr/tblSAPLALDBSINGLE/ctxtRSCSEL_255-OPTION[1,0]" in field_ids
+        assert "wnd[1]/usr/tblSAPLALDBSINGLE/ctxtRSCSEL_255-SLOW_I[2,0]" in field_ids
+
+    def test_table_control_scan_skips_bad_child_and_keeps_editable_cells(self, wrapper):
+        """일부 table-control 셀 접근 실패가 나머지 입력 셀 수집을 막으면 안 된다."""
+        option = _make_element(
+            "wnd[1]/usr/tblSAPLALDBSINGLE/ctxtRSCSEL_255-OPTION[1,0]",
+            "GuiCTextField",
+            text="GT",
+            changeable=True,
+        )
+        low = _make_element(
+            "wnd[1]/usr/tblSAPLALDBSINGLE/ctxtRSCSEL_255-SLOW_I[2,0]",
+            "GuiCTextField",
+            text="20240101",
+            changeable=True,
+        )
+        table = _make_element(
+            "wnd[1]/usr/tblSAPLALDBSINGLE",
+            "GuiTableControl",
+            row_count=1,
+            column_count=3,
+            visible_row_count=1,
+            children=FakeChildren([option, low], bad_indices={0}),
+        )
+        screen = _empty_screen()
+
+        wrapper._scan_table_controls(table, screen)
+
+        assert [field.id for field in screen.fields] == [
+            "wnd[1]/usr/tblSAPLALDBSINGLE/ctxtRSCSEL_255-OPTION[1,0]",
+            "wnd[1]/usr/tblSAPLALDBSINGLE/ctxtRSCSEL_255-SLOW_I[2,0]",
+        ]
+
+    def test_table_control_cells_are_collected_via_get_cell_fallback(self, wrapper):
+        """Children이 비어도 GetCell(row, col)로 노출되는 입력 셀을 수집한다."""
+        option = _make_element(
+            "wnd[1]/usr/tblSAPLALDBSINGLE/ctxtRSCSEL_255-OPTION[1,0]",
+            "GuiCTextField",
+            text="GT",
+            changeable=True,
+        )
+        low = _make_element(
+            "wnd[1]/usr/tblSAPLALDBSINGLE/ctxtRSCSEL_255-SLOW_I[2,0]",
+            "GuiCTextField",
+            text="20240101",
+            changeable=True,
+        )
+        table = _make_element(
+            "wnd[1]/usr/tblSAPLALDBSINGLE",
+            "GuiTableControl",
+            row_count=1,
+            column_count=2,
+            visible_row_count=1,
+            children=FakeChildren([]),
+        )
+        table.Columns = FakeChildren([
+            SimpleNamespace(Name="OPTION", Position=0),
+            SimpleNamespace(Name="SLOW_I", Position=1),
+        ])
+
+        def get_cell(row: int, col):
+            cells = {
+                (0, "OPTION"): option,
+                (0, "SLOW_I"): low,
+            }
+            return cells[(row, col)]
+
+        table.GetCell = get_cell
+        screen = _empty_screen()
+
+        wrapper._scan_table_controls(table, screen)
+
+        assert [field.id for field in screen.fields] == [
+            "wnd[1]/usr/tblSAPLALDBSINGLE/ctxtRSCSEL_255-OPTION[1,0]",
+            "wnd[1]/usr/tblSAPLALDBSINGLE/ctxtRSCSEL_255-SLOW_I[2,0]",
+        ]
+
+    def test_table_control_get_cell_fallback_tries_column_position(self, wrapper):
+        """GetCell이 column name을 거부해도 position으로 다시 시도한다."""
+        option = _make_element(
+            "wnd[1]/usr/tblSAPLALDBSINGLE/ctxtRSCSEL_255-OPTION[1,0]",
+            "GuiCTextField",
+            text="GT",
+            changeable=True,
+        )
+        table = _make_element(
+            "wnd[1]/usr/tblSAPLALDBSINGLE",
+            "GuiTableControl",
+            row_count=1,
+            column_count=1,
+            visible_row_count=1,
+            children=FakeChildren([]),
+        )
+        table.Columns = FakeChildren([SimpleNamespace(Name="OPTION", Position=0)])
+
+        def get_cell(row: int, col):
+            if col != 0:
+                raise RuntimeError("name rejected")
+            return option
+
+        table.GetCell = get_cell
+        screen = _empty_screen()
+
+        wrapper._scan_table_controls(table, screen)
+
+        assert [field.id for field in screen.fields] == [
+            "wnd[1]/usr/tblSAPLALDBSINGLE/ctxtRSCSEL_255-OPTION[1,0]"
+        ]
+
+    def test_table_control_buttons_are_collected(self, wrapper):
+        """table-control 내부 버튼도 actions 후보로 노출한다."""
+        button = _make_element(
+            "wnd[1]/usr/tblSAPLALDBSINGLE/btnPUSH[3,0]",
+            "GuiButton",
+            text="Multiple Selection",
+            tooltip="Multiple Selection",
+        )
+        table = _make_element(
+            "wnd[1]/usr/tblSAPLALDBSINGLE",
+            "GuiTableControl",
+            row_count=1,
+            column_count=1,
+            visible_row_count=1,
+            children=FakeChildren([button]),
+        )
+        screen = _empty_screen()
+
+        wrapper._scan_table_controls(table, screen)
+
+        assert [button.id for button in screen.buttons] == [
+            "wnd[1]/usr/tblSAPLALDBSINGLE/btnPUSH[3,0]"
+        ]
+
 
 class TestScanChildrenElementProcessingError:
     """개별 요소의 속성(Id, Type 등) 접근 실패 시나리오."""

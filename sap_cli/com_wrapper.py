@@ -1526,24 +1526,25 @@ class SapGuiWrapper:
                 logger.debug("요소 처리 건너뜀 [index=%d]: %s", i, e)
 
     def _scan_table_controls(self, table: Any, screen: ScreenOntology, depth: int = 0) -> None:
-        """테이블 내부에서 체크박스/라디오버튼만 수집 (일반 텍스트 셀은 무시)."""
+        """Collect actionable controls inside a table control."""
         if depth > 3:
             return
+        seen = {
+            *{field.id for field in screen.fields},
+            *{button.id for button in screen.buttons},
+        }
         try:
             children = table.Children
             for i in range(children.Count):
-                child = children(i)
-                child_type = str(child.Type)
-                comp_type = self._map_component_type(child_type)
-                if comp_type in (GuiComponentType.CHECK_BOX, GuiComponentType.RADIO_BUTTON):
-                    child_id = str(child.Id)
-                    screen.fields.append(SapField(
-                        id=child_id,
-                        name=self._extract_name(child_id),
-                        type=comp_type,
-                        label=str(getattr(child, "Text", "")),
-                        changeable=bool(getattr(child, "Changeable", False)),
-                    ))
+                try:
+                    child = children(i)
+                    child_type = str(child.Type)
+                    comp_type = self._map_component_type(child_type)
+                except Exception as e:
+                    logger.debug("테이블 내부 요소 접근 건너뜀 [index=%d]: %s", i, e)
+                    continue
+                if self._add_table_control_component(child, comp_type, screen, seen):
+                    continue
                 elif hasattr(child, "Children"):
                     try:
                         if child.Children.Count > 0:
@@ -1552,6 +1553,150 @@ class SapGuiWrapper:
                         pass
         except Exception:
             pass
+        self._scan_table_cells(table, screen, seen, depth)
+
+    def _scan_table_cells(
+        self,
+        table: Any,
+        screen: ScreenOntology,
+        seen: set[str],
+        depth: int,
+    ) -> None:
+        """Fallback for GuiTableControl cells exposed only through GetCell()."""
+        if depth > 3:
+            return
+        try:
+            row_count = int(self._safe_attr(table, "VisibleRowCount", 0) or 0)
+            if row_count <= 0:
+                row_count = int(self._safe_attr(table, "RowCount", 0) or 0)
+            row_count = min(row_count, 20)
+            columns = getattr(table, "Columns")
+            col_count = min(int(self._safe_attr(columns, "Count", 0) or 0), 20)
+        except Exception:
+            return
+
+        for row in range(row_count):
+            for col_index in range(col_count):
+                try:
+                    col = columns(col_index)
+                    cell = self._get_table_cell(table, row, col, col_index)
+                    comp_type = self._map_component_type(str(cell.Type))
+                except Exception as e:
+                    logger.debug(
+                        "테이블 셀 접근 건너뜀 [row=%d, col=%d]: %s",
+                        row,
+                        col_index,
+                        e,
+                    )
+                    continue
+                if self._add_table_control_component(cell, comp_type, screen, seen):
+                    continue
+                try:
+                    if hasattr(cell, "Children") and cell.Children.Count > 0:
+                        self._scan_table_controls(cell, screen, depth + 1)
+                except Exception:
+                    pass
+
+    @staticmethod
+    def _table_column_refs(column: Any, index: int) -> list[Any]:
+        refs: list[Any] = []
+        for attr in ("Name", "name", "Id", "id"):
+            try:
+                value = getattr(column, attr)
+                if value not in ("", None) and value not in refs:
+                    refs.append(value)
+            except Exception:
+                continue
+        for attr in ("Position", "position"):
+            try:
+                value = getattr(column, attr)
+                if value not in ("", None) and value not in refs:
+                    refs.append(value)
+            except Exception:
+                continue
+        if index not in refs:
+            refs.append(index)
+        return refs
+
+    def _get_table_cell(self, table: Any, row: int, column: Any, index: int) -> Any:
+        errors: list[str] = []
+        for ref in self._table_column_refs(column, index):
+            try:
+                return table.GetCell(row, ref)
+            except Exception as exc:
+                errors.append(f"{ref}: {exc}")
+        raise SapGuiError("; ".join(errors))
+
+    def _add_table_control_component(
+        self,
+        child: Any,
+        comp_type: GuiComponentType,
+        screen: ScreenOntology,
+        seen: set[str],
+    ) -> bool:
+        if comp_type in (
+            GuiComponentType.TEXT_FIELD,
+            GuiComponentType.CTEXT_FIELD,
+            GuiComponentType.PASSWORD_FIELD,
+        ):
+            child_id = str(child.Id)
+            if child_id in seen:
+                return True
+            seen.add(child_id)
+            screen.fields.append(SapField(
+                id=child_id,
+                name=self._extract_name(child_id),
+                type=comp_type,
+                label=self._get_label_for(child),
+                value=self._safe_attr(child, "Text", ""),
+                changeable=bool(self._safe_attr(child, "Changeable", False)),
+                max_length=self._get_max_length(child),
+                semantic=self._build_semantic(child, child_id),
+            ))
+            return True
+        if comp_type == GuiComponentType.COMBO_BOX:
+            child_id = str(child.Id)
+            if child_id in seen:
+                return True
+            seen.add(child_id)
+            screen.fields.append(SapField(
+                id=child_id,
+                name=self._extract_name(child_id),
+                type=comp_type,
+                label=self._get_label_for(child),
+                value=self._safe_attr(child, "Value", ""),
+                changeable=bool(self._safe_attr(child, "Changeable", False)),
+                semantic=self._build_semantic(child, child_id),
+            ))
+            return True
+        if comp_type in (GuiComponentType.CHECK_BOX, GuiComponentType.RADIO_BUTTON):
+            child_id = str(child.Id)
+            if child_id in seen:
+                return True
+            seen.add(child_id)
+            screen.fields.append(SapField(
+                id=child_id,
+                name=self._extract_name(child_id),
+                type=comp_type,
+                label=self._safe_attr(child, "Text", ""),
+                changeable=bool(self._safe_attr(child, "Changeable", False)),
+                semantic=self._build_semantic(child, child_id),
+            ))
+            return True
+        if comp_type == GuiComponentType.BUTTON:
+            child_id = str(child.Id)
+            if child_id in seen:
+                return True
+            seen.add(child_id)
+            screen.buttons.append(SapButton(
+                id=child_id,
+                name=self._extract_name(child_id),
+                text=self._safe_attr(child, "Text", ""),
+                tooltip=self._safe_attr(child, "Tooltip", ""),
+                icon_name=self._safe_attr(child, "IconName", ""),
+            ))
+            return True
+        return False
 
     # -------------------------------------------------------------------
     # Table Operations

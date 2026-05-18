@@ -113,9 +113,11 @@ class TestDaemonServerDispatchContext:
         from sap_cli.dispatcher import DispatchContext
 
         captured_ctx = []
+        captured_args = []
 
         def mock_dispatch_command(cmd, args, ctx):
             captured_ctx.append(ctx)
+            captured_args.append(args)
             return {"status": "ok"}
 
         with patch("sap_cli.daemon.dispatch_command", mock_dispatch_command):
@@ -135,12 +137,40 @@ class TestDaemonServerDispatchContext:
                 )
 
         assert result["ok"] is True
+        assert captured_args[0] == {"tcode": "MM03"}
         ctx = captured_ctx[0]
         assert ctx.source == "mcp"
         assert ctx.tool_name == "sap_screen"
         assert ctx.agent_name == "op"
         assert ctx.include_post_action_context is False
         assert ctx.include_screen_summary is True
+
+    def test_dispatch_preserves_screen_fields_only_args(self):
+        from sap_cli.daemon import _DaemonServer
+
+        captured = []
+
+        def mock_dispatch_command(cmd, args, ctx):
+            captured.append((cmd, args, ctx))
+            return {"fields": []}
+
+        with patch("sap_cli.daemon.dispatch_command", mock_dispatch_command):
+            with patch.object(_DaemonServer, "__init__", lambda self: None):
+                server = _DaemonServer()
+                server._sap = None
+                result = server.dispatch(
+                    "screen",
+                    {"fields_only": True, "actions_only": False, "search": None},
+                    {"source": "mcp", "tool_name": "sap_screen"},
+                )
+
+        assert result == {"ok": True, "data": {"fields": []}}
+        assert captured[0][0] == "screen"
+        assert captured[0][1] == {
+            "fields_only": True,
+            "actions_only": False,
+            "search": None,
+        }
 
     def test_dispatch_without_context_defaults_to_daemon(self):
         from sap_cli.daemon import _DaemonServer
@@ -272,6 +302,29 @@ class TestMcpHandleToolDaemon:
         data = json.loads(result[0].text)
         assert data["fallback"] is True
 
+    def test_mcp_screen_preserves_fields_only_args_on_direct_fallback(self, monkeypatch):
+        """daemon fallback 후 direct dispatch에서도 fields_only 인자를 보존한다."""
+        monkeypatch.setenv("SAP_CLI_USE_DAEMON", "1")
+        monkeypatch.setattr("sap_cli.mcp_server.load_policy", lambda: None)
+        captured = []
+
+        def mock_dispatch(command, args, ctx):
+            captured.append((command, args, ctx))
+            return {"fields": [{"id": "wnd[1]/usr/tbl/ctxtOPTION[1,0]"}]}
+
+        with patch("sap_cli.mcp_server._dispatch_via_daemon", return_value=None):
+            with patch("sap_cli.mcp_server.dispatch_command", mock_dispatch):
+                from sap_cli.mcp_server import handle_tool
+                result = handle_tool("sap_screen", {"fields_only": True})
+
+        import json
+        data = json.loads(result[0].text)
+        assert data["fields"][0]["id"] == "wnd[1]/usr/tbl/ctxtOPTION[1,0]"
+        assert captured[0][0] == "screen"
+        assert captured[0][1] == {"fields_only": True}
+        assert captured[0][2].source == "mcp"
+        assert captured[0][2].tool_name == "sap_screen"
+
 
 # ---------------------------------------------------------------------------
 # _dispatch_via_daemon 단위 테스트
@@ -308,15 +361,22 @@ class TestDispatchViaDaemon:
         captured = []
 
         def mock_send(cmd, args, timeout=60, context=None):
-            captured.append(context)
+            captured.append((cmd, args, context))
             return {"ok": True, "data": {}}
 
         with patch("sap_cli.daemon.is_running", return_value=True):
             with patch("sap_cli.daemon.send_command", mock_send):
                 from sap_cli.mcp_server import _dispatch_via_daemon
-                _dispatch_via_daemon("screen", {"tcode": "VA01"}, "sap_screen", "operator")
+                _dispatch_via_daemon(
+                    "screen",
+                    {"fields_only": True, "actions_only": False},
+                    "sap_screen",
+                    "operator",
+                )
 
-        ctx = captured[0]
+        cmd, args, ctx = captured[0]
+        assert cmd == "screen"
+        assert args == {"fields_only": True, "actions_only": False}
         assert ctx["source"] == "mcp"
         assert ctx["tool_name"] == "sap_screen"
         assert ctx["agent_name"] == "operator"

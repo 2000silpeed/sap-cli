@@ -44,3 +44,27 @@ def test_try_daemon_autostarts_when_not_running(monkeypatch, capsys):
     assert calls[1] == ("start",)
     assert calls[2][0] == "send"
     assert '"via": "daemon"' in capsys.readouterr().out
+
+
+def test_cli_screen_preserves_fields_only_args(monkeypatch):
+    from sap_cli import cli
+
+    calls = []
+    monkeypatch.setattr(
+        cli,
+        "_run_command",
+        lambda cmd, args, allow_daemon=False, slot_id=None: calls.append(
+            (cmd, args, allow_daemon, slot_id)
+        ),
+    )
+
+    cli.screen(fields_only=True, actions_only=False, search=None)
+
+    assert calls == [
+        (
+            "screen",
+            {"fields_only": True, "actions_only": False, "search": None},
+            True,
+            None,
+        )
+    ]
