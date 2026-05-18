@@ -125,7 +125,13 @@ class TestDaemonServerDispatchContext:
                 result = server.dispatch(
                     "screen",
                     {"tcode": "MM03"},
-                    {"source": "mcp", "tool_name": "sap_screen", "agent_name": "op", "include_screen_summary": True},
+                    {
+                        "source": "mcp",
+                        "tool_name": "sap_screen",
+                        "agent_name": "op",
+                        "include_post_action_context": False,
+                        "include_screen_summary": True,
+                    },
                 )
 
         assert result["ok"] is True
@@ -133,6 +139,7 @@ class TestDaemonServerDispatchContext:
         assert ctx.source == "mcp"
         assert ctx.tool_name == "sap_screen"
         assert ctx.agent_name == "op"
+        assert ctx.include_post_action_context is False
         assert ctx.include_screen_summary is True
 
     def test_dispatch_without_context_defaults_to_daemon(self):
@@ -313,4 +320,26 @@ class TestDispatchViaDaemon:
         assert ctx["source"] == "mcp"
         assert ctx["tool_name"] == "sap_screen"
         assert ctx["agent_name"] == "operator"
+        assert ctx["include_post_action_context"] is True
         assert ctx["include_screen_summary"] is True
+
+    def test_connect_uses_fast_context(self, monkeypatch):
+        monkeypatch.setenv("SAP_CLI_MCP_SCREEN_SUMMARY", "1")
+        captured = []
+
+        def mock_send(cmd, args, timeout=60, context=None):
+            captured.append(context)
+            return {"ok": True, "data": {"connected": True}}
+
+        with patch("sap_cli.daemon.is_running", return_value=True):
+            with patch("sap_cli.daemon.send_command", mock_send):
+                from sap_cli.mcp_server import _dispatch_via_daemon
+                result = _dispatch_via_daemon("connect", {}, "sap_connect", "operator")
+
+        assert result == {"ok": True, "data": {"connected": True}}
+        ctx = captured[0]
+        assert ctx["source"] == "mcp"
+        assert ctx["tool_name"] == "sap_connect"
+        assert ctx["agent_name"] == "operator"
+        assert ctx["include_post_action_context"] is False
+        assert ctx["include_screen_summary"] is False

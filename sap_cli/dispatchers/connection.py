@@ -201,6 +201,9 @@ def dispatch_modal(ctx: Any, get_sap: Factory) -> dict[str, Any]:
 
 def collect_modal(sap: Any) -> dict[str, Any]:
     """Collect modal presence and text from a SAP GUI wrapper."""
+    wait_until_idle = getattr(sap, "wait_until_idle", None)
+    if callable(wait_until_idle):
+        wait_until_idle()
     has_modal = sap.has_modal()
     payload: dict[str, Any] = {"has_modal": has_modal}
     if has_modal:

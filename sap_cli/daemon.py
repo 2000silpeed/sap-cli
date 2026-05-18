@@ -168,6 +168,8 @@ class _DaemonServer(socketserver.TCPServer):
                     setattr(ctx, field, str(ctx_dict[field]))
             if "raw_argv" in ctx_dict and isinstance(ctx_dict["raw_argv"], list):
                 ctx.raw_argv = [str(item) for item in ctx_dict["raw_argv"]]
+            if "include_post_action_context" in ctx_dict:
+                ctx.include_post_action_context = bool(ctx_dict["include_post_action_context"])
             if "include_screen_summary" in ctx_dict:
                 ctx.include_screen_summary = bool(ctx_dict["include_screen_summary"])
             if "slot_id" in ctx_dict:

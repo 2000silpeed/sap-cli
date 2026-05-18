@@ -1384,6 +1384,16 @@ def _screen_summary_enabled() -> bool:
     return raw not in {"0", "false", "no"}
 
 
+def _include_post_action_context(command: str) -> bool:
+    """Return whether MCP should enrich the command result after execution."""
+    return command != "connect"
+
+
+def _include_screen_summary(command: str) -> bool:
+    """Return whether MCP should include a compact screen summary."""
+    return command != "connect" and _screen_summary_enabled()
+
+
 def _use_daemon() -> bool:
     """Use daemon by default unless SAP_CLI_USE_DAEMON=0/false/no/off."""
     raw = os.getenv("SAP_CLI_USE_DAEMON", "1").strip().lower()
@@ -1416,7 +1426,8 @@ def _dispatch_via_daemon(
         "source": "mcp",
         "tool_name": tool_name,
         "agent_name": agent_name,
-        "include_screen_summary": _screen_summary_enabled(),
+        "include_post_action_context": _include_post_action_context(command),
+        "include_screen_summary": _include_screen_summary(command),
         "slot_id": slot_id,
     }
     if session_id:
@@ -1490,7 +1501,8 @@ def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             source="mcp",
             tool_name=name,
             agent_name=effective_agent,
-            include_screen_summary=_screen_summary_enabled(),
+            include_post_action_context=_include_post_action_context(command),
+            include_screen_summary=_include_screen_summary(command),
             session_id=_active_session_id,
             slot_id=slot_id,
         )

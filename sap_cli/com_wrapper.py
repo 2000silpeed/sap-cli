@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import platform
+import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -448,7 +450,7 @@ class SapGuiWrapper:
 
         모달(wnd[1])이 떠 있으면 모달에 전송, 없으면 메인 윈도우(wnd[0])에 전송.
         """
-        window_id = "wnd[1]" if self.has_modal() else "wnd[0]"
+        window_id = self._current_window_id()
         try:
             self.session.FindById(window_id).SendVKey(vkey)
         except Exception as e:
@@ -1092,8 +1094,9 @@ class SapGuiWrapper:
         각 요소마다 FindById COM 호출이 필요해 느림. 수동 탐색은 Children
         한 번 호출로 모든 자식을 가져오므로 COM 왕복이 적다.
         """
+        self.wait_until_idle()
         if window_id is None:
-            window_id = "wnd[1]" if self.has_modal() else "wnd[0]"
+            window_id = self._current_window_id()
 
         info = self.session.Info
         reported_tcode = info.Transaction
@@ -2528,21 +2531,116 @@ class SapGuiWrapper:
     # Modal Window Handling
     # -------------------------------------------------------------------
 
-    def has_modal(self) -> bool:
-        """모달 윈도우(팝업) 존재 여부."""
-        try:
-            self.session.FindById("wnd[1]")
-            return True
-        except Exception:
-            return False
+    def wait_until_idle(
+        self,
+        timeout: float | None = None,
+        interval: float = 0.05,
+    ) -> bool:
+        """Wait briefly until SAP GUI reports the session as not busy."""
+        if timeout is None:
+            timeout = self._float_env("SAP_CLI_IDLE_WAIT_SECONDS", 1.0)
+        deadline = time.monotonic() + max(0.0, timeout)
+        waited = False
+        while True:
+            if not self._session_is_busy():
+                if waited:
+                    time.sleep(max(0.0, self._float_env("SAP_CLI_POST_BUSY_SETTLE_SECONDS", 0.1)))
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            waited = True
+            time.sleep(interval)
 
-    def get_modal_text(self) -> str:
+    def has_modal(self, wait_seconds: float = 0.0) -> bool:
+        """모달 윈도우(팝업) 존재 여부."""
+        return self._modal_window(wait_seconds=wait_seconds) is not None
+
+    def get_modal_text(self, wait_seconds: float = 0.0) -> str:
         """모달 윈도우의 텍스트 내용."""
+        modal = self._modal_window(wait_seconds=wait_seconds)
+        if modal is None:
+            return ""
         try:
-            modal = self.session.FindById("wnd[1]")
             return str(modal.Text)
         except Exception:
             return ""
+
+    def _modal_window(self, wait_seconds: float = 0.0) -> Any | None:
+        """Return the active modal window object if one is available."""
+        deadline = time.monotonic() + max(0.0, wait_seconds)
+        while True:
+            active = self._active_window()
+            if active is not None and self._is_modal_window(active):
+                return active
+            try:
+                return self.session.FindById("wnd[1]")
+            except Exception:
+                pass
+
+            if wait_seconds <= 0 or time.monotonic() >= deadline:
+                return None
+            self.wait_until_idle(timeout=min(0.2, max(0.0, deadline - time.monotonic())))
+            time.sleep(0.05)
+
+    def _active_window(self) -> Any | None:
+        try:
+            return self.session.ActiveWindow
+        except Exception:
+            return None
+
+    def _active_window_id(self) -> str:
+        active = self._active_window()
+        if active is None:
+            return ""
+        try:
+            window_id = str(active.Id)
+        except Exception:
+            return ""
+        return window_id if window_id.startswith("wnd[") else ""
+
+    def _current_window_id(self) -> str:
+        """Return the best target window id for current SAP GUI interaction."""
+        active_id = self._active_window_id()
+        if active_id and active_id != "wnd[0]":
+            return active_id
+        if self.has_modal():
+            return "wnd[1]"
+        return active_id or "wnd[0]"
+
+    @staticmethod
+    def _is_modal_window(window: Any) -> bool:
+        try:
+            window_id = str(window.Id)
+            if window_id.startswith("wnd[") and window_id != "wnd[0]":
+                return True
+        except Exception:
+            pass
+        try:
+            return str(window.Type) == "GuiModalWindow"
+        except Exception:
+            return False
+
+    def _session_is_busy(self) -> bool:
+        try:
+            busy = self.session.Busy
+            if callable(busy):
+                busy = busy()
+        except Exception:
+            return False
+        if isinstance(busy, bool):
+            return busy
+        if isinstance(busy, (int, float)):
+            return bool(busy)
+        if isinstance(busy, str):
+            return busy.strip().lower() in {"1", "true", "yes", "on"}
+        return False
+
+    @staticmethod
+    def _float_env(name: str, default: float) -> float:
+        try:
+            return float(os.getenv(name, str(default)))
+        except ValueError:
+            return default
 
     def close_modal(self, vkey: int = 0) -> None:
         """모달 윈도우 닫기 (기본: Enter)."""

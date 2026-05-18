@@ -429,3 +429,57 @@ class TestUserTcodeFallback:
 
         screen = wrapper.get_screen()
         assert screen.transaction == "SE38"  # fallback 없으므로 그대로
+
+
+class TestModalWindowHandling:
+    """SE16 selection option popup처럼 ActiveWindow로 먼저 드러나는 모달 처리."""
+
+    def test_has_modal_uses_active_window(self, wrapper):
+        modal = SimpleNamespace(
+            Id="wnd[1]",
+            Type="GuiModalWindow",
+            Text="Define Selection Options",
+        )
+        wrapper.session.ActiveWindow = modal
+
+        assert wrapper.has_modal() is True
+        assert wrapper.get_modal_text() == "Define Selection Options"
+
+    def test_get_screen_targets_active_modal_window(self, wrapper):
+        wrapper._user_tcode = "SE16"
+        wrapper.session.Info.Transaction = "SE16"
+        wrapper.session.Info.ScreenNumber = 1000
+        wrapper.session.Info.Program = "SAPLSETB"
+        modal = _make_element(
+            "wnd[1]",
+            "GuiModalWindow",
+            text="Define Selection Options",
+            children=FakeChildren([]),
+        )
+        field = _make_element(
+            "wnd[1]/usr/ctxtI1-LOW",
+            "GuiCTextField",
+            text="",
+            changeable=True,
+        )
+        usr = _make_element(
+            "wnd[1]/usr",
+            "GuiUserArea",
+            children=FakeChildren([field]),
+        )
+        wrapper.session.ActiveWindow = modal
+
+        def find_by_id(element_id: str):
+            if element_id == "wnd[1]":
+                return modal
+            if element_id == "wnd[1]/usr":
+                return usr
+            raise RuntimeError(f"not found: {element_id}")
+
+        wrapper.session.FindById.side_effect = find_by_id
+
+        screen = wrapper.get_screen()
+
+        assert screen.transaction == "SE16"
+        assert screen.title == "Define Selection Options"
+        assert [field.id for field in screen.fields] == ["wnd[1]/usr/ctxtI1-LOW"]

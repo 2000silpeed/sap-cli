@@ -39,6 +39,9 @@ def with_post_action(
 ) -> dict[str, Any]:
     """Attach post-action context and promote common fields to the payload."""
     if ctx.include_post_action_context and command in post_action_commands:
+        wait_until_idle = getattr(sap, "wait_until_idle", None)
+        if callable(wait_until_idle):
+            wait_until_idle()
         payload["post_action"] = collect_post_action(
             sap,
             include_screen_summary=ctx.include_screen_summary,
