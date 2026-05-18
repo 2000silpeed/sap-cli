@@ -652,3 +652,94 @@ class TestModalWindowHandling:
         assert screen.transaction == "SE16"
         assert screen.title == "Define Selection Options"
         assert [field.id for field in screen.fields] == ["wnd[1]/usr/ctxtI1-LOW"]
+
+    def test_has_modal_finds_wnd2_when_active_window_is_main(self, wrapper):
+        modal = SimpleNamespace(
+            Id="wnd[2]",
+            Type="GuiModalWindow",
+            Text="Multiple Selection",
+        )
+        wrapper.session.ActiveWindow = SimpleNamespace(
+            Id="wnd[0]",
+            Type="GuiMainWindow",
+            Text="Data Browser",
+        )
+
+        def find_by_id(element_id: str):
+            if element_id == "wnd[2]":
+                return modal
+            raise RuntimeError(f"not found: {element_id}")
+
+        wrapper.session.FindById.side_effect = find_by_id
+
+        assert wrapper.has_modal() is True
+        assert wrapper.get_modal_text() == "Multiple Selection"
+
+    def test_get_screen_targets_wnd2_modal_fallback(self, wrapper):
+        wrapper._user_tcode = "SE16"
+        wrapper.session.Info.Transaction = "SE16"
+        wrapper.session.Info.ScreenNumber = 1000
+        wrapper.session.Info.Program = "SAPLALDB"
+        modal = _make_element(
+            "wnd[2]",
+            "GuiModalWindow",
+            text="Multiple Selection",
+            children=FakeChildren([]),
+        )
+        field = _make_element(
+            "wnd[2]/usr/ctxtRSCSEL_255-SLOW_I[2,0]",
+            "GuiCTextField",
+            text="20240101",
+            changeable=True,
+        )
+        usr = _make_element(
+            "wnd[2]/usr",
+            "GuiUserArea",
+            children=FakeChildren([field]),
+        )
+        wrapper.session.ActiveWindow = SimpleNamespace(
+            Id="wnd[0]",
+            Type="GuiMainWindow",
+            Text="Data Browser",
+        )
+
+        def find_by_id(element_id: str):
+            if element_id == "wnd[2]":
+                return modal
+            if element_id == "wnd[2]/usr":
+                return usr
+            raise RuntimeError(f"not found: {element_id}")
+
+        wrapper.session.FindById.side_effect = find_by_id
+
+        screen = wrapper.get_screen()
+
+        assert screen.transaction == "SE16"
+        assert screen.title == "Multiple Selection"
+        assert [field.id for field in screen.fields] == [
+            "wnd[2]/usr/ctxtRSCSEL_255-SLOW_I[2,0]"
+        ]
+
+    def test_send_vkey_targets_wnd2_modal_fallback(self, wrapper):
+        modal = SimpleNamespace(
+            Id="wnd[2]",
+            Type="GuiModalWindow",
+            Text="Multiple Selection",
+            SendVKey=MagicMock(),
+        )
+        wrapper.session.ActiveWindow = SimpleNamespace(
+            Id="wnd[0]",
+            Type="GuiMainWindow",
+            Text="Data Browser",
+        )
+
+        def find_by_id(element_id: str):
+            if element_id == "wnd[2]":
+                return modal
+            raise RuntimeError(f"not found: {element_id}")
+
+        wrapper.session.FindById.side_effect = find_by_id
+
+        wrapper.send_vkey(0)
+
+        modal.SendVKey.assert_called_once_with(0)

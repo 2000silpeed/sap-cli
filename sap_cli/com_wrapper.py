@@ -448,7 +448,7 @@ class SapGuiWrapper:
     def send_vkey(self, vkey: int) -> None:
         """VKey 전송 (Enter=0, Back=3, Execute=8, Save=11, Cancel=12).
 
-        모달(wnd[1])이 떠 있으면 모달에 전송, 없으면 메인 윈도우(wnd[0])에 전송.
+        모달(wnd[1+])이 떠 있으면 모달에 전송, 없으면 메인 윈도우(wnd[0])에 전송.
         """
         window_id = self._current_window_id()
         try:
@@ -1087,7 +1087,7 @@ class SapGuiWrapper:
     def get_screen(self, window_id: str | None = None) -> ScreenOntology:
         """현재 화면의 전체 UI 구조를 ScreenOntology로 반환.
 
-        window_id를 지정하지 않으면 모달(wnd[1])이 있을 때 모달을,
+        window_id를 지정하지 않으면 모달(wnd[1+])이 있을 때 모달을,
         없으면 메인 윈도우(wnd[0])를 스캔한다.
 
         수동 탐색(Children 재귀) 방식 사용. GetObjectTree는 id만 반환하여
@@ -2717,10 +2717,8 @@ class SapGuiWrapper:
             active = self._active_window()
             if active is not None and self._is_modal_window(active):
                 return active
-            try:
-                return self.session.FindById("wnd[1]")
-            except Exception:
-                pass
+            if modal := self._find_modal_window():
+                return modal
 
             if wait_seconds <= 0 or time.monotonic() >= deadline:
                 return None
@@ -2748,9 +2746,24 @@ class SapGuiWrapper:
         active_id = self._active_window_id()
         if active_id and active_id != "wnd[0]":
             return active_id
-        if self.has_modal():
-            return "wnd[1]"
+        if modal := self._find_modal_window():
+            try:
+                return str(modal.Id)
+            except Exception:
+                pass
         return active_id or "wnd[0]"
+
+    def _find_modal_window(self) -> Any | None:
+        """Find the top-most modal window by probing wnd[1..N]."""
+        max_index = max(1, self._int_env("SAP_CLI_MAX_WINDOW_INDEX", 5))
+        for index in range(max_index, 0, -1):
+            try:
+                window = self.session.FindById(f"wnd[{index}]")
+            except Exception:
+                continue
+            if self._is_modal_window(window):
+                return window
+        return None
 
     @staticmethod
     def _is_modal_window(window: Any) -> bool:
@@ -2787,10 +2800,20 @@ class SapGuiWrapper:
         except ValueError:
             return default
 
+    @staticmethod
+    def _int_env(name: str, default: int) -> int:
+        try:
+            return int(os.getenv(name, str(default)))
+        except ValueError:
+            return default
+
     def close_modal(self, vkey: int = 0) -> None:
         """모달 윈도우 닫기 (기본: Enter)."""
         try:
-            self.session.FindById("wnd[1]").SendVKey(vkey)
+            window_id = self._current_window_id()
+            if window_id == "wnd[0]":
+                window_id = "wnd[1]"
+            self.session.FindById(window_id).SendVKey(vkey)
         except Exception as e:
             raise SapGuiError(f"모달 닫기 실패: {e}") from e
 
