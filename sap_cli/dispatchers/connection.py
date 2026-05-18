@@ -126,9 +126,17 @@ def dispatch_screen(
 def search_screen(screen: Any, pattern: str) -> dict[str, Any]:
     """Search screen elements by ID, name, label, text, and semantic metadata."""
     p = pattern.lower()
+    tokens = [token for token in p.replace("_", " ").split() if token]
 
     def _match(text: str) -> bool:
         return p in text.lower()
+
+    def _match_values(values: list[Any]) -> bool:
+        text_values = [str(value) for value in values if value not in (None, "")]
+        if any(_match(value) for value in text_values):
+            return True
+        haystack = " ".join(text_values).replace("_", " ").lower()
+        return bool(tokens) and all(token in haystack for token in tokens)
 
     matched_fields = []
     for field in screen.fields:
@@ -140,28 +148,27 @@ def search_screen(screen: Any, pattern: str) -> dict[str, Any]:
             getattr(field.semantic, "sap_field_name", ""),
             getattr(field.semantic, "description", ""),
         ] + getattr(field.semantic, "synonyms", [])
-        if any(_match(value) for value in field_values):
+        if _match_values(field_values):
             matched_fields.append(field.model_dump(mode="json"))
 
     matched_buttons = []
     for button in screen.buttons:
-        if any(_match(value) for value in [button.id, button.name, button.text, button.tooltip]):
+        if _match_values([button.id, button.name, button.text, button.tooltip]):
             matched_buttons.append(button.model_dump(mode="json"))
 
     matched_tabs = []
     for tab in screen.tabs:
-        if any(_match(value) for value in [tab.id, tab.name, tab.text]):
+        if _match_values([tab.id, tab.name, tab.text]):
             matched_tabs.append(tab.model_dump(mode="json"))
 
-    matched_tables = []
-    for table in screen.tables:
+    def _search_table_like(table: Any) -> dict[str, Any] | None:
         matching_columns = []
         for column in getattr(table, "columns", []) or []:
             column_values = [
                 str(getattr(column, "name", "")),
                 str(getattr(column, "title", "")),
             ]
-            if any(_match(value) for value in column_values):
+            if _match_values(column_values):
                 if hasattr(column, "model_dump"):
                     matching_columns.append(column.model_dump(mode="json"))
                 else:
@@ -170,13 +177,38 @@ def search_screen(screen: Any, pattern: str) -> dict[str, Any]:
                         "title": str(getattr(column, "title", "")),
                         "position": getattr(column, "position", 0),
                     })
-        if any(_match(value) for value in [table.id, table.name]) or matching_columns:
+        table_values = [
+            table.id,
+            table.name,
+            getattr(table, "type", ""),
+            getattr(table, "sub_type", ""),
+            f"{getattr(table, 'type', '')} control",
+            f"{getattr(table, 'sub_type', '')} control",
+        ]
+        if _match_values(table_values) or matching_columns:
             table_payload = table.model_dump(mode="json")
             if matching_columns:
                 table_payload["matching_columns"] = matching_columns
+            return table_payload
+        return None
+
+    matched_tables = []
+    for table in screen.tables:
+        if table_payload := _search_table_like(table):
             matched_tables.append(table_payload)
 
-    total = len(matched_fields) + len(matched_buttons) + len(matched_tabs) + len(matched_tables)
+    matched_trees = []
+    for tree in getattr(screen, "trees", []) or []:
+        if tree_payload := _search_table_like(tree):
+            matched_trees.append(tree_payload)
+
+    total = (
+        len(matched_fields)
+        + len(matched_buttons)
+        + len(matched_tabs)
+        + len(matched_tables)
+        + len(matched_trees)
+    )
     result: dict[str, Any] = {
         "transaction": screen.transaction,
         "screen_number": screen.screen_number,
@@ -191,6 +223,8 @@ def search_screen(screen: Any, pattern: str) -> dict[str, Any]:
         result["tabs"] = matched_tabs
     if matched_tables:
         result["tables"] = matched_tables
+    if matched_trees:
+        result["trees"] = matched_trees
     return result
 
 
