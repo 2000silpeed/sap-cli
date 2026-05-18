@@ -155,8 +155,26 @@ def search_screen(screen: Any, pattern: str) -> dict[str, Any]:
 
     matched_tables = []
     for table in screen.tables:
-        if any(_match(value) for value in [table.id, table.name]):
-            matched_tables.append(table.model_dump(mode="json"))
+        matching_columns = []
+        for column in getattr(table, "columns", []) or []:
+            column_values = [
+                str(getattr(column, "name", "")),
+                str(getattr(column, "title", "")),
+            ]
+            if any(_match(value) for value in column_values):
+                if hasattr(column, "model_dump"):
+                    matching_columns.append(column.model_dump(mode="json"))
+                else:
+                    matching_columns.append({
+                        "name": str(getattr(column, "name", "")),
+                        "title": str(getattr(column, "title", "")),
+                        "position": getattr(column, "position", 0),
+                    })
+        if any(_match(value) for value in [table.id, table.name]) or matching_columns:
+            table_payload = table.model_dump(mode="json")
+            if matching_columns:
+                table_payload["matching_columns"] = matching_columns
+            matched_tables.append(table_payload)
 
     total = len(matched_fields) + len(matched_buttons) + len(matched_tabs) + len(matched_tables)
     result: dict[str, Any] = {

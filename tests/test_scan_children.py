@@ -257,6 +257,29 @@ class TestScanChildrenComplexScreen:
         field_ids = {f.id for f in screen.fields}
         assert "wnd[0]/usr/lblINFO" not in field_ids
 
+    def test_text_field_label_uses_left_label_not_value(self, wrapper):
+        """SE16 select-option류 필드는 Text 값보다 LeftLabel이 매핑에 중요하다."""
+        field = _make_element(
+            "wnd[0]/usr/ctxtI1-LOW",
+            "GuiCTextField",
+            text="",
+            tooltip="",
+            changeable=True,
+        )
+        field.LeftLabel = SimpleNamespace(Text="Material Number")
+        container = _make_element(
+            "wnd[0]/usr",
+            "GuiUserArea",
+            children=FakeChildren([field]),
+        )
+        screen = _empty_screen()
+
+        wrapper._scan_children(container, screen)
+
+        assert len(screen.fields) == 1
+        assert screen.fields[0].label == "Material Number"
+        assert screen.fields[0].semantic.raw_label == "Material Number"
+
 
 class TestScanChildrenElementProcessingError:
     """개별 요소의 속성(Id, Type 등) 접근 실패 시나리오."""
