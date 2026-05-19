@@ -2711,14 +2711,14 @@ class SapGuiWrapper:
             return ""
 
     def _modal_window(self, wait_seconds: float = 0.0) -> Any | None:
-        """Return the active modal window object if one is available."""
+        """Return the top-most modal window object if one is available."""
         deadline = time.monotonic() + max(0.0, wait_seconds)
         while True:
+            if modal := self._find_modal_window():
+                return modal
             active = self._active_window()
             if active is not None and self._is_modal_window(active):
                 return active
-            if modal := self._find_modal_window():
-                return modal
 
             if wait_seconds <= 0 or time.monotonic() >= deadline:
                 return None
@@ -2743,14 +2743,14 @@ class SapGuiWrapper:
 
     def _current_window_id(self) -> str:
         """Return the best target window id for current SAP GUI interaction."""
-        active_id = self._active_window_id()
-        if active_id and active_id != "wnd[0]":
-            return active_id
         if modal := self._find_modal_window():
             try:
                 return str(modal.Id)
             except Exception:
                 pass
+        active_id = self._active_window_id()
+        if active_id and active_id != "wnd[0]":
+            return active_id
         return active_id or "wnd[0]"
 
     def _find_modal_window(self) -> Any | None:
