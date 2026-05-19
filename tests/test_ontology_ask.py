@@ -207,6 +207,11 @@ class TestQuestionParser:
         assert p.question_type == QuestionType.PATTERN
         assert "저장" in p.pattern_keywords
 
+    def test_macro_variable_pattern(self):
+        p = parse_question("매크로 등록 변수화 정책")
+        assert p.question_type == QuestionType.PATTERN
+        assert "매크로" in p.pattern_keywords
+
     def test_korean_field_cross(self):
         p = parse_question("플랜트 어디서 사용?")
         assert p.question_type == QuestionType.FIELD_CROSS
@@ -289,6 +294,16 @@ class TestAnswerFormatter:
         parsed = parse_question("저장 패턴")
         result = formatter.answer(parsed)
         assert result["pattern_name"] == "save_flow"
+
+    def test_pattern_with_macro_variable_keyword(self, formatter, populated_store):
+        populated_store.save_pattern(
+            "macro_variable_registration",
+            {"name": "매크로 변수화", "policy": {"variableization": "forced"}},
+        )
+        parsed = parse_question("매크로 등록 변수화 정책")
+        result = formatter.answer(parsed)
+        assert result["pattern_name"] == "macro_variable_registration"
+        assert result["policy"]["variableization"] == "forced"
 
     def test_graph_lazy_build(self, populated_store):
         """그래프는 필드 종속성 질문에서만 빌드됨."""

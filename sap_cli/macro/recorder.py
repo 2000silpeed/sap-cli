@@ -12,13 +12,23 @@ import uuid
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from sap_cli.ontology.schema import ActionType
 from sap_cli.macro.schema import Macro, MacroStep, MacroVariable
 from sap_cli.storage import atomic_write_json
 
-# 변수 치환 불필요한 액션 (값이 시스템 식별자인 경우)
-_SYSTEM_ACTIONS = {ActionType.PRESS_BUTTON, ActionType.SEND_VKEY, ActionType.SELECT_TAB}
+# 변수 치환 불필요한 액션 (값이 시스템 식별자/네비게이션인 경우)
+_NON_VARIABLE_ACTIONS = {
+    ActionType.RUN_TRANSACTION,
+    ActionType.PRESS_BUTTON,
+    ActionType.SEND_VKEY,
+    ActionType.SELECT_TAB,
+    ActionType.SELECT_MENU,
+    ActionType.READ_SCREEN,
+    ActionType.EXPAND_TREE_NODE,
+    ActionType.COLLAPSE_TREE_NODE,
+}
 
 # 변수로 추출하지 않을 짧은 값
 _MIN_VALUE_LENGTH = 2
@@ -97,16 +107,15 @@ class MacroRecorder:
         self,
         name: str,
         description: str = "",
-        variables: dict[str, str] | None = None,
+        variables: dict[str, Any] | None = None,
     ) -> Macro:
         """녹화 종료 및 Macro 생성.
 
         Args:
             name: 매크로 이름
             description: 매크로 설명
-            variables: {"실제 사용된 값": "변수 설명"} 형태.
-                steps에서 해당 값이 사용된 곳을 ${변수명}으로 치환한다.
-                변수명은 target_id에서 자동 유추한다.
+            variables: 선택 변수 지정. 지정값을 먼저 반영한 뒤, 남은 사용자
+                입력값은 매크로 등록 정책에 따라 항상 자동 변수화한다.
         """
         if not self._recording:
             raise RuntimeError("녹화가 시작되지 않았습니다.")
@@ -177,18 +186,22 @@ class MacroRecorder:
                     if not self._can_replace_value(actual_value):
                         continue
 
-                if not any(s.value and actual_value in s.value for s in self._steps):
-                    continue
+                self._add_variable_replacement(
+                    macro_vars,
+                    var_name,
+                    var_desc,
+                    actual_value,
+                )
 
-                macro_vars.append(MacroVariable(
-                    name=var_name,
-                    description=var_desc,
-                    default=actual_value,
-                ))
-                placeholder = f"${{{var_name}}}"
-                for step in self._steps:
-                    if step.value and actual_value in step.value:
-                        step.value = step.value.replace(actual_value, placeholder)
+        # 매크로 등록 정책: explicit vars가 없어도 안전한 사용자 입력값은 항상 변수화한다.
+        for candidate in self.auto_detect_variables():
+            self._add_variable_replacement(
+                macro_vars,
+                candidate.name,
+                candidate.description,
+                candidate.default,
+                required=True,
+            )
 
         macro = Macro(
             id=uuid.uuid4().hex[:12],
@@ -237,18 +250,20 @@ class MacroRecorder:
         """녹화된 steps에서 변수 후보를 자동 추출.
 
         기준:
-        - 2회 이상 반복 사용된 값
-        - 사용자 입력으로 보이는 값 (SET_FIELD_VALUE, SELECT_COMBO_ITEM 등)
-        - 시스템 액션(버튼, VKey)의 값은 제외
+        - 매크로 등록 시 안전한 사용자 입력값은 1회 사용이어도 변수 후보로 본다.
+        - 사용자 입력으로 보이는 값(SET_FIELD_VALUE, SELECT_COMBO_ITEM 등)을 대상으로 한다.
+        - 트랜잭션 실행/버튼/VKey/탭/메뉴 같은 시스템 네비게이션 값은 제외한다.
         """
         value_counter: Counter[str] = Counter()
         value_targets: dict[str, list[str]] = {}
 
         for step in self._steps:
-            if not step.value or step.action in _SYSTEM_ACTIONS:
+            if not step.value or step.action in _NON_VARIABLE_ACTIONS:
                 continue
             val = step.value.strip()
             if len(val) < _MIN_VALUE_LENGTH:
+                continue
+            if not self._can_replace_value(val):
                 continue
             value_counter[val] += 1
             value_targets.setdefault(val, []).append(step.target_id)
@@ -267,7 +282,7 @@ class MacroRecorder:
                     name=var_name,
                     description=f"값: {val} (사용 {count}회)",
                     default=val,
-                    required=count > 1,
+                    required=True,
                 )
             )
 
@@ -318,6 +333,53 @@ class MacroRecorder:
             if clean:
                 return re.sub(r"[^a-zA-Z0-9_]", "_", clean).lower().strip("_") or "var"
         return re.sub(r"[^a-zA-Z0-9_]", "_", value).lower().strip("_")[:20] or "var"
+
+    def _add_variable_replacement(
+        self,
+        macro_vars: list[MacroVariable],
+        name: str,
+        description: str,
+        actual_value: str,
+        *,
+        required: bool = True,
+    ) -> bool:
+        """Register a macro variable and replace its literal value in steps."""
+        actual_value = str(actual_value)
+        if not self._can_replace_value(actual_value):
+            return False
+        if any(var.default == actual_value for var in macro_vars):
+            return False
+        if not any(step.value and actual_value in step.value for step in self._steps):
+            return False
+
+        var_name = self._unique_var_name(
+            self._normalize_var_name(name),
+            {var.name for var in macro_vars},
+        )
+        macro_vars.append(
+            MacroVariable(
+                name=var_name,
+                description=description,
+                default=actual_value,
+                required=required,
+            )
+        )
+
+        placeholder = f"${{{var_name}}}"
+        for step in self._steps:
+            if step.value and actual_value in step.value:
+                step.value = step.value.replace(actual_value, placeholder)
+        return True
+
+    @staticmethod
+    def _unique_var_name(name: str, existing: set[str]) -> str:
+        """Return a variable name that does not collide with existing names."""
+        if name not in existing:
+            return name
+        i = 2
+        while f"{name}_{i}" in existing:
+            i += 1
+        return f"{name}_{i}"
 
     @staticmethod
     def _can_replace_value(actual_value: str) -> bool:

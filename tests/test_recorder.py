@@ -67,6 +67,10 @@ class TestFinish:
         assert macro.name == "자재조회"
         assert macro.tcode == "MM03"
         assert len(macro.steps) == 3
+        assert [v.default for v in macro.variables] == ["100-100"]
+        assert macro.steps[0].value == "MM03"
+        assert macro.steps[1].value == "${matnr}"
+        assert macro.steps[2].value == "0"
         assert recorder.is_recording is False
 
     def test_finish_with_variables(self, recorder):
@@ -83,8 +87,8 @@ class TestFinish:
         # value가 ${변수명}으로 치환되었는지 확인
         assert "${" in macro.steps[1].value
 
-    def test_finish_skips_placeholder_or_empty_variable_specs(self, recorder):
-        """AI가 실제값 대신 placeholder/빈 dict를 넘겨도 매크로를 오염시키지 않는다."""
+    def test_finish_skips_bad_specs_but_still_forces_auto_variables(self, recorder):
+        """잘못된 변수 지정은 무시하되 안전한 입력값은 등록 정책상 자동 변수화한다."""
         recorder.start("test")
         recorder.record_step(ActionType.SET_FIELD_VALUE, "wnd[0]/usr/ctxtRMMG1-MATNR", value="100-100")
         recorder.record_step(ActionType.SET_FIELD_VALUE, "wnd[0]/usr/txtSOME-FIELD", value="ABC")
@@ -98,9 +102,9 @@ class TestFinish:
             },
         )
 
-        assert macro.variables == []
-        assert macro.steps[0].value == "100-100"
-        assert macro.steps[1].value == "ABC"
+        assert [v.default for v in macro.variables] == ["100-100", "ABC"]
+        assert macro.steps[0].value == "${matnr}"
+        assert macro.steps[1].value == "${field}"
 
     def test_finish_accepts_dict_variable_spec_with_description(self, recorder):
         recorder.start("test")
@@ -139,6 +143,19 @@ class TestFinish:
         recorder.record_step(ActionType.RUN_TRANSACTION, "VA01", value=None)
         macro = recorder.finish(name="수주생성")
         assert macro.tcode == "VA01"
+
+    def test_finish_auto_variableizes_without_vars(self, recorder):
+        recorder.start("test")
+        recorder.record_step(ActionType.RUN_TRANSACTION, "MM03", value="MM03")
+        recorder.record_step(ActionType.SET_FIELD_VALUE, "wnd[0]/usr/ctxtRMMG1-MATNR", value="100-100")
+
+        macro = recorder.finish(name="자재조회")
+
+        assert len(macro.variables) == 1
+        assert macro.variables[0].name == "matnr"
+        assert macro.variables[0].default == "100-100"
+        assert macro.steps[0].value == "MM03"
+        assert macro.steps[1].value == "${matnr}"
 
 
 class TestAutoDetectVariables:

@@ -229,7 +229,7 @@ sap act "wnd[0]/shellcont/shell" press_node --node-key "00005" --column "2"
 
 ## 매크로
 
-녹화 중에는 실제 값을 입력하고, finish에서 변수화한다.
+녹화 중에는 실제 값을 입력한다. `record-finish`는 안전한 사용자 입력값을 항상 변수화하므로 `--vars`는 변수명/설명을 명시하고 싶을 때만 쓴다.
 
 ```powershell
 sap record-start "자재조회"
@@ -237,6 +237,7 @@ sap record-step run MM03
 sap record-step set "wnd[0]/usr/ctxtRMMG1-MATNR" "100-100" --desc "자재번호"
 sap record-step vkey 0
 sap record-finish --name "자재조회" --vars "{\"100-100\": \"조회할 자재번호\"}"
+sap record-finish --name "자재조회"
 sap macro-list
 sap macro-play <macro_id> --vars "{\"matnr\": \"200-200\"}"
 ```

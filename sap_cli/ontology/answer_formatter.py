@@ -232,6 +232,15 @@ class OntologyAnswerFormatter:
     _PATTERN_ALIAS: dict[str, list[str]] = {
         "save_flow": ["저장", "save", "ctrl+s"],
         "search_help": ["F4", "검색 도움말", "search help", "검색도움말"],
+        "macro_variable_registration": [
+            "매크로",
+            "macro",
+            "변수",
+            "변수화",
+            "등록",
+            "record-finish",
+            "variable",
+        ],
     }
 
     def _answer_pattern(self, parsed: ParsedQuestion) -> dict[str, Any]:

@@ -77,7 +77,10 @@ _MEANING_KW = re.compile(r"뭐야|뭔가요|의미|설명|무엇|뭘|무슨")
 _CROSS_KW = re.compile(r"어디|사용|나와|나오|위치|어떤\s*트랜잭션")
 _DEPENDENCY_KW = re.compile(r"종속|영향|바꾸면|결정|depends|impact|변경")
 _PROCESS_KW = re.compile(r"프로세스|흐름|절차|순서|단계")
-_PATTERN_KW = re.compile(r"저장|F4|검색\s*도움말|패턴|save|search\s*help")
+_PATTERN_KW = re.compile(
+    r"저장|F4|검색\s*도움말|패턴|매크로|변수화?|macro|variable|save|search\s*help",
+    re.IGNORECASE,
+)
 
 
 def parse_question(question: str) -> ParsedQuestion:

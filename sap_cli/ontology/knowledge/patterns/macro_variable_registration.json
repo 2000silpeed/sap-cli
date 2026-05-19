@@ -1,0 +1,42 @@
+{
+  "name": "macro_variable_registration",
+  "description": "매크로 등록 공통 정책 - record-finish 시 사용자 입력값을 항상 변수화한다",
+  "pattern_type": "meta_ontology",
+  "applicable_transactions": ["*"],
+  "policy": {
+    "macro_registration": {
+      "variableization": "forced",
+      "scope": "safe_user_input_values",
+      "manual_variables": "apply_first_then_auto_detect_remaining_values",
+      "system_navigation_values": "keep_literal"
+    }
+  },
+  "sequence": [
+    {
+      "step": 1,
+      "action": "macro_record_finish",
+      "description": "사용자가 지정한 --vars 값을 먼저 ${variable} placeholder로 치환한다"
+    },
+    {
+      "step": 2,
+      "action": "auto_detect_variables",
+      "description": "남아 있는 안전한 사용자 입력값을 1회 사용값까지 포함해 변수 후보로 판단한다"
+    },
+    {
+      "step": 3,
+      "action": "force_variable_replacement",
+      "description": "후보 값은 매크로 저장 전에 반드시 MacroVariable로 등록하고 step.value를 placeholder로 치환한다"
+    },
+    {
+      "step": 4,
+      "check": "system_navigation_exclusion",
+      "description": "트랜잭션 코드, 버튼, VKey, 탭, 메뉴, 읽기 전용 액션, 구조 확장/접기 값은 시스템 식별자로 보고 literal로 유지한다"
+    }
+  ],
+  "notes": [
+    "placeholder 자체(${var}, {{var}}, {var})나 빈 값은 실제값으로 취급하지 않는다",
+    "명시 변수와 자동 변수의 실제값이 같으면 중복 등록하지 않는다",
+    "기본값은 녹화 시 사용한 실제값으로 저장되어 --vars 없이도 dry-run과 재생이 가능하다",
+    "반복 업무 재사용을 위해 매크로 등록 시 변수화 판단은 opt-in이 아니라 기본 강제 정책이다"
+  ]
+}
