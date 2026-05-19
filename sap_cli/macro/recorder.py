@@ -16,6 +16,11 @@ from typing import Any
 
 from sap_cli.ontology.schema import ActionType
 from sap_cli.macro.schema import Macro, MacroStep, MacroVariable
+from sap_cli.macro.variables import (
+    normalize_variable_name,
+    replace_literal_in_data,
+    value_from_mapping,
+)
 from sap_cli.storage import atomic_write_json
 
 # 변수 치환 불필요한 액션 (값이 시스템 식별자/네비게이션인 경우)
@@ -28,6 +33,8 @@ _NON_VARIABLE_ACTIONS = {
     ActionType.READ_SCREEN,
     ActionType.EXPAND_TREE_NODE,
     ActionType.COLLAPSE_TREE_NODE,
+    ActionType.CLICK_TABLE_CELL,
+    ActionType.DOUBLE_CLICK_TABLE_CELL,
 }
 
 # 변수로 추출하지 않을 짧은 값
@@ -78,6 +85,7 @@ class MacroRecorder:
         value: str | None = None,
         description: str = "",
         screen_number: int | None = None,
+        params: dict[str, Any] | None = None,
     ) -> MacroStep:
         """단계 기록."""
         if not self._recording:
@@ -90,6 +98,7 @@ class MacroRecorder:
             value=value,
             description=description,
             expected_screen=screen_number,
+            params=params or {},
         )
         self._steps.append(step)
         self._save_state()
@@ -140,58 +149,82 @@ class MacroRecorder:
         #   1) {"변수명": "실제값"}
         #   2) {"변수명": {"value": "실제값", "desc": "설명"}}
         #   3) {"실제값": "설명"} (레거시)
-        if variables:
-            for key, val in variables.items():
-                # 형식 2: 값이 dict이면 {"value": ..., "desc": ...}
-                if isinstance(val, dict):
-                    var_name = self._normalize_var_name(str(key))
-                    actual_value = str(
-                        val.get("value")
-                        or val.get("actual")
-                        or val.get("default")
-                        or ""
-                    )
-                    var_desc = str(
-                        val.get("desc")
-                        or val.get("description")
-                        or actual_value
-                    )
-                    if not self._can_replace_value(actual_value):
-                        continue
-                else:
-                    key = str(key)
-                    val = str(val)
-                    val_in_steps = any(
-                        s.value and val in s.value for s in self._steps
-                    )
-                    key_in_steps = any(
-                        s.value and key in s.value for s in self._steps
-                    )
+        if isinstance(variables, dict) and set(variables) <= {"variables", "vars", "values"}:
+            variables = (
+                variables.get("variables")
+                or variables.get("vars")
+                or variables.get("values")
+            )
 
-                    if val_in_steps:
-                        var_name = self._normalize_var_name(key)
-                        actual_value = val
-                        var_desc = val
-                    elif key_in_steps:
-                        targets = [
-                            s.target_id for s in self._steps
-                            if s.value and key in s.value
-                        ]
-                        var_name = self._derive_var_name(key, targets)
-                        actual_value = key
-                        var_desc = val
+        if variables:
+            if isinstance(variables, list):
+                for item in variables:
+                    if isinstance(item, dict):
+                        raw_actual = value_from_mapping(item, "value", "actual", "default")
+                        raw_desc = value_from_mapping(item, "desc", "description")
+                        var_name = self._normalize_var_name(
+                            str(value_from_mapping(item, "name", "key", "id", "variable") or "")
+                        )
+                        actual_value = "" if raw_actual is None else str(raw_actual)
+                        var_desc = actual_value if raw_desc is None else str(raw_desc)
+                    elif isinstance(item, str) and ("=" in item or ":" in item):
+                        sep = "=" if "=" in item else ":"
+                        raw_name, raw_value = item.split(sep, 1)
+                        var_name = self._normalize_var_name(raw_name)
+                        actual_value = raw_value
+                        var_desc = raw_value
                     else:
                         continue
 
-                    if not self._can_replace_value(actual_value):
-                        continue
+                    self._add_variable_replacement(
+                        macro_vars,
+                        var_name,
+                        var_desc,
+                        actual_value,
+                    )
+            elif not isinstance(variables, dict):
+                pass
+            else:
+                for key, val in variables.items():
+                    # 형식 2: 값이 dict이면 {"value": ..., "desc": ...}
+                    if isinstance(val, dict):
+                        raw_actual = value_from_mapping(val, "value", "actual", "default")
+                        raw_desc = value_from_mapping(val, "desc", "description")
+                        var_name = self._normalize_var_name(str(key))
+                        actual_value = "" if raw_actual is None else str(raw_actual)
+                        var_desc = actual_value if raw_desc is None else str(raw_desc)
+                        if not self._can_replace_value(actual_value):
+                            continue
+                    else:
+                        key = str(key)
+                        val = str(val)
+                        val_in_steps = self._literal_exists_in_steps(val)
+                        key_in_steps = self._literal_exists_in_steps(key)
 
-                self._add_variable_replacement(
-                    macro_vars,
-                    var_name,
-                    var_desc,
-                    actual_value,
-                )
+                        if val_in_steps:
+                            var_name = self._normalize_var_name(key)
+                            actual_value = val
+                            var_desc = val
+                        elif key_in_steps:
+                            targets = [
+                                s.target_id for s in self._steps
+                                if self._literal_exists_in_step(s, key)
+                            ]
+                            var_name = self._derive_var_name(key, targets)
+                            actual_value = key
+                            var_desc = val
+                        else:
+                            continue
+
+                        if not self._can_replace_value(actual_value):
+                            continue
+
+                    self._add_variable_replacement(
+                        macro_vars,
+                        var_name,
+                        var_desc,
+                        actual_value,
+                    )
 
         # 매크로 등록 정책: explicit vars가 없어도 안전한 사용자 입력값은 항상 변수화한다.
         for candidate in self.auto_detect_variables():
@@ -258,15 +291,24 @@ class MacroRecorder:
         value_targets: dict[str, list[str]] = {}
 
         for step in self._steps:
-            if not step.value or step.action in _NON_VARIABLE_ACTIONS:
+            if step.action in _NON_VARIABLE_ACTIONS:
                 continue
-            val = step.value.strip()
-            if len(val) < _MIN_VALUE_LENGTH:
-                continue
-            if not self._can_replace_value(val):
-                continue
-            value_counter[val] += 1
-            value_targets.setdefault(val, []).append(step.target_id)
+            values: list[tuple[str, str]] = []
+            if step.value and step.action != ActionType.PERFORM_UI_ACTION:
+                values.append((step.value, step.target_id))
+            for key in ("value", "action_value", "property_value"):
+                param_value = step.params.get(key)
+                if isinstance(param_value, str):
+                    target_hint = str(step.params.get("column") or key)
+                    values.append((param_value, f"{step.target_id}/{target_hint}"))
+            for raw_value, target_id in values:
+                val = raw_value.strip()
+                if len(val) < _MIN_VALUE_LENGTH:
+                    continue
+                if not self._can_replace_value(val):
+                    continue
+                value_counter[val] += 1
+                value_targets.setdefault(val, []).append(target_id)
 
         candidates: list[MacroVariable] = []
         seen_names: set[str] = set()
@@ -349,7 +391,7 @@ class MacroRecorder:
             return False
         if any(var.default == actual_value for var in macro_vars):
             return False
-        if not any(step.value and actual_value in step.value for step in self._steps):
+        if not self._literal_exists_in_steps(actual_value):
             return False
 
         var_name = self._unique_var_name(
@@ -369,6 +411,12 @@ class MacroRecorder:
         for step in self._steps:
             if step.value and actual_value in step.value:
                 step.value = step.value.replace(actual_value, placeholder)
+            if step.params:
+                step.params = replace_literal_in_data(
+                    step.params,
+                    actual_value,
+                    placeholder,
+                )
         return True
 
     @staticmethod
@@ -397,17 +445,24 @@ class MacroRecorder:
     @staticmethod
     def _normalize_var_name(name: str) -> str:
         """Normalize AI-provided variable names into ${...}-compatible names."""
-        stripped = name.strip()
-        placeholder = re.match(r"^\$\{(\w+)\}$", stripped)
-        if placeholder:
-            stripped = placeholder.group(1)
-        else:
-            placeholder = re.match(r"^\{\{\s*([\w.-]+)\s*\}\}$", stripped)
-            if placeholder:
-                stripped = placeholder.group(1)
-            else:
-                placeholder = re.match(r"^\{([\w.-]+)\}$", stripped)
-                if placeholder:
-                    stripped = placeholder.group(1)
+        return normalize_variable_name(name)
 
-        return re.sub(r"\W+", "_", stripped).strip("_") or "var"
+    @staticmethod
+    def _literal_exists_in_data(value: Any, literal: str) -> bool:
+        if isinstance(value, str):
+            return literal in value
+        if isinstance(value, list):
+            return any(MacroRecorder._literal_exists_in_data(item, literal) for item in value)
+        if isinstance(value, dict):
+            return any(MacroRecorder._literal_exists_in_data(item, literal) for item in value.values())
+        return False
+
+    @staticmethod
+    def _literal_exists_in_step(step: MacroStep, literal: str) -> bool:
+        return bool(
+            (step.value and literal in step.value)
+            or MacroRecorder._literal_exists_in_data(step.params, literal)
+        )
+
+    def _literal_exists_in_steps(self, literal: str) -> bool:
+        return any(self._literal_exists_in_step(step, literal) for step in self._steps)

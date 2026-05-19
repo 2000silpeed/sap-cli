@@ -63,10 +63,11 @@ def _main_callback(
     _global_slot_id = slot
 
 
-def _parse_vars(raw: str) -> dict[str, Any]:
+def _parse_vars(raw: str) -> Any:
     """다양한 형식의 --vars 값을 dict로 파싱.
 
-    지원: '{"k":"v"}', "{'k':'v'}", "{k:v}", "k:v,k2:v2"
+    지원: '{"k":"v"}', "[{'name':'k','value':'v'}]", "{'k':'v'}",
+    "{k:v}", "k:v,k2:v2", "k=v,k2=v2"
     값이 dict인 경우도 허용: '{"k": {"value": "v", "desc": "설명"}}'
     """
     # 1) 정상 JSON
@@ -84,13 +85,32 @@ def _parse_vars(raw: str) -> dict[str, Any]:
     pairs = re.split(r"\s*,\s*", stripped)
     result: dict[str, str] = {}
     for pair in pairs:
-        if ":" not in pair:
+        sep = "=" if "=" in pair else ":" if ":" in pair else ""
+        if not sep:
             continue
-        k, v = pair.split(":", 1)
+        k, v = pair.split(sep, 1)
         result[k.strip().strip("'\"")] = v.strip().strip("'\"")
     if not result:
         raise ValueError(f"변수 파싱 실패: {raw}")
     return result
+
+
+def _merge_var_assignments(parsed: Any, assignments: list[str] | None) -> Any:
+    """Merge repeated ``--var KEY=VALUE`` options into a parsed vars payload."""
+    if not assignments:
+        return parsed
+    merged: dict[str, Any] = {}
+    if isinstance(parsed, dict):
+        merged.update(parsed)
+    elif parsed not in (None, ""):
+        merged["variables"] = parsed
+    for assignment in assignments:
+        sep = "=" if "=" in assignment else ":" if ":" in assignment else ""
+        if not sep:
+            raise ValueError(f"--var 형식 오류: {assignment} (예: MATNR=200-200)")
+        key, value = assignment.split(sep, 1)
+        merged[key.strip().strip("'\"")] = value.strip().strip("'\"")
+    return merged
 
 
 def _load_json_argument(raw: str, *, label: str) -> Any:
@@ -1399,12 +1419,22 @@ def record_start(name: str = typer.Argument(help="매크로 이름")) -> None:
 
 @app.command("record-step")
 def record_step(
-    action: str = typer.Argument(help="액션 (set/press/vkey/run/checkbox/radio/combo/tab/menu)"),
+    action: str = typer.Argument(help="액션 (set/press/vkey/run/checkbox/radio/combo/tab/menu/read-screen/table-cell/table-doubleclick/click-cell/tree-doubleclick/ui-action)"),
     target: str = typer.Argument(help="대상 ID 또는 값"),
     value: str = typer.Argument(None, help="값 (set/vkey/checkbox/combo용)"),
+    node_key: str = typer.Option("", "--node-key", help="트리 node_key"),
+    column: str = typer.Option("", "--column", help="테이블/트리 컬럼"),
+    row: int | None = typer.Option(None, "--row", help="테이블 행 번호 (0-based)"),
     description: str = typer.Option("", "--desc", "-d"),
 ) -> None:
     """매크로 단계 기록 + 실제 SAP 실행."""
+    params: dict[str, Any] = {}
+    if node_key:
+        params["node_key"] = node_key
+    if column:
+        params["column"] = column
+    if row is not None:
+        params["row"] = row
     _output_json(
         _dispatch_local(
             "record_step",
@@ -1412,6 +1442,7 @@ def record_step(
                 "action": action,
                 "target": target,
                 "value": value,
+                "params": params,
                 "description": description,
             },
         )
@@ -1436,12 +1467,14 @@ def record_finish(
     description: str = typer.Option("", "--desc", "-d"),
     variables: str = typer.Option(None, "--vars", "-v",
         help='변수 지정 JSON. 예: \'{"matnr": "100-100"}\' 또는 \'{"matnr": {"value": "100-100", "desc": "자재번호"}}\''),
+    var: Optional[list[str]] = typer.Option(None, "--var", help="변수 지정 KEY=VALUE. 여러 번 사용 가능"),
 ) -> None:
     """녹화 종료 및 매크로 저장."""
     try:
-        vars_dict: dict[str, str] | None = None
+        vars_dict: Any = None
         if variables:
             vars_dict = _parse_vars(variables)
+        vars_dict = _merge_var_assignments(vars_dict, var)
         _output_json(
             _dispatch_local(
                 "macro_control",
@@ -1480,13 +1513,15 @@ def macro_play(
     macro_id: str = typer.Argument(help="매크로 ID"),
     variables: str = typer.Option(None, "--vars", "-v",
         help='변수 JSON. 예: \'{"material_number": "200-200"}\''),
+    var: Optional[list[str]] = typer.Option(None, "--var", help="변수 KEY=VALUE. 여러 번 사용 가능"),
     dry_run: bool = typer.Option(False, "--dry-run", help="실제 실행 없이 프리뷰"),
 ) -> None:
     """매크로 재생."""
     try:
-        vars_dict: dict[str, str] = {}
+        vars_dict: Any = {}
         if variables:
             vars_dict = _parse_vars(variables)
+        vars_dict = _merge_var_assignments(vars_dict, var)
         _output_json(
             _dispatch_local(
                 "macro_play",

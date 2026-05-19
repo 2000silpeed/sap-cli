@@ -134,10 +134,10 @@ def dispatch_macro_play(
 ) -> dict[str, Any]:
     """Play or dry-run a saved macro."""
     store = get_macro_store()
-    macro_id = str(args["macro_id"])
-    macro = store.load(macro_id)
+    macro_ref = str(args["macro_id"])
+    macro = store.resolve(macro_ref)
     if not macro:
-        raise ValueError(f"매크로 '{macro_id}'를 찾을 수 없습니다.")
+        raise ValueError(f"매크로 '{macro_ref}'를 찾을 수 없습니다. macro-list로 ID/이름을 확인하세요.")
 
     variables = args.get("variables", {}) or {}
     sap = get_sap(ctx.slot_id)
@@ -180,10 +180,10 @@ def utc_to_local(iso_str: str) -> str:
 def dispatch_macro_show(args: dict[str, Any], get_macro_store: Factory) -> dict[str, Any]:
     """Return one saved macro."""
     store = get_macro_store()
-    macro_id = str(args["macro_id"])
-    macro = store.load(macro_id)
+    macro_ref = str(args["macro_id"])
+    macro = store.resolve(macro_ref)
     if not macro:
-        return {"error": True, "message": f"매크로 '{macro_id}'를 찾을 수 없습니다."}
+        return {"error": True, "message": f"매크로 '{macro_ref}'를 찾을 수 없습니다."}
     data = macro.model_dump(mode="json")
     data["created_at"] = utc_to_local(data.get("created_at", ""))
     data["updated_at"] = utc_to_local(data.get("updated_at", ""))
@@ -192,6 +192,9 @@ def dispatch_macro_show(args: dict[str, Any], get_macro_store: Factory) -> dict[
 
 def dispatch_macro_delete(args: dict[str, Any], get_macro_store: Factory) -> dict[str, Any]:
     """Delete a saved macro."""
-    macro_id = str(args["macro_id"])
-    deleted = get_macro_store().delete(macro_id)
-    return {"deleted": deleted, "macro_id": macro_id}
+    macro_ref = str(args["macro_id"])
+    store = get_macro_store()
+    macro = store.resolve(macro_ref)
+    macro_id = macro.id if macro else macro_ref
+    deleted = store.delete(macro_id)
+    return {"deleted": deleted, "macro_id": macro_id, "requested": macro_ref}

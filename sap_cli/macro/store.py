@@ -72,6 +72,46 @@ class MacroStore:
         except Exception:
             return None
 
+    def resolve(self, identifier: str) -> Macro | None:
+        """Resolve a macro by ID first, then by exact or unique partial name."""
+        identifier = str(identifier).strip()
+        if not identifier:
+            return None
+
+        try:
+            macro = self.load(identifier)
+        except ValueError:
+            macro = None
+        if macro:
+            return macro
+
+        exact_matches: list[Macro] = []
+        partial_matches: list[Macro] = []
+        identifier_lower = identifier.lower()
+        for path in self._dir.glob("*.json"):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                macro = Macro.model_validate(data)
+            except Exception:
+                continue
+            if macro.name == identifier:
+                exact_matches.append(macro)
+            elif identifier_lower in macro.name.lower():
+                partial_matches.append(macro)
+
+        if len(exact_matches) == 1:
+            return exact_matches[0]
+        if len(exact_matches) > 1:
+            raise ValueError(f"매크로 이름 '{identifier}'가 여러 개입니다. macro_id를 사용하세요.")
+        if len(partial_matches) == 1:
+            return partial_matches[0]
+        if len(partial_matches) > 1:
+            choices = ", ".join(f"{macro.id}:{macro.name}" for macro in partial_matches[:5])
+            raise ValueError(
+                f"매크로 이름 '{identifier}'가 여러 개와 일치합니다. macro_id를 사용하세요: {choices}"
+            )
+        return None
+
     def list_macros(self) -> list[dict]:
         """저장된 매크로 목록 (id, name, tcode, description만)."""
         result: list[dict] = []

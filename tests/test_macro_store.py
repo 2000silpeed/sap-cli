@@ -114,6 +114,13 @@ class TestMacroStore:
     def test_load_nonexistent(self, store):
         assert store.load("nonexistent") is None
 
+    def test_resolve_accepts_id_exact_name_and_unique_partial_name(self, store, sample_macro):
+        store.save(sample_macro)
+
+        assert store.resolve(sample_macro.id) == sample_macro
+        assert store.resolve(sample_macro.name) == sample_macro
+        assert store.resolve("자재") == sample_macro
+
     def test_list_macros(self, store, sample_macro):
         store.save(sample_macro)
         macros = store.list_macros()

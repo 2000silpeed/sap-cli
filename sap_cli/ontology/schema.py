@@ -108,6 +108,9 @@ class ActionType(str, Enum):
     EXPAND_TREE_NODE = "ExpandTreeNode"
     DOUBLE_CLICK_TREE_NODE = "DoubleClickTreeNode"
     COLLAPSE_TREE_NODE = "CollapseTreeNode"
+    CLICK_TABLE_CELL = "ClickTableCell"
+    DOUBLE_CLICK_TABLE_CELL = "DoubleClickTableCell"
+    PERFORM_UI_ACTION = "PerformUiAction"
 
 
 # ---------------------------------------------------------------------------

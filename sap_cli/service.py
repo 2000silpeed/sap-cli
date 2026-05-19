@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from .com_wrapper import SapGuiWrapper
 from .learner import OntologyLearner
 from .macro.recorder import MacroRecorder
+from .macro.schema import coerce_action_type
 from .macro.store import MacroStore
 from .ontology.schema import ActionType
 from .ontology.store import OntologyStore
@@ -119,7 +122,33 @@ ACTION_MAP: dict[str, ActionType] = {
     "combo": ActionType.SELECT_COMBO_ITEM,
     "tab": ActionType.SELECT_TAB,
     "menu": ActionType.SELECT_MENU,
+    "screen": ActionType.READ_SCREEN,
+    "read": ActionType.READ_SCREEN,
+    "read-screen": ActionType.READ_SCREEN,
     "table-select": ActionType.SELECT_TABLE_ROW,
+    "select-row": ActionType.SELECT_TABLE_ROW,
+    "table-row": ActionType.SELECT_TABLE_ROW,
+    "table_cell": ActionType.SELECT_TABLE_CELL,
+    "table-cell": ActionType.SELECT_TABLE_CELL,
+    "select_cell": ActionType.SELECT_TABLE_CELL,
+    "select-cell": ActionType.SELECT_TABLE_CELL,
+    "current_cell": ActionType.SELECT_TABLE_CELL,
+    "current-cell": ActionType.SELECT_TABLE_CELL,
+    "set_current_cell": ActionType.SELECT_TABLE_CELL,
+    "set-current-cell": ActionType.SELECT_TABLE_CELL,
+    "table_doubleclick": ActionType.DOUBLE_CLICK_TABLE_CELL,
+    "table-doubleclick": ActionType.DOUBLE_CLICK_TABLE_CELL,
+    "cell_doubleclick": ActionType.DOUBLE_CLICK_TABLE_CELL,
+    "cell-doubleclick": ActionType.DOUBLE_CLICK_TABLE_CELL,
+    "doubleclick_cell": ActionType.DOUBLE_CLICK_TABLE_CELL,
+    "doubleclick-cell": ActionType.DOUBLE_CLICK_TABLE_CELL,
+    "click_cell": ActionType.CLICK_TABLE_CELL,
+    "click-cell": ActionType.CLICK_TABLE_CELL,
+    "cell_click": ActionType.CLICK_TABLE_CELL,
+    "cell-click": ActionType.CLICK_TABLE_CELL,
+    "ui_action": ActionType.PERFORM_UI_ACTION,
+    "ui-action": ActionType.PERFORM_UI_ACTION,
+    "act": ActionType.PERFORM_UI_ACTION,
     "tree-select": ActionType.SELECT_TREE_NODE,
     "tree-expand": ActionType.EXPAND_TREE_NODE,
     "tree-doubleclick": ActionType.DOUBLE_CLICK_TREE_NODE,
@@ -128,47 +157,116 @@ ACTION_MAP: dict[str, ActionType] = {
 
 
 def map_action(action: str) -> ActionType:
-    at = ACTION_MAP.get(action.lower())
-    if at is None:
-        raise ValueError(f"알 수 없는 액션: {action}. 가능한 값: {list(ACTION_MAP.keys())}")
-    return at
+    try:
+        return coerce_action_type(action)
+    except ValueError as exc:
+        raise ValueError(f"알 수 없는 액션: {action}. 가능한 값: {list(ACTION_MAP.keys())}") from exc
 
 
-def execute_sap_action(sap: SapGuiWrapper, action: str, target: str, value: str | None) -> None:
+def execute_sap_action(
+    sap: SapGuiWrapper,
+    action: str,
+    target: str,
+    value: str | None,
+    params: dict[str, Any] | None = None,
+) -> None:
     """action에 따라 실제 SAP 명령 실행."""
-    if action == "set":
+    params = params or {}
+    action_type = coerce_action_type(action)
+    normalized_action = str(action).lower().replace("_", "-")
+
+    if action_type == ActionType.SET_FIELD_VALUE:
         sap.set_field(target, value or "")
-    elif action == "press":
+    elif action_type == ActionType.PRESS_BUTTON:
         sap.press(target)
-    elif action == "vkey":
+    elif action_type == ActionType.SEND_VKEY:
         sap.send_vkey(int(target))
-    elif action == "run":
+    elif action_type == ActionType.RUN_TRANSACTION:
         sap.run_transaction(target)
-    elif action == "checkbox":
+    elif action_type == ActionType.TOGGLE_CHECKBOX:
         sap.set_checkbox(target, (value or "").lower() == "true")
-    elif action == "radio":
+    elif action_type == ActionType.SELECT_RADIO:
         sap.select_radio(target)
-    elif action == "combo":
+    elif action_type == ActionType.SELECT_COMBO_ITEM:
         sap.select_combo(target, value or "")
-    elif action == "tab":
+    elif action_type == ActionType.SELECT_TAB:
         sap.press(target)
-    elif action == "menu":
+    elif action_type == ActionType.SELECT_MENU:
         sap.select_menu(target)
-    elif action == "table-select":
+    elif action_type == ActionType.READ_SCREEN:
+        sap.get_screen()
+    elif action_type == ActionType.SELECT_TABLE_ROW:
         sap.select_table_row(target, int(value or "0"))
-    elif action == "tree-select":
+    elif action_type == ActionType.SELECT_TABLE_CELL:
+        row = _row_param(params, value, normalized_action)
+        sap.set_current_table_cell(target, row, str(params.get("column", "") or ""))
+    elif action_type == ActionType.DOUBLE_CLICK_TABLE_CELL:
+        row = _row_param(params, value, normalized_action)
+        sap.double_click_table_cell(target, row, str(params.get("column", "") or ""))
+    elif action_type == ActionType.CLICK_TABLE_CELL:
+        row = _row_param(params, value, normalized_action)
+        sap.click_table_cell(target, row, str(params.get("column", "") or ""))
+    elif action_type == ActionType.PERFORM_UI_ACTION:
+        ui_action = str(params.get("ui_action") or params.get("action") or value or "")
+        if not ui_action:
+            raise ValueError("ui-action 액션은 value 또는 params.ui_action에 실제 UI action이 필요합니다.")
+        sap.perform_ui_action(
+            target,
+            ui_action,
+            _optional_str(params.get("action_value", params.get("value"))),
+            node_key=str(params.get("node_key", "") or ""),
+            column=str(params.get("column", "") or ""),
+            row=_optional_int(params.get("row")),
+            max_rows=int(params.get("max_rows", 50) or 50),
+            columns=_optional_columns(params.get("columns")),
+            method_args=params.get("method_args"),
+            property_name=str(params.get("property_name", "") or ""),
+            property_value=params.get("property_value"),
+        )
+    elif action_type == ActionType.SELECT_TREE_NODE:
         if not value:
             raise ValueError("tree-select 액션은 value에 node_key가 필요합니다.")
         sap.tree_select_node(target, value)
-    elif action == "tree-expand":
+    elif action_type == ActionType.EXPAND_TREE_NODE:
         if not value:
             raise ValueError("tree-expand 액션은 value에 node_key가 필요합니다.")
         sap.tree_expand_node(target, value)
-    elif action == "tree-doubleclick":
+    elif action_type == ActionType.DOUBLE_CLICK_TREE_NODE:
         if not value:
             raise ValueError("tree-doubleclick 액션은 value에 node_key가 필요합니다.")
         sap.tree_double_click_node(target, value)
-    elif action == "tree-collapse":
+    elif action_type == ActionType.COLLAPSE_TREE_NODE:
         if not value:
             raise ValueError("tree-collapse 액션은 value에 node_key가 필요합니다.")
         sap.tree_collapse_node(target, value)
+    else:
+        raise ValueError(f"미지원 매크로 액션: {action_type.value}")
+
+
+def _row_param(params: dict[str, Any], value: str | None, action: str) -> int:
+    row = _optional_int(params.get("row"))
+    if row is not None:
+        return row
+    if value not in (None, ""):
+        return int(value)
+    raise ValueError(f"{action} 액션은 row 또는 value(row)가 필요합니다.")
+
+
+def _optional_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    return int(value)
+
+
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _optional_columns(value: Any) -> list[str] | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return [item.strip() for item in str(value).split(",") if item.strip()]

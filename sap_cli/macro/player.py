@@ -13,6 +13,10 @@ from sap_cli.macro.schema import (
     MacroStep,
     MacroStepResult,
 )
+from sap_cli.macro.variables import (
+    normalize_runtime_variables,
+    resolve_variables_in_data,
+)
 from sap_cli.ontology.schema import ActionType
 
 
@@ -34,7 +38,7 @@ class MacroPlayer:
     def play(
         self,
         macro: Macro,
-        variables: dict[str, str] | None = None,
+        variables: object = None,
     ) -> MacroRunResult:
         """매크로 실행.
 
@@ -44,15 +48,16 @@ class MacroPlayer:
         4. 매 step마다: 화면번호 검증 -> 액션 실행 -> 상태 확인 -> 결과 기록
         5. 에러 시 즉시 중단하고 결과 반환
         """
-        variables = variables or {}
+        variables = normalize_runtime_variables(variables, macro)
         started_at = datetime.now().isoformat()
         step_results: list[MacroStepResult] = []
 
-        resolved_steps = self._resolve_all_steps(macro, variables)
+        effective_vars = self._effective_variables(macro, variables)
+        resolved_steps = self._resolve_all_steps(macro, effective_vars)
 
         # tcode 실행
         if macro.tcode:
-            tcode = self._resolve_variables(macro.tcode, variables)
+            tcode = self._resolve_variables(macro.tcode, effective_vars)
             try:
                 self.sap.run_transaction(tcode)
             except Exception as e:
@@ -60,7 +65,7 @@ class MacroPlayer:
                     macro_id=macro.id,
                     macro_name=macro.name,
                     success=False,
-                    variables_used=variables,
+                    variables_used=effective_vars,
                     step_results=[],
                     total_steps=len(macro.steps),
                     completed_steps=0,
@@ -79,7 +84,7 @@ class MacroPlayer:
                     macro_id=macro.id,
                     macro_name=macro.name,
                     success=False,
-                    variables_used=variables,
+                    variables_used=effective_vars,
                     step_results=step_results,
                     total_steps=len(macro.steps),
                     completed_steps=len(step_results) - 1,
@@ -96,7 +101,7 @@ class MacroPlayer:
             macro_id=macro.id,
             macro_name=macro.name,
             success=True,
-            variables_used=variables,
+            variables_used=effective_vars,
             step_results=step_results,
             total_steps=len(macro.steps),
             completed_steps=len(step_results),
@@ -107,10 +112,10 @@ class MacroPlayer:
     def dry_run(
         self,
         macro: Macro,
-        variables: dict[str, str] | None = None,
+        variables: object = None,
     ) -> MacroRunResult:
         """실제 실행 없이 변수 치환과 검증만 수행 (프리뷰)."""
-        variables = variables or {}
+        variables = normalize_runtime_variables(variables, macro)
         started_at = datetime.now().isoformat()
         step_results: list[MacroStepResult] = []
 
@@ -134,11 +139,7 @@ class MacroPlayer:
             )
 
         # 각 스텝의 변수 치환 결과를 시뮬레이션
-        effective_vars = {
-            v.name: variables.get(v.name, v.default)
-            for v in macro.variables
-        }
-        effective_vars.update(variables)
+        effective_vars = self._effective_variables(macro, variables)
 
         for step in macro.steps:
             resolved_value = (
@@ -176,28 +177,35 @@ class MacroPlayer:
 
         return self._VARIABLE_PATTERN.sub(_replace, value)
 
+    @staticmethod
+    def _effective_variables(
+        macro: Macro,
+        variables: dict[str, str],
+    ) -> dict[str, str]:
+        effective_vars: dict[str, str] = {
+            v.name: v.default for v in macro.variables if v.default
+        }
+        effective_vars.update(variables)
+        return effective_vars
+
     def _resolve_all_steps(
         self,
         macro: Macro,
         variables: dict[str, str],
     ) -> list[MacroStep]:
         """모든 스텝의 변수를 치환한 복사본 반환."""
-        # default 값 적용
-        effective_vars: dict[str, str] = {
-            v.name: v.default for v in macro.variables if v.default
-        }
-        effective_vars.update(variables)
-
         resolved: list[MacroStep] = []
         for step in macro.steps:
             resolved_value = (
-                self._resolve_variables(step.value, effective_vars)
+                self._resolve_variables(step.value, variables)
                 if step.value else step.value
             )
-            resolved_target = self._resolve_variables(step.target_id, effective_vars)
+            resolved_target = self._resolve_variables(step.target_id, variables)
+            resolved_params = resolve_variables_in_data(step.params, variables)
             resolved.append(step.model_copy(update={
                 "value": resolved_value,
                 "target_id": resolved_target,
+                "params": resolved_params,
             }))
         return resolved
 
@@ -243,6 +251,50 @@ class MacroPlayer:
 
             elif action == ActionType.SELECT_TABLE_ROW:
                 self.sap.select_table_row(step.target_id, int(step.value or "0"))
+
+            elif action == ActionType.SELECT_TABLE_CELL:
+                self.sap.set_current_table_cell(
+                    step.target_id,
+                    self._step_row(step),
+                    self._step_column(step),
+                )
+
+            elif action == ActionType.CLICK_TABLE_CELL:
+                self.sap.click_table_cell(
+                    step.target_id,
+                    self._step_row(step),
+                    self._step_column(step),
+                )
+
+            elif action == ActionType.DOUBLE_CLICK_TABLE_CELL:
+                self.sap.double_click_table_cell(
+                    step.target_id,
+                    self._step_row(step),
+                    self._step_column(step),
+                )
+
+            elif action == ActionType.PERFORM_UI_ACTION:
+                ui_action = str(
+                    step.params.get("ui_action")
+                    or step.params.get("action")
+                    or step.value
+                    or ""
+                )
+                if not ui_action:
+                    raise ValueError("ui-action 매크로 단계는 value 또는 params.ui_action이 필요합니다.")
+                self.sap.perform_ui_action(
+                    step.target_id,
+                    ui_action,
+                    self._optional_str(step.params.get("action_value", step.params.get("value"))),
+                    node_key=self._optional_str(step.params.get("node_key")) or "",
+                    column=self._step_column(step),
+                    row=self._optional_int(step.params.get("row")),
+                    max_rows=int(step.params.get("max_rows", 50) or 50),
+                    columns=self._optional_columns(step.params.get("columns")),
+                    method_args=step.params.get("method_args"),
+                    property_name=self._optional_str(step.params.get("property_name")) or "",
+                    property_value=step.params.get("property_value"),
+                )
 
             elif action == ActionType.SELECT_TREE_NODE:
                 self.sap.tree_select_node(
@@ -326,6 +378,39 @@ class MacroPlayer:
                 f"{step.action.value} 액션은 value에 {label} 값이 필요합니다."
             )
         return step.value
+
+    @staticmethod
+    def _optional_str(value: object) -> str | None:
+        if value is None:
+            return None
+        return str(value)
+
+    @staticmethod
+    def _optional_int(value: object) -> int | None:
+        if value in (None, ""):
+            return None
+        return int(value)  # type: ignore[arg-type]
+
+    @staticmethod
+    def _optional_columns(value: object) -> list[str] | None:
+        if value in (None, ""):
+            return None
+        if isinstance(value, list):
+            return [str(item) for item in value]
+        return [column.strip() for column in str(value).split(",") if column.strip()]
+
+    def _step_row(self, step: MacroStep) -> int:
+        row = self._optional_int(step.params.get("row"))
+        if row is not None:
+            return row
+        if step.value not in (None, ""):
+            return int(step.value)
+        raise ValueError(f"{step.action.value} 액션은 row 또는 value(row)가 필요합니다.")
+
+    @staticmethod
+    def _step_column(step: MacroStep) -> str:
+        column = step.params.get("column", "")
+        return "" if column is None else str(column)
 
     def _verify_screen(self, expected: int | None) -> bool:
         """현재 화면번호가 예상과 일치하는지 검증."""

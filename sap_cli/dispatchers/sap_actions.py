@@ -379,9 +379,47 @@ def dispatch_record_step(
     target = str(args["target"])
     value = args.get("value")
     description = str(args.get("description", ""))
+    params = dict(args.get("params") or {})
+    for key in (
+        "node_key",
+        "column",
+        "row",
+        "max_rows",
+        "columns",
+        "method_args",
+        "property_name",
+        "property_value",
+        "action_value",
+        "ui_action",
+    ):
+        if key in args and args[key] not in (None, ""):
+            params[key] = args[key]
 
     action_type = map_action(action)
-    execute_sap_action(sap, action.lower(), target, None if value is None else str(value))
+    normalized_action = action.lower().replace("_", "-")
+    if normalized_action.startswith("tree-") and not value and params.get("node_key"):
+        value = params["node_key"]
+    if normalized_action in {
+        "table-cell",
+        "select-cell",
+        "current-cell",
+        "set-current-cell",
+        "table-doubleclick",
+        "cell-doubleclick",
+        "doubleclick-cell",
+        "click-cell",
+        "cell-click",
+    }:
+        if value is None and params.get("row") not in (None, ""):
+            value = str(params["row"])
+
+    execute_sap_action(
+        sap,
+        action.lower(),
+        target,
+        None if value is None else str(value),
+        params,
+    )
 
     info = sap.get_session_info()
     record_value = None if value is None else str(value)
@@ -394,6 +432,7 @@ def dispatch_record_step(
         value=record_value,
         description=description,
         screen_number=info.screen_number,
+        params=params,
     )
 
     payload = {
@@ -402,6 +441,7 @@ def dispatch_record_step(
         "action": action,
         "target": target,
         "value": value,
+        "params": params,
         "screen_number": info.screen_number,
     }
     return with_post_action(payload, sap, "record_step", ctx)

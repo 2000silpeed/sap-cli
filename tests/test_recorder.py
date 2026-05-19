@@ -157,6 +157,46 @@ class TestFinish:
         assert macro.steps[0].value == "MM03"
         assert macro.steps[1].value == "${matnr}"
 
+    def test_finish_accepts_list_variable_specs(self, recorder):
+        recorder.start("test")
+        recorder.record_step(ActionType.SET_FIELD_VALUE, "wnd[0]/usr/ctxtRMMG1-MATNR", value="100-100")
+
+        macro = recorder.finish(
+            name="자재조회",
+            variables=[{"name": "MATNR", "value": "100-100", "description": "자재번호"}],
+        )
+
+        assert macro.variables[0].name == "MATNR"
+        assert macro.variables[0].description == "자재번호"
+        assert macro.steps[0].value == "${MATNR}"
+
+    def test_finish_accepts_wrapped_variable_specs(self, recorder):
+        recorder.start("test")
+        recorder.record_step(ActionType.SET_FIELD_VALUE, "wnd[0]/usr/ctxtRMMG1-MATNR", value="100-100")
+
+        macro = recorder.finish(
+            name="자재조회",
+            variables={"variables": [{"name": "matnr", "value": "100-100"}]},
+        )
+
+        assert macro.variables[0].name == "matnr"
+        assert macro.steps[0].value == "${matnr}"
+
+    def test_finish_replaces_literals_inside_step_params(self, recorder):
+        recorder.start("test")
+        recorder.record_step(
+            ActionType.PERFORM_UI_ACTION,
+            "wnd[0]/usr/cntlGRID/shellcont/shell",
+            value="set_cell",
+            params={"row": 0, "column": "MATNR", "action_value": "100-100"},
+        )
+
+        macro = recorder.finish(name="테이블입력")
+
+        assert macro.variables[0].default == "100-100"
+        assert macro.steps[0].params["action_value"] == "${matnr}"
+        assert macro.steps[0].value == "set_cell"
+
 
 class TestAutoDetectVariables:
     def test_detects_repeated_values(self, recorder):

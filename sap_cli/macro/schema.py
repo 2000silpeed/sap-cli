@@ -5,9 +5,74 @@ SAP GUI 작업 시퀀스를 녹화/재생 가능한 매크로로 정의한다.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
 
 from sap_cli.ontology.schema import ActionType
+
+_ACTION_ALIASES: dict[str, ActionType] = {
+    "set": ActionType.SET_FIELD_VALUE,
+    "set-field": ActionType.SET_FIELD_VALUE,
+    "set-field-value": ActionType.SET_FIELD_VALUE,
+    "press": ActionType.PRESS_BUTTON,
+    "button": ActionType.PRESS_BUTTON,
+    "click": ActionType.PRESS_BUTTON,
+    "vkey": ActionType.SEND_VKEY,
+    "send-vkey": ActionType.SEND_VKEY,
+    "run": ActionType.RUN_TRANSACTION,
+    "transaction": ActionType.RUN_TRANSACTION,
+    "checkbox": ActionType.TOGGLE_CHECKBOX,
+    "toggle-checkbox": ActionType.TOGGLE_CHECKBOX,
+    "radio": ActionType.SELECT_RADIO,
+    "combo": ActionType.SELECT_COMBO_ITEM,
+    "select-combo": ActionType.SELECT_COMBO_ITEM,
+    "tab": ActionType.SELECT_TAB,
+    "menu": ActionType.SELECT_MENU,
+    "screen": ActionType.READ_SCREEN,
+    "read": ActionType.READ_SCREEN,
+    "read-screen": ActionType.READ_SCREEN,
+    "table-select": ActionType.SELECT_TABLE_ROW,
+    "select-row": ActionType.SELECT_TABLE_ROW,
+    "table-row": ActionType.SELECT_TABLE_ROW,
+    "table-cell": ActionType.SELECT_TABLE_CELL,
+    "select-cell": ActionType.SELECT_TABLE_CELL,
+    "current-cell": ActionType.SELECT_TABLE_CELL,
+    "set-current-cell": ActionType.SELECT_TABLE_CELL,
+    "click-cell": ActionType.CLICK_TABLE_CELL,
+    "cell-click": ActionType.CLICK_TABLE_CELL,
+    "table-click": ActionType.CLICK_TABLE_CELL,
+    "table-doubleclick": ActionType.DOUBLE_CLICK_TABLE_CELL,
+    "cell-doubleclick": ActionType.DOUBLE_CLICK_TABLE_CELL,
+    "doubleclick-cell": ActionType.DOUBLE_CLICK_TABLE_CELL,
+    "double-click-cell": ActionType.DOUBLE_CLICK_TABLE_CELL,
+    "tree-select": ActionType.SELECT_TREE_NODE,
+    "select-node": ActionType.SELECT_TREE_NODE,
+    "tree-expand": ActionType.EXPAND_TREE_NODE,
+    "expand-node": ActionType.EXPAND_TREE_NODE,
+    "tree-doubleclick": ActionType.DOUBLE_CLICK_TREE_NODE,
+    "doubleclick-node": ActionType.DOUBLE_CLICK_TREE_NODE,
+    "tree-collapse": ActionType.COLLAPSE_TREE_NODE,
+    "collapse-node": ActionType.COLLAPSE_TREE_NODE,
+    "ui-action": ActionType.PERFORM_UI_ACTION,
+    "perform-ui-action": ActionType.PERFORM_UI_ACTION,
+    "act": ActionType.PERFORM_UI_ACTION,
+}
+
+
+def coerce_action_type(value: Any) -> ActionType:
+    """Coerce stored macro action strings and aliases to ``ActionType``."""
+    if isinstance(value, ActionType):
+        return value
+    raw = str(value)
+    try:
+        return ActionType(raw)
+    except ValueError:
+        pass
+    normalized = raw.strip().replace("_", "-").lower()
+    if normalized in _ACTION_ALIASES:
+        return _ACTION_ALIASES[normalized]
+    raise ValueError(f"알 수 없는 매크로 액션: {value}")
 
 
 class MacroVariable(BaseModel):
@@ -29,6 +94,12 @@ class MacroStep(BaseModel):
     description: str = ""
     expected_screen: int | None = None
     wait_after: float = 0
+    params: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("action", mode="before")
+    @classmethod
+    def _coerce_action(cls, value: Any) -> ActionType:
+        return coerce_action_type(value)
 
 
 class MacroStepResult(BaseModel):
