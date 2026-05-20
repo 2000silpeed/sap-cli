@@ -7,10 +7,16 @@ keeps facade routing and compatibility wrappers.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from typing import Any
 
 Factory = Callable[..., Any]
+
+# 녹화 중 AI가 실제 값 대신 플레이스홀더를 넘기는 것을 차단
+_PLACEHOLDER_PATTERN = re.compile(
+    r"^\s*(?:\$\{\s*\w+\s*\}|\{\{\s*[\w.-]+\s*\}\}|\{[\w.-]+\})\s*$"
+)
 
 
 DEFAULT_REPORT_FIELD_ID = "wnd[0]/usr/ctxtRS38M-PROGRAMM"
@@ -412,6 +418,17 @@ def dispatch_record_step(
     }:
         if value is None and params.get("row") not in (None, ""):
             value = str(params["row"])
+
+    # 녹화 중 플레이스홀더 값 차단: 실제 값만 SAP에 전달 가능
+    if value is not None and _PLACEHOLDER_PATTERN.match(str(value)):
+        return {
+            "error": True,
+            "message": (
+                f"record_step에는 실제 값을 사용해야 합니다. "
+                f"'{value}'는 변수 플레이스홀더입니다. "
+                f"실제 값을 입력하세요. 변수화는 finish 시 자동으로 처리됩니다."
+            ),
+        }
 
     execute_sap_action(
         sap,

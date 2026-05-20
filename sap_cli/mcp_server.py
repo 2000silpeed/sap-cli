@@ -630,13 +630,19 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_macro_record_step",
-        "description": "매크로 녹화 중 단계를 기록하면서 동시에 SAP에 실행합니다. record_start를 먼저 호출해야 합니다.",
+        "description": (
+            "매크로 녹화 중 단계를 기록하면서 동시에 SAP에 실행합니다. "
+            "sap_macro_control(start) 먼저 호출해야 합니다. "
+            "IMPORTANT: value는 반드시 실제 값(예: '4500001234', 'KR10')이어야 합니다. "
+            "${var}, {{var}}, {var} 같은 플레이스홀더는 절대 사용하지 마세요. "
+            "변수화는 finish 시 자동으로 처리됩니다."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "action": {"type": "string", "enum": ["set", "press", "vkey", "run", "checkbox", "radio", "combo", "tab", "menu", "read-screen", "table-select", "table-cell", "table-doubleclick", "click-cell", "ui-action", "tree-select", "tree-expand", "tree-doubleclick", "tree-collapse"]},
                 "target": {"type": "string", "description": "대상 ID 또는 값. 트리/테이블 액션은 element_id"},
-                "value": {"type": "string", "description": "값. 트리 액션은 node_key, 테이블 액션은 row, ui-action은 실제 action명"},
+                "value": {"type": "string", "description": "실제 값 (예: '4500001234'). ${var} 같은 플레이스홀더 사용 금지. 변수화는 finish에서 자동 처리."},
                 "params": {"type": "object", "description": "추가 파라미터. 예: {\"row\": 0, \"column\": \"MATNR\"}, {\"node_key\": \"0001\"}, {\"ui_action\": \"doubleclick_cell\"}"},
                 "row": {"type": "integer", "description": "테이블 행 번호 (0-based)"},
                 "column": {"type": "string", "description": "테이블/트리 컬럼"},
