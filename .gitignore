@@ -12,3 +12,7 @@ venv/
 *.swo
 .pytest_cache/
 .gstack/
+
+# tool state
+.context/
+.serena/
