@@ -229,20 +229,23 @@ sap act "wnd[0]/shellcont/shell" press_node --node-key "00005" --column "2"
 
 ## 매크로
 
-녹화 중에는 실제 값을 입력한다. `record-finish`는 안전한 사용자 입력값을 항상 변수화하므로 `--vars`는 변수명/설명을 명시하고 싶을 때만 쓴다.
+**녹화 규칙: `record-step`의 값은 반드시 실제 값이어야 한다.**
+`${var}`, `{{MATNR}}`, `{var}` 같은 플레이스홀더를 값으로 넘기면 SAP에 그대로 입력되어 에러가 발생한다.
+시스템이 이를 감지해 에러를 반환한다. 변수화는 `record-finish` 시 자동으로 처리된다.
 
 ```powershell
 sap record-start "자재조회"
 sap record-step run MM03
 sap record-step set "wnd[0]/usr/ctxtRMMG1-MATNR" "100-100" --desc "자재번호"
+# ↑ 실제 자재번호 "100-100" 사용. "${matnr}" 같은 플레이스홀더 절대 금지.
 sap record-step vkey 0
-sap record-finish --name "자재조회" --vars "{\"100-100\": \"조회할 자재번호\"}"
 sap record-finish --name "자재조회"
+# ↑ finish 후 "100-100"이 자동으로 ${matnr}로 변수화됨
+sap record-finish --name "자재조회" --vars "{\"100-100\": \"조회할 자재번호\"}"
+# ↑ --vars는 변수명/설명을 직접 지정하고 싶을 때만 사용
 sap macro-list
 sap macro-play <macro_id> --vars "{\"matnr\": \"200-200\"}"
 ```
-
-placeholder를 SAP 필드에 직접 입력하지 않는다: `{{MATNR}}`, `${matnr}` 금지.
 
 ## 슬롯/서브에이전트식 운영
 

@@ -253,14 +253,20 @@ overlay가 로드된 것이다. `false`면 `graph.generated.json`이 없거나 �
 
 반복 작업을 매크로로 저장하는 흐름:
 
+**CRITICAL: `sap_macro_record_step`의 value는 반드시 실제 값이어야 한다.**
+`${var}`, `{{MATNR}}`, `{var}` 같은 플레이스홀더를 value에 넣으면 SAP에 그대로 입력되어 에러가 발생한다.
+변수화는 `finish` 시 자동으로 처리되므로 녹화 중에는 실제 값만 사용한다.
+
 ```
 1. sap_macro_control(command="start", name="자재조회")
 2. sap_macro_record_step(action="run", target="MM03", description="자재조회 실행")
 3. sap_macro_record_step(action="set", target="wnd[0]/usr/ctxtRMMG1-MATNR", value="100-100", description="자재번호 입력")
+   # ↑ 실제 자재번호 "100-100" 사용. "${matnr}" 같은 플레이스홀더 절대 금지.
 4. sap_macro_record_step(action="vkey", target="0", description="Enter")
 5. ...반복...
 6. sap_macro_control(command="finish", name="자재조회",
      variables={"MATNR": "조회할 자재번호"})
+   # ↑ finish 단계에서 "100-100"이 ${matnr}로 자동 변수화됨
 ```
 
 `sap_macro_record_step`의 action 종류:
@@ -522,10 +528,11 @@ ME21N은 Enjoy 트랜잭션으로 화면 구조가 다른 트랜잭션과 다름
 ### 예시 3: 매크로 녹화 후 재생
 
 ```
-# 녹화
+# 녹화 — value는 반드시 실제 값 사용 (${var}, {{MATNR}} 금지)
 1. sap_macro_control(command="start", name="자재조회_매크로")
 2. sap_macro_record_step(action="run", target="MM03", description="MM03 실행")
-3. sap_macro_record_step(action="set", target="wnd[0]/usr/ctxtRMMG1-MATNR", value="{{MATNR}}", description="자재번호 입력")
+3. sap_macro_record_step(action="set", target="wnd[0]/usr/ctxtRMMG1-MATNR", value="100-100", description="자재번호 입력")
+   # ← 실제 자재번호 입력. finish 후 자동으로 ${matnr}로 변수화됨.
 4. sap_macro_record_step(action="vkey", target="0", description="Enter")
 5. sap_macro_record_step(action="vkey", target="0", description="뷰 선택 확인")
 6. sap_macro_control(command="finish", name="자재조회_매크로", variables={"MATNR": "조회할 자재번호"})
