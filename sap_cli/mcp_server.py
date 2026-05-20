@@ -21,7 +21,7 @@ from typing import Any
 try:
     from mcp.server import Server
     from mcp.server.stdio import stdio_server
-    from mcp.types import TextContent, Tool
+    from mcp.types import ImageContent, TextContent, Tool
     HAS_MCP = True
 except ImportError:
     HAS_MCP = False
@@ -44,6 +44,22 @@ def _json_result(data: Any) -> list[TextContent]:
 
 def _error_result(msg: str) -> list[TextContent]:
     return _json_result({"error": True, "message": msg})
+
+
+def _capture_result(data: dict[str, Any]) -> list:
+    import base64
+    from pathlib import Path
+
+    contents: list = _json_result(data)
+    path_str = data.get("path")
+    if HAS_MCP and path_str:
+        try:
+            img_bytes = Path(path_str).read_bytes()
+            b64 = base64.b64encode(img_bytes).decode("ascii")
+            contents.append(ImageContent(type="image", data=b64, mimeType="image/png"))
+        except Exception:
+            pass
+    return contents
 
 
 # -------------------------------------------------------------------
@@ -560,7 +576,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_capture",
-        "description": "현재 SAP GUI 화면을 스크린샷으로 캡처하고 저장 경로를 반환합니다.",
+        "description": "현재 SAP GUI 화면을 스크린샷으로 캡처합니다. 저장 경로와 함께 이미지를 직접 반환하여 AI가 화면을 볼 수 있습니다.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1486,6 +1502,8 @@ def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                         _active_session_id = data.get("session_id")
                     elif command == "session_end" and isinstance(data, dict) and "error" not in data:
                         _active_session_id = None
+                    if command == "capture" and isinstance(data, dict) and data.get("captured"):
+                        return _capture_result(data)
                     return _json_result(data)
                 if daemon_result.get("approval_required"):
                     return _json_result({
@@ -1517,6 +1535,8 @@ def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         elif command == "session_end" and isinstance(result, dict) and "error" not in result:
             _active_session_id = None
 
+        if command == "capture" and isinstance(result, dict) and result.get("captured"):
+            return _capture_result(result)
         return _json_result(result)
     except ApprovalRequiredError as e:
         return _json_result(e.to_payload())
