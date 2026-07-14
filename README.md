@@ -255,6 +255,11 @@ sap act "wnd[0]/usr/cmbLFART" set "Standard Delivery"
 sap act "wnd[0]/usr/chkSELECT" set true
 sap act "wnd[0]/usr/btnSAVE" press
 
+# 같은 기능은 capability catalog에서 자동 생성된 개별 CLI 명령으로도 사용 가능
+sap ui-set "wnd[0]/usr/cmbLFART" "Standard Delivery"
+sap ui-press "wnd[0]/usr/btnSAVE"
+sap ui-append-text "wnd[0]/usr/cntlEDITOR/shell" "추가 텍스트"
+
 # 검색 도움말
 sap act "wnd[0]/usr/ctxtRMMG1-MATNR" search_help
 
@@ -266,6 +271,8 @@ sap act "wnd[0]/shellcont/shell" expand_node --node-key "00001"
 MCP에서는 `sap_scripting_query`로 API 그래프를 조회하고,
 `sap_inspect_element`로 live element capability를 확인한 뒤
 `sap_ui_action`으로 `set/select/press/focus/read/search_help/select_node` 등을 실행합니다.
+또한 capability catalog에서 발견된 action은 `sap_ui_set`, `sap_ui_press`,
+`sap_ui_append_text`, `sap_ui_get_property`처럼 개별 MCP 도구로 자동 노출됩니다.
 
 SAP GUI Scripting API 그래프 seed는 프로젝트에 포함되어 있습니다.
 
@@ -273,19 +280,25 @@ SAP GUI Scripting API 그래프 seed는 프로젝트에 포함되어 있습니�
 sap_cli/ontology/knowledge/scripting_api/graph.json
 ```
 
-공식 SAP GUI Scripting API 문서 export에서 그래프를 재생성하려면:
+공식 SAP GUI Scripting API 그래프를 재생성하려면 strict XHTML builder를 사용합니다.
+이 명령은 SAP Help의 version-pinned metadata·TOC·각 object/enum page를 읽고,
+PL08 golden count와 dangling edge를 검증한 뒤에만 runtime overlay를 기록합니다.
 
 ```powershell
-# CLI에서 바로 generated overlay 생성
-sap scripting-graph-build sap_gui_scripting_api.txt `
+# 공식 SAP Help XHTML에서 strict overlay 생성
+sap scripting-graph-build `
+  --version 800.08 `
   --out sap_cli/ontology/knowledge/scripting_api/graph.generated.json `
-  --source "https://help.sap.com/doc/9215986e54174174854b0af6bb14305a/800.08/en-US/sap_gui_scripting_api.pdf"
+  --snapshot-dir .context/sap-help-800.08
 
-# 기존 독립 스크립트도 계속 사용 가능
-python scripts/build_sap_scripting_graph.py sap_gui_scripting_api.txt `
-  --out sap_cli/ontology/knowledge/scripting_api/graph.generated.json `
+# PDF/text best-effort parser는 검토용 별도 파일만 생성 가능
+sap scripting-graph-build-legacy sap_gui_scripting_api.txt `
+  --out .context/graph.review-required.json `
   --source "https://help.sap.com/doc/9215986e54174174854b0af6bb14305a/800.08/en-US/sap_gui_scripting_api.pdf"
 ```
+
+Legacy parser는 `graph.generated.json`을 덮어쓸 수 없습니다. 공식 overlay에는
+`scripting-graph-build`만 사용하세요.
 
 ### 4.6 키보드/버튼
 
@@ -1024,7 +1037,7 @@ Windows의 Claude Code `settings.json`에 추가:
 > `~/.sap_cli/policy.yaml` 파일이 존재하면 ReBAC 권한관리가 활성화되어 에이전트별로 허용된 도구만 호출할 수 있습니다. 정책 파일이 없으면 모든 도구가 허용됩니다 (하위 호환).
 
 
-#### 기본 SAP 조작 (11개)
+#### 기본 SAP 조작
 
 | 도구 | 설명 |
 |------|------|
@@ -1042,6 +1055,7 @@ Windows의 Claude Code `settings.json`에 추가:
 | `sap_press` | 버튼 클릭 / 탭 선택 (GuiTab 자동 감지) |
 | `sap_send_vkey` | VKey 전송 |
 | `sap_fill_fields` | 여러 필드를 한번에 입력 (필드명 자동 매핑) |
+| `sap_ui_*` | capability catalog에서 자동 생성되는 개별 UI action 도구 (`sap_ui_set`, `sap_ui_append_text`, `sap_ui_scroll_to`, `sap_ui_call_method` 등) |
 
 #### 상태/지식/운영
 
@@ -1153,7 +1167,10 @@ MCP 서버가 데몬 모드를 사용하도록 설정:
       "command": "python",
       "args": ["-m", "sap_cli.mcp_server"],
       "env": {
-        "SAP_CLI_USE_DAEMON": "1"
+        "SAP_CLI_USE_DAEMON": "1",
+        "SAP_CLI_MCP_SCREEN_SUMMARY": "0",
+        "SAP_CLI_IDLE_WAIT_SECONDS": "0.3",
+        "SAP_CLI_POST_BUSY_SETTLE_SECONDS": "0.02"
       }
     }
   }
@@ -1161,6 +1178,7 @@ MCP 서버가 데몬 모드를 사용하도록 설정:
 ```
 
 `SAP_CLI_USE_DAEMON=1`이면 MCP → 데몬(TCP 18471)으로 명령을 위임하고, 데몬이 없으면 자동으로 직접 실행으로 폴백합니다.
+`SAP_CLI_MCP_SCREEN_SUMMARY=0`은 mutating 작업 뒤 전체 화면을 다시 스캔하지 않게 해서 단계별 응답을 빠르게 합니다. 검증 단계에서 화면 요약까지 필요하면 `1`로 켜면 됩니다.
 
 ### 7.4 병렬 멀티 세션 운영
 

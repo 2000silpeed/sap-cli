@@ -143,6 +143,28 @@ class SessionPool:
                 return slot.wrapper
             return None
 
+    def authorize_slot(self, slot_id: str, agent_name: str) -> None:
+        """Bind an existing slot to one agent or reject a conflicting owner.
+
+        Missing slots are allowed; the caller may create them immediately
+        after this check.  An unassigned existing slot becomes owned by the
+        requesting agent.
+        """
+
+        slot_id = _validate_slot_id(slot_id)
+        agent_name = str(agent_name or "").strip()
+        if not agent_name:
+            raise ValueError("agent_name is required for slot authorization")
+        with self._lock:
+            slot = self._slots.get(slot_id)
+            if slot is None:
+                return
+            if slot.assigned_agent and slot.assigned_agent != agent_name:
+                raise PermissionError(
+                    f"slot {slot_id} belongs to another agent"
+                )
+            slot.assigned_agent = agent_name
+
     def release(self, slot_id: str) -> bool:
         """슬롯 해제 (wrapper만 제거, SAP 세션은 유지).
 

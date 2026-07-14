@@ -52,6 +52,10 @@ SESSION_SKIP_COMMANDS: frozenset[str] = frozenset(
         "capture_list",
         "recipe_query",
         "recipe_pending",
+        "plan_approve",
+        "plan_execute",
+        "job_status",
+        "job_reconcile",
     }
 )
 

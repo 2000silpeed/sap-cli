@@ -15,17 +15,19 @@ from sap_cli.auth.policy import (
 )
 from sap_cli.dispatcher import COMMAND_REGISTRY, MCP_TOOL_TO_COMMAND, resolve_mcp_call
 from sap_cli.mcp_server import TOOL_DEFINITIONS, _visible_tool_names_for_checker
+from sap_cli.ui_action_catalog import UI_ACTION_COMMANDS
 
 
 # Dispatcher 내부 기능이지만 MCP tool로 직접 노출하지 않는 명령.
 # 현재는 CLI/daemon/session에서 가능한 주요 기능을 MCP에도 최대한 노출한다.
-DISPATCHER_ONLY_TOOLS: set[str] = set()
+DISPATCHER_ONLY_TOOLS: set[str] = {"sap_api_live_probe"}
 
 # MCP에는 노출하지만 아직 별도 CLI subcommand를 만들지 않은 명령.
 # recipe replay/version-up은 CLI에도 노출되었고, slot allocate/release만 MCP 중심으로 유지한다.
 MCP_ONLY_COMMANDS = {
     "slot_allocate",
     "slot_release",
+    "api_live_probe",
 }
 
 VALID_RISK_LEVELS = {"low", "medium", "high"}
@@ -64,7 +66,7 @@ def _cli_dispatched_commands() -> set[str]:
         if isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str):
             commands.add(first_arg.value)
 
-    return commands
+    return commands | set(UI_ACTION_COMMANDS)
 
 
 def test_command_metadata_is_valid():
@@ -196,9 +198,12 @@ def test_rebac_enforcing_exposes_recent_mcp_tools_by_permission_level():
 
     assert "sap_recipe_enable" not in operator_tools
     assert "sap_session_approve" not in operator_tools
+    assert "sap_plan_approve" not in operator_tools
     assert "sap_recipe_enable" in supervisor_tools
     assert "sap_session_approve" in supervisor_tools
+    assert "sap_plan_approve" in supervisor_tools
 
     assert TOOL_PERMISSION_MAP["sap_fill_fields"] == Permission.WRITE
     assert TOOL_PERMISSION_MAP["sap_recipe_replay_execute"] == Permission.WRITE
     assert TOOL_PERMISSION_MAP["sap_recipe_enable"] == Permission.ADMIN
+    assert TOOL_PERMISSION_MAP["sap_plan_approve"] == Permission.ADMIN

@@ -12,11 +12,13 @@ Recommended source:
 Workflow:
 1. Run against a local text/Markdown export, stdin, or an official URL:
    python scripts/build_sap_scripting_graph.py api.txt \
-     --out sap_cli/ontology/knowledge/scripting_api/graph.generated.json
+     --out .context/graph.review-required.json
    python scripts/build_sap_scripting_graph.py https://.../sap_gui_scripting_api.pdf \
-     --out sap_cli/ontology/knowledge/scripting_api/graph.generated.json
+     --out .context/graph.review-required.json
    python scripts/build_sap_scripting_graph.py - --out graph.generated.json < api.txt
-2. Review the generated graph before replacing graph.json.
+2. Review the generated graph. This best-effort builder is prohibited from
+   replacing the runtime ``graph.generated.json`` overlay; use
+   ``sap scripting-graph-build`` for strict official XHTML generation.
 
 The bundled seed graph remains the safe runtime fallback. When
 ``sap_cli/ontology/knowledge/scripting_api/graph.generated.json`` exists, the
@@ -34,6 +36,16 @@ import sys
 import urllib.request
 from pathlib import Path
 from typing import Any
+
+
+DEFAULT_RUNTIME_OVERLAY = (
+    Path(__file__).resolve().parents[1]
+    / "sap_cli"
+    / "ontology"
+    / "knowledge"
+    / "scripting_api"
+    / "graph.generated.json"
+)
 
 
 OBJECT_HEADING = re.compile(
@@ -63,10 +75,8 @@ SKIP_MEMBERS = {
     "Class",
     "Checkbox",
     "CheckBox",
-    "ContextMenu",
     "Descending",
     "Description",
-    "Error",
     "Event",
     "Example",
     "Function",
@@ -242,6 +252,11 @@ def write_graph(graph: dict[str, Any], out: str) -> None:
         return
 
     out_path = Path(out)
+    if out_path.expanduser().resolve() == DEFAULT_RUNTIME_OVERLAY.resolve():
+        raise ValueError(
+            "best-effort parser cannot overwrite the runtime overlay; "
+            "use `sap scripting-graph-build` for strict official XHTML generation"
+        )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(payload, encoding="utf-8")
 

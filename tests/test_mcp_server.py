@@ -5,6 +5,8 @@ from __future__ import annotations
 from sap_cli.auth.policy import AgentPolicy, Policy, Relation, RelationBinding
 from sap_cli.dispatchers.registry import COMMAND_REGISTRY
 from sap_cli.mcp_server import TOOL_DEFINITIONS, get_visible_tool_names
+from sap_cli.scripting_ontology import COMPONENT_CAPABILITIES
+from sap_cli.ui_action_catalog import get_ui_action_defs
 
 
 
@@ -54,6 +56,27 @@ def test_mcp_tool_definitions_cover_exposed_registry():
     }
 
     assert expected - defined == set()
+
+
+def test_generated_ui_action_tools_are_exposed():
+    defined = {definition["name"] for definition in TOOL_DEFINITIONS}
+    generated = {definition.tool_name for definition in get_ui_action_defs()}
+
+    assert "sap_ui_append_text" in defined
+    assert "sap_ui_get_property" in defined
+    assert "sap_ui_select_toolbar_menu_item" in defined
+    assert generated <= defined
+
+
+def test_generated_ui_action_catalog_covers_capability_actions():
+    catalog_actions = {definition.action for definition in get_ui_action_defs()}
+    capability_actions = set()
+    for capability in COMPONENT_CAPABILITIES.values():
+        capability_actions.update(capability.get("actions", []))
+        for subtype in capability.get("subtypes", {}).values():
+            capability_actions.update(subtype.get("actions", []))
+
+    assert capability_actions <= catalog_actions
 
 
 

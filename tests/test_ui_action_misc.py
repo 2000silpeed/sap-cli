@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from sap_cli.com_wrapper import SapGuiWrapper
+from sap_cli.api_handles import ApiHandleRegistry
+from sap_cli.com_wrapper import SapGuiError, SapGuiWrapper
+from sap_cli.dispatchers.sap_actions import dispatch_sap_action_command
 from sap_cli.scripting_ontology import component_capability
 
 
@@ -53,15 +55,31 @@ class FakeWindow:
 
 
 class FakeGenericComponent:
-    Type = "GuiShell"
-    SubType = "Custom"
+    Type = "GuiGridView"
+    SubType = "GridView"
     Name = "CUSTOM"
 
     def __init__(self) -> None:
-        self.SomeProperty = "old"
+        self.RowCount = 1
+        self.SelectedRows = ""
 
-    def Echo(self, prefix: str, count: int) -> dict:
-        return {"prefix": prefix, "count": count}
+    def GetCellValue(self, row: int, column: str) -> dict:
+        return {"row": row, "column": column}
+
+
+class FakeGuiCollection:
+    Count = 1
+
+
+class FakeVComponent:
+    Type = "GuiVComponent"
+    Name = "CUSTOM"
+
+    def __init__(self) -> None:
+        self.AccLabelCollection = FakeGuiCollection()
+
+    def DumpState(self, inner_object: str) -> FakeGuiCollection:
+        return FakeGuiCollection()
 
 
 def _wrapper_with(element):
@@ -69,7 +87,40 @@ def _wrapper_with(element):
         wrapper = SapGuiWrapper()
         wrapper._session = MagicMock()
         wrapper._session.FindById.return_value = element
+        wrapper._api_handles = ApiHandleRegistry()
         return wrapper
+
+
+class FakeDispatchContext:
+    slot_id = "ses0"
+
+
+class FakeDispatchSap:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def perform_ui_action(self, element_id, action, value=None, **kwargs):
+        self.calls.append((element_id, action, value, kwargs))
+        return {"action": action, "element_id": element_id, "value": value}
+
+
+def test_generated_ui_action_dispatch_injects_catalog_action():
+    sap = FakeDispatchSap()
+
+    result = dispatch_sap_action_command(
+        "ui_append_text",
+        {"element_id": "wnd[0]/usr/cntlEDITOR/shell", "value": " world"},
+        FakeDispatchContext(),
+        get_sap=lambda slot_id: sap,
+        get_recorder=lambda: None,
+        map_action=lambda action: action,
+        execute_sap_action=lambda *args, **kwargs: None,
+        collect_recipe_hints=lambda tcode: [],
+        with_post_action=lambda payload, *_: payload,
+    )
+
+    assert result["action"] == "append_text"
+    assert sap.calls[0][1] == "append_text"
 
 
 def test_component_capability_includes_text_and_window_actions():
@@ -133,28 +184,64 @@ def test_ui_action_calls_explicit_method_and_get_sets_property():
     called = wrapper.perform_ui_action(
         "wnd[0]/usr/custom",
         "call_method",
-        "Echo",
-        method_args=["A", 3],
+        "GetCellValue",
+        method_args=[0, "MATNR"],
     )
     read_old = wrapper.perform_ui_action(
         "wnd[0]/usr/custom",
         "get_property",
-        property_name="SomeProperty",
+        property_name="RowCount",
     )
     written = wrapper.perform_ui_action(
         "wnd[0]/usr/custom",
         "set_property",
         "new",
-        property_name="SomeProperty",
+        property_name="SelectedRows",
+        trusted_plan=True,
     )
     read_new = wrapper.perform_ui_action(
         "wnd[0]/usr/custom",
         "get_property",
-        property_name="SomeProperty",
+        property_name="SelectedRows",
     )
 
-    assert called["method_called"] == "Echo"
-    assert called["result"] == {"prefix": "A", "count": 3}
-    assert read_old["value"] == "old"
-    assert written["property_set"] == "SomeProperty"
+    assert called["method_called"] == "GetCellValue"
+    assert called["result"] == {"row": 0, "column": "MATNR"}
+    assert read_old["value"] == 1
+    assert written["property_set"] == "SelectedRows"
     assert read_new["value"] == "new"
+
+
+def test_high_risk_visual_member_cannot_bypass_immutable_plan_approval():
+    component = FakeGenericComponent()
+    component.DeleteRows = lambda *_args: None
+    wrapper = _wrapper_with(component)
+    try:
+        wrapper.perform_ui_action(
+            "wnd[0]/usr/custom", "call_method", "DeleteRows", method_args=[0, 1]
+        )
+    except SapGuiError as exc:
+        assert "approved immutable plan" in str(exc)
+    else:  # pragma: no cover - the policy gate is the assertion
+        raise AssertionError("high-risk generic member was executed without a plan")
+
+
+def test_visual_generic_actions_keep_documented_collection_return_types():
+    wrapper = _wrapper_with(FakeVComponent())
+
+    method_result = wrapper.perform_ui_action(
+        "wnd[0]/usr/custom",
+        "call_method",
+        "DumpState",
+        method_args=[""],
+    )["result"]
+    property_result = wrapper.perform_ui_action(
+        "wnd[0]/usr/custom",
+        "get_property",
+        property_name="AccLabelCollection",
+    )["value"]
+
+    assert method_result["kind"] == "collection_handle"
+    assert method_result["object_type"] == "GuiCollection"
+    assert property_result["kind"] == "collection_handle"
+    assert property_result["object_type"] == "GuiComponentCollection"

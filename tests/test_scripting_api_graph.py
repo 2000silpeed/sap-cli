@@ -75,7 +75,7 @@ def test_build_graph_parses_numbered_pdf_headings_and_signatures():
     assert ("object:GuiTextField", "method:GuiTextField.GetListProperty", "HAS_METHOD") in edge_tuples
 
 
-def test_build_graph_skips_pdf_table_and_example_artifacts():
+def test_build_graph_preserves_real_members_and_skips_pdf_artifacts():
     graph = build_graph(
         """
         1.2.30 GuiGridView Object
@@ -101,9 +101,9 @@ def test_build_graph_skips_pdf_table_and_example_artifacts():
 
     assert "method:GuiGridView.DoubleClickCurrentCell" in node_ids
     assert "method:GuiMainWindow.SendVKey" in node_ids
-    assert "method:GuiGridView.ContextMenu" not in node_ids
+    assert "method:GuiGridView.ContextMenu" in node_ids
     assert "method:GuiGridView.Example" not in node_ids
-    assert "method:GuiGridView.Error" not in node_ids
+    assert "method:GuiGridView.Error" in node_ids
     assert "method:GuiGridView.Button" not in node_ids
     assert "method:GuiGridView.Ascending" not in node_ids
     assert "method:GuiGridView.Descending" not in node_ids
@@ -142,3 +142,40 @@ def test_merge_graph_data_preserves_seed_and_adds_generated_members():
     assert "property:GuiComboBox.Value" in nodes
     assert ("object:GuiComboBox", "intent:select", "SUPPORTS_ACTION") in edge_tuples
     assert ("object:GuiComboBox", "property:GuiComboBox.Value", "HAS_PROPERTY") in edge_tuples
+
+
+def test_merge_graph_data_deduplicates_semantic_edges_using_overlay_metadata():
+    seed = {
+        "version": "seed",
+        "nodes": [],
+        "edges": [
+            {
+                "source": "object:GuiComponent",
+                "target": "property:GuiComponent.Id",
+                "type": "HAS_PROPERTY",
+                "access": "read",
+            }
+        ],
+    }
+    official = {
+        "version": "8.00 PL08",
+        "nodes": [],
+        "edges": [
+            {
+                "source": "object:GuiComponent",
+                "target": "property:GuiComponent.Id",
+                "type": "HAS_PROPERTY",
+                "access": "read-only",
+            }
+        ],
+    }
+
+    merged = merge_graph_data(seed, official)
+    assert merged["edges"] == [
+        {
+            "source": "object:GuiComponent",
+            "target": "property:GuiComponent.Id",
+            "type": "HAS_PROPERTY",
+            "access": "read-only",
+        }
+    ]

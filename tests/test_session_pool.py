@@ -168,6 +168,15 @@ class TestSessionPoolAgent:
         slots = pool.list_slots()
         assert slots[0]["assigned_agent"] == "verifier"
 
+    def test_plan_slot_authorization_binds_unassigned_and_rejects_other_agent(self):
+        pool = SessionPool()
+        pool.get_or_create("ses0")
+        pool.authorize_slot("ses0", "planner-a")
+
+        assert pool.list_slots()[0]["assigned_agent"] == "planner-a"
+        with pytest.raises(PermissionError, match="another agent"):
+            pool.authorize_slot("ses0", "planner-b")
+
 
 # ---------------------------------------------------------------------------
 # list_slots

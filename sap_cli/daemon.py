@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import platform
 import socket
 import socketserver
 import subprocess
@@ -22,6 +23,7 @@ import tempfile
 import time
 
 from .com_wrapper import SapGuiError
+from .ipc_auth import IpcAuthError, IpcAuthenticator, load_or_create_secret
 from .dispatcher import (
     ApprovalRequiredError,
     DispatchContext,
@@ -33,6 +35,20 @@ logger = logging.getLogger(__name__)
 
 PORT = 18471
 PID_FILE = os.path.join(tempfile.gettempdir(), "sap_cli_daemon.pid")
+DEFAULT_COMMAND_TIMEOUT = 60.0
+DEFAULT_PLAN_EXECUTE_TIMEOUT = 3600.0
+
+
+def command_timeout(cmd: str) -> float:
+    """Return a bounded client wait suitable for one-shot plan execution."""
+
+    if str(cmd).strip() != "plan_execute":
+        return DEFAULT_COMMAND_TIMEOUT
+    raw = os.getenv("SAP_CLI_PLAN_EXECUTE_TIMEOUT", str(DEFAULT_PLAN_EXECUTE_TIMEOUT))
+    try:
+        return min(86_400.0, max(DEFAULT_COMMAND_TIMEOUT, float(raw)))
+    except (TypeError, ValueError):
+        return DEFAULT_PLAN_EXECUTE_TIMEOUT
 
 
 # ---------------------------------------------------------------------------
@@ -42,8 +58,9 @@ PID_FILE = os.path.join(tempfile.gettempdir(), "sap_cli_daemon.pid")
 def send_command(
     cmd: str,
     args: dict | None = None,
-    timeout: float = 60,
+    timeout: float = DEFAULT_COMMAND_TIMEOUT,
     context: dict | None = None,
+    authenticator: IpcAuthenticator | None = None,
 ) -> dict | None:
     """데몬에 명령 전송. 데몬 미실행 시 None 반환.
 
@@ -54,9 +71,8 @@ def send_command(
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(timeout)
         sock.connect(("127.0.0.1", PORT))
-        request: dict = {"cmd": cmd, "args": args or {}}
-        if context:
-            request["context"] = context
+        signer = authenticator or IpcAuthenticator(load_or_create_secret())
+        request = signer.sign_request(cmd, args or {}, context)
         payload = json.dumps(request).encode("utf-8") + b"\n"
         sock.sendall(payload)
         sock.shutdown(socket.SHUT_WR)
@@ -117,27 +133,149 @@ def stop_daemon() -> bool:
 
 class _Handler(socketserver.StreamRequestHandler):
     def handle(self):
+        authenticated = False
         try:
             raw = self.rfile.readline()
             if not raw:
                 return
             request = json.loads(raw.decode("utf-8").strip())
+            if not isinstance(request, dict):
+                raise IpcAuthError("invalid daemon IPC request")
+            self.server.authenticate(request)
+            authenticated = True
             result = self.server.dispatch(
                 request.get("cmd", ""),
                 request.get("args", {}),
                 request.get("context"),
             )
             self.wfile.write(json.dumps(result, ensure_ascii=False).encode("utf-8"))
+        except IpcAuthError:
+            self.wfile.write(
+                json.dumps(
+                    {"ok": False, "error": "IPC authentication failed"}
+                ).encode("utf-8")
+            )
         except Exception as e:
             self.wfile.write(json.dumps({"ok": False, "error": str(e)}).encode("utf-8"))
-
+        finally:
+            # Untrusted traffic must not cause any daemon-side work, including
+            # event processing that sits outside the command dispatcher.
+            if authenticated:
+                self.server.pump_events()
 
 class _DaemonServer(socketserver.TCPServer):
     allow_reuse_address = True
 
-    def __init__(self):
+    def __init__(self, *, authenticator: IpcAuthenticator | None = None):
         super().__init__(("127.0.0.1", PORT), _Handler)
+        self._ipc_authenticator = authenticator or IpcAuthenticator(
+            load_or_create_secret()
+        )
         self._sap = None
+        self._event_manager = None
+        from .events.runtime import set_event_manager
+        from .planning.approvals import PlanApprovalStore, set_plan_approval_store
+        from .planning.runtime import PlanRuntime, set_plan_runtime
+
+        set_event_manager(None)
+        self._plan_runtime = PlanRuntime()
+        set_plan_runtime(self._plan_runtime)
+        self._plan_approval_store = PlanApprovalStore()
+        set_plan_approval_store(self._plan_approval_store)
+        from .jobs import (
+            DaemonJobCoordinator,
+            PlanJobLedger,
+            set_job_coordinator,
+            set_plan_job_ledger,
+        )
+
+        self._job_coordinator = DaemonJobCoordinator()
+        set_job_coordinator(self._job_coordinator)
+        plan_job_root = os.getenv("SAP_CLI_PLAN_JOB_DIR") or os.path.expanduser(
+            "~/.sap_cli/plan_jobs"
+        )
+        self._plan_job_ledger = PlanJobLedger(plan_job_root)
+        set_plan_job_ledger(self._plan_job_ledger)
+        for record in self._plan_job_ledger.startup_recovered:
+            self._job_coordinator.submit(
+                record.job_id,
+                "plan_execute",
+                record.request_digest,
+                slot_id=record.slot,
+                agent_name=record.owner,
+            )
+            self._job_coordinator.claim(record.job_id)
+            self._job_coordinator.mark_outcome_unknown(
+                record.job_id, error_code=record.error_code
+            )
+        from .dispatchers.ui_maps import default_job_store, default_map_store
+        from .service import get_sap
+        from .ui_map.cache import CachedUiMapStore
+        from .ui_map.runtime import set_ui_map_scheduler, set_ui_map_store
+        from .ui_map.scheduler import UiMapScheduler
+
+        self._ui_map_store = CachedUiMapStore(
+            default_map_store(), on_head_change=self._plan_runtime.invalidate_map_scope
+        )
+        set_ui_map_store(self._ui_map_store)
+        self._ui_map_job_store = default_job_store()
+        self._ui_map_scheduler = UiMapScheduler(
+            self._ui_map_job_store,
+            get_sap,
+            map_store=self._ui_map_store,
+            coordinator=self._job_coordinator,
+        )
+        self._ui_map_scheduler.hydrate_persisted_jobs()
+        set_ui_map_scheduler(self._ui_map_scheduler)
+        if platform.system() == "Windows":
+            from .events.manager import EventSubscriptionManager
+            from .events.win32_backend import Win32EventBackend
+
+            self._event_manager = EventSubscriptionManager(Win32EventBackend())
+            set_event_manager(self._event_manager)
+
+    def authenticate(self, request: dict) -> None:
+        self._ipc_authenticator.verify_request(request)
+
+    def service_actions(self) -> None:
+        self.pump_events()
+        scheduler = getattr(self, "_ui_map_scheduler", None)
+        if scheduler is not None:
+            scheduler.tick()
+
+    def pump_events(self) -> None:
+        if self._event_manager is not None:
+            self._event_manager.pump()
+            from .service import get_pool
+
+            pool = get_pool()
+            stale_slots = {
+                item["slot_id"]
+                for item in self._event_manager.list_subscriptions()
+                if not pool.has_slot(item["slot_id"])
+            }
+            for slot_id in stale_slots:
+                self._event_manager.cleanup_slot(slot_id)
+
+    def close_events(self) -> None:
+        from .events.runtime import set_event_manager
+
+        if self._event_manager is not None:
+            self._event_manager.close_all()
+            self._event_manager = None
+        set_event_manager(None)
+        from .ui_map.runtime import set_ui_map_scheduler
+        from .planning.approvals import set_plan_approval_store
+        from .planning.runtime import set_plan_runtime
+        from .jobs import set_job_coordinator, set_plan_job_ledger
+        from .ui_map.runtime import set_ui_map_store
+
+        set_ui_map_scheduler(None)
+        set_ui_map_store(None)
+        set_plan_approval_store(None)
+        set_plan_runtime(None)
+        set_job_coordinator(None)
+        set_plan_job_ledger(None)
 
     def _get_sap(self, slot_id: str = "ses0"):
         from .service import get_sap
@@ -324,6 +462,7 @@ def _run_server():
     except KeyboardInterrupt:
         pass
     finally:
+        server.close_events()
         server.server_close()
         try:
             os.unlink(PID_FILE)

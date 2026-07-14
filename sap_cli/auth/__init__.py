@@ -3,5 +3,13 @@
 from .checker import PermissionChecker
 from .policy import Policy, load_policy
 from .audit import AuditLogger
+from .preflight import AuthorizationPreflight, preflight_tool_call
 
-__all__ = ["PermissionChecker", "Policy", "load_policy", "AuditLogger"]
+__all__ = [
+    "PermissionChecker",
+    "Policy",
+    "load_policy",
+    "AuditLogger",
+    "AuthorizationPreflight",
+    "preflight_tool_call",
+]

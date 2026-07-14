@@ -36,6 +36,7 @@ from .dispatcher import (
     dispatch_command,
     resolve_mcp_call,
 )
+from .ui_action_catalog import mcp_tool_definitions
 
 
 def _json_result(data: Any) -> list[TextContent]:
@@ -102,6 +103,204 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "sap_map_scan",
+        "description": (
+            "현재 SAP session의 모든 window와 component 계층, 전체 ALV/Table/Tree "
+            "정의, menu/toolbar, modal stack을 읽기 전용 UiState 지도로 수집합니다."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"slot_id": {"type": "string"}},
+        },
+    },
+    {
+        "name": "sap_map_list",
+        "description": "저장된 최신 SAP UI 지도 목록을 환경 scope로 조회합니다.",
+        "inputSchema": {"type": "object", "properties": {
+            "tcode": {"type": "string"}, "system_id": {"type": "string"},
+            "client": {"type": "string"}, "language": {"type": "string"}
+        }},
+    },
+    {
+        "name": "sap_map_search",
+        "description": "버전 지도에서 상태, UI 요소, 전이를 민감값 없이 검색합니다.",
+        "inputSchema": {"type": "object", "properties": {
+            "map_id": {"type": "string"}, "tcode": {"type": "string"},
+            "query": {"type": "string"}, "system_id": {"type": "string"},
+            "client": {"type": "string"}, "language": {"type": "string"},
+            "version": {"type": "integer", "minimum": 1},
+            "kinds": {"type": "array", "items": {"enum": ["state", "component", "transition"]}},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 50}
+        }, "required": ["map_id", "tcode", "query"]},
+    },
+    {
+        "name": "sap_map_path",
+        "description": "저장된 지도에서 상태 또는 UI 요소까지 최단 실행 경로를 조회합니다.",
+        "inputSchema": {"type": "object", "properties": {
+            "map_id": {"type": "string"}, "tcode": {"type": "string"},
+            "from_state_id": {"type": "string"}, "target": {"type": "string"},
+            "target_type": {"enum": ["state", "component"], "default": "state"},
+            "system_id": {"type": "string"}, "client": {"type": "string"},
+            "language": {"type": "string"}, "version": {"type": "integer", "minimum": 1},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 50}
+        }, "required": ["map_id", "tcode", "from_state_id", "target"]},
+    },
+    {
+        "name": "sap_map_job_status",
+        "description": "cooperative 지도 생성 job과 대기 중인 사용자 질문을 조회합니다.",
+        "inputSchema": {"type": "object", "properties": {
+            "job_id": {"type": "string"},
+            "status": {"enum": ["queued", "running", "needs_user_input", "paused", "interrupted", "completed", "failed", "cancelled"]},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 50}
+        }},
+    },
+    {
+        "name": "sap_map_report",
+        "description": "저장된 지도의 구조 coverage, collection 종류, modal, unreachable 및 scan 계측을 업무 값 없이 조회합니다.",
+        "inputSchema": {"type": "object", "properties": {
+            "map_id": {"type": "string"}, "tcode": {"type": "string"},
+            "system_id": {"type": "string"}, "client": {"type": "string"},
+            "language": {"type": "string"}, "version": {"type": "integer", "minimum": 1}
+        }, "required": ["map_id", "tcode"]},
+    },
+    {
+        "name": "sap_map_job_cancel",
+        "description": "지도 생성 job을 취소합니다.",
+        "inputSchema": {"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]},
+    },
+    {
+        "name": "sap_map_augment_start",
+        "description": (
+            "완료된 기존 지도에서 기준 state와 사용자가 추가할 누락 화면/분기를 지정해 "
+            "durable needs_user_input job을 만듭니다. SAP 화면은 조작하지 않습니다."
+        ),
+        "inputSchema": {"type": "object", "properties": {
+            "map_id": {"type": "string"}, "tcode": {"type": "string"},
+            "from_state_id": {"type": "string"}, "request": {"type": "string"},
+            "system_id": {"type": "string"}, "client": {"type": "string"},
+            "language": {"type": "string"}, "version": {"type": "integer", "minimum": 1},
+            "scope": {"type": "object"}, "slot_id": {"type": "string"}
+        }, "required": ["map_id", "tcode", "from_state_id", "request"]},
+    },
+    {
+        "name": "sap_map_traverse_start",
+        "description": "지도 순회 job을 daemon에 등록하고 즉시 queued 상태로 반환합니다. active 모드는 테스트 클라이언트 확인이 필요합니다.",
+        "inputSchema": {"type": "object", "properties": {
+            "tcode": {"type": "string"}, "map_id": {"type": "string"},
+            "mode": {"enum": ["passive", "reversible", "allowlisted"], "default": "passive"},
+            "budget": {"type": "object"},
+            "allowed_actions": {"type": "array", "items": {"type": "string"}},
+            "allowed_branches": {
+                "type": "array",
+                "description": (
+                    "테스트 client에서만 허용할 exact navigation branch. "
+                    "source state/fingerprint, logical/SAP id, type, restore_vkey를 고정합니다."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "rule_id": {"type": "string"},
+                        "action": {"enum": [
+                            "press", "select_menu", "press_toolbar_button",
+                            "select_context_menu_item"
+                        ]},
+                        "source_state_id": {"type": "string"},
+                        "source_fingerprint": {"type": "string"},
+                        "target_logical_id": {"type": "string"},
+                        "target_sap_id": {"type": "string"},
+                        "component_type": {"enum": [
+                            "GuiButton", "GuiMenu", "GuiToolbar", "GuiShell"
+                        ]},
+                        "item_id": {"type": "string"},
+                        "restore_vkey": {"enum": [3, 12]},
+                        "expected_program": {"type": "string"},
+                        "expected_screen_number": {"type": "integer", "minimum": 0},
+                        "expected_modal_signature": {"type": "string"}
+                    },
+                    "required": [
+                        "action", "target_logical_id", "target_sap_id",
+                        "component_type", "restore_vkey"
+                    ],
+                    "anyOf": [
+                        {"required": ["source_state_id"]},
+                        {"required": ["source_fingerprint"]}
+                    ]
+                }
+            },
+            "navigate": {"type": "boolean", "default": True},
+            "test_client_confirmed": {"type": "boolean", "default": False},
+            "slot_id": {"type": "string"}
+        }, "required": ["tcode"]},
+    },
+    {
+        "name": "sap_map_traverse_resume",
+        "description": "사용자 답변·수동 SAP 이동 후 재개하거나, budget-paused job에 더 큰 budget을 적용합니다. 답변 값은 디스크에 저장하지 않습니다.",
+        "inputSchema": {"type": "object", "properties": {
+            "job_id": {"type": "string"}, "answers": {"type": "object"},
+            "budget": {"type": "object"},
+            "slot_id": {"type": "string"}
+        }, "required": ["job_id"]},
+    },
+    {
+        "name": "sap_plan_preview",
+        "description": "자연어 SAP 요청을 저장된 UI 지도만 사용해 전체 명령·guard·예상 전이·위험·승인 조건이 포함된 실행 계획으로 컴파일합니다. SAP 화면은 스캔하거나 조작하지 않습니다.",
+        "inputSchema": {"type": "object", "properties": {
+            "request": {"type": "string"}, "tcode": {"type": "string"},
+            "map_id": {"type": "string"}, "system_id": {"type": "string"},
+            "client": {"type": "string"}, "current_state_id": {"type": "string"},
+            "goal_query": {"type": "string"}, "values": {"type": "object"},
+            "success_criteria": {"type": "array", "items": {"type": "string"}},
+            "api_version": {"type": "string"}, "gui_version": {"type": "string"},
+            "application_release": {"type": "string"}, "schema_version": {"type": "string"}
+        }, "required": ["request"]},
+    },
+    {
+        "name": "sap_plan_approve",
+        "description": "관리자가 daemon 메모리에 plan/step/agent/slot에 묶인 일회용 승인 토큰을 발급합니다.",
+        "inputSchema": {"type": "object", "properties": {
+            "plan_id": {"type": "string"}, "plan_hash": {"type": "string"},
+            "subject_agent": {"type": "string"},
+            "step_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+            "expires_in_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 900},
+            "slot_id": {"type": "string"}
+        }, "required": ["plan_id", "plan_hash", "subject_agent", "step_ids"]},
+    },
+    {
+        "name": "sap_plan_execute",
+        "description": "daemon 메모리에 보관된 불변 실행 계획을 한 번의 IPC로 실행합니다. 같은 execution_id는 재실행하지 않습니다.",
+        "inputSchema": {"type": "object", "properties": {
+            "plan_id": {"type": "string"}, "plan_hash": {"type": "string"},
+            "execution_id": {"type": "string"},
+            "verify_mode": {"type": "string", "enum": ["cheap", "full"], "default": "cheap"},
+            "approval_token": {"type": "string"},
+            "slot_id": {"type": "string"}
+        }, "required": ["plan_id", "plan_hash", "execution_id"]},
+    },
+    {
+        "name": "sap_job_status",
+        "description": "daemon의 계획 실행과 지도 순회 공통 작업 상태를 값 노출 없이 조회합니다.",
+        "inputSchema": {"type": "object", "properties": {
+            "job_id": {"type": "string"}, "slot_id": {"type": "string"}
+        }},
+    },
+    {
+        "name": "sap_job_reconcile",
+        "description": "outcome_unknown 또는 dirty checkpoint를 수동 검증 뒤 명시적으로 정리합니다. 자동 재실행하지 않습니다.",
+        "inputSchema": {"type": "object", "properties": {
+            "job_id": {"type": "string"},
+            "resolution": {
+                "enum": [
+                    "verified_applied",
+                    "verified_not_applied",
+                    "verified_failed",
+                    "release_after_manual_verification",
+                    "cancel",
+                ]
+            },
+            "slot_id": {"type": "string"}
+        }, "required": ["job_id", "resolution"]},
+    },
+    {
         "name": "sap_inspect_element",
         "description": (
             "SAP GUI element_id 하나를 live로 검사해 Type/SubType, 값, changeable, "
@@ -144,7 +343,98 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "intent": {"type": "string", "description": "의도/action (예: set, select, press, select_node)"},
                 "node_id": {"type": "string", "description": "직접 조회할 graph node id (예: object:GuiComboBox)"},
                 "depth": {"type": "integer", "description": "주변 graph 확장 깊이", "default": 1},
+                "coverage": {"type": "boolean", "description": "공식 API 대비 coverage matrix 요약 반환", "default": False},
+                "include_gaps": {"type": "boolean", "description": "coverage gap 샘플 포함", "default": True},
+                "gap_limit": {"type": "integer", "description": "종류별 gap 최대 출력 수", "default": 50, "minimum": 0},
             },
+        },
+    },
+    {
+        "name": "sap_api_object_action",
+        "description": (
+            "SAP GUI Scripting의 Application/Connection/Session/SessionInfo 계층에서 "
+            "공식 method/property를 실행합니다. 문서 member와 권한·위험도를 확인하며, "
+            "visual element는 sap_ui_action을 사용하세요."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "scope": {
+                    "type": "string",
+                    "description": (
+                        "sap_gui_auto, rot_wrapper, application, connection, session, "
+                        "session_info, active_window 또는 이전 호출의 handle:<id>"
+                    ),
+                },
+                "action": {
+                    "type": "string",
+                    "enum": ["call_method", "get_property", "set_property"],
+                },
+                "member_name": {"type": "string", "description": "공식 API member 이름"},
+                "method_args": {
+                    "type": "array",
+                    "items": {},
+                    "description": (
+                        "공식 signature의 ByVal 입력만 순서대로 전달합니다. "
+                        "ByRef/out은 자동 생성되며, 객체 인자는 handle:<id> 또는 "
+                        "{\"handle_id\": \"...\"}로 전달합니다."
+                    ),
+                },
+                "args_json": {"type": "string", "description": "method_args JSON 배열 문자열"},
+                "property_value": {"description": "set_property 값"},
+                "slot_id": {"type": "string", "description": "대상 세션 슬롯"},
+            },
+            "required": ["scope", "action", "member_name"],
+        },
+    },
+    {
+        "name": "sap_event_subscribe",
+        "description": "상주 daemon에서 검증된 SAP application/session 이벤트를 구독합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "scope": {"type": "string", "enum": ["application", "session"]},
+                "events": {"type": "array", "items": {"type": "string"}},
+                "ttl_seconds": {"type": "number", "default": 300},
+                "queue_limit": {"type": "integer", "default": 256, "minimum": 1},
+                "redact_sensitive": {"type": "boolean", "default": True},
+                "slot_id": {"type": "string"},
+            },
+            "required": ["scope", "events"],
+        },
+    },
+    {
+        "name": "sap_event_poll",
+        "description": "SAP 이벤트 구독 큐를 비차단 방식으로 조회합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "subscription_id": {"type": "string"},
+                "cursor": {"type": "integer", "default": 0, "minimum": 0},
+                "limit": {"type": "integer", "default": 100, "minimum": 1},
+                "slot_id": {"type": "string"},
+            },
+            "required": ["subscription_id"],
+        },
+    },
+    {
+        "name": "sap_event_unsubscribe",
+        "description": "SAP 이벤트 구독을 해제합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "subscription_id": {"type": "string"},
+                "slot_id": {"type": "string"},
+            },
+            "required": ["subscription_id"],
+        },
+    },
+    {
+        "name": "sap_event_list",
+        "description": "현재 agent와 session slot이 소유한 SAP 이벤트 구독을 조회합니다.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"slot_id": {"type": "string"}},
         },
     },
     {
@@ -175,7 +465,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "method_args": {
                     "type": "array",
                     "items": {},
-                    "description": "call_method에 전달할 인자 배열",
+                    "description": (
+                        "call_method의 ByVal 입력 배열. ByRef/out은 graph signature로 "
+                        "자동 생성되며 객체 인자는 handle:<id> 또는 handle_id 객체 사용"
+                    ),
                 },
                 "property_name": {"type": "string", "description": "get_property/set_property 대상 속성명"},
                 "property_value": {"description": "set_property 값. 생략 시 value 사용"},
@@ -1368,6 +1661,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
 ]
 
+TOOL_DEFINITIONS.extend(mcp_tool_definitions())
+
 TOOLS: list = []
 if HAS_MCP:
     TOOLS = [Tool(**definition) for definition in TOOL_DEFINITIONS]
@@ -1406,18 +1701,18 @@ def get_visible_tools(agent_name: str | None = None) -> list[Tool]:
 
 
 def _screen_summary_enabled() -> bool:
-    raw = os.getenv("SAP_CLI_MCP_SCREEN_SUMMARY", "1").strip().lower()
-    return raw not in {"0", "false", "no"}
+    raw = os.getenv("SAP_CLI_MCP_SCREEN_SUMMARY", "0").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 def _include_post_action_context(command: str) -> bool:
     """Return whether MCP should enrich the command result after execution."""
-    return command != "connect"
+    return command not in {"connect", "plan_approve", "plan_execute"}
 
 
 def _include_screen_summary(command: str) -> bool:
     """Return whether MCP should include a compact screen summary."""
-    return command != "connect" and _screen_summary_enabled()
+    return command not in {"connect", "plan_approve", "plan_execute"} and _screen_summary_enabled()
 
 
 def _use_daemon() -> bool:
@@ -1444,10 +1739,6 @@ def _dispatch_via_daemon(
     """daemon 경유 실행. 성공하면 결과 dict, 실패/미실행이면 None."""
     from . import daemon
 
-    if not daemon.is_running():
-        if not daemon.start_daemon():
-            return None
-
     ctx: dict[str, Any] = {
         "source": "mcp",
         "tool_name": tool_name,
@@ -1458,10 +1749,18 @@ def _dispatch_via_daemon(
     }
     if session_id:
         ctx["session_id"] = session_id
-    result = daemon.send_command(command, args, context=ctx)
-    if result is None:
+
+    result = daemon.send_command(
+        command, args, timeout=daemon.command_timeout(command), context=ctx
+    )
+    if result is not None:
+        return result
+
+    if not daemon.start_daemon():
         return None
-    return result
+    return daemon.send_command(
+        command, args, timeout=daemon.command_timeout(command), context=ctx
+    )
 
 
 def _is_unknown_daemon_command_error(message: str) -> bool:
@@ -1524,6 +1823,21 @@ def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 # an update. If it does not know a new command, fall back to
                 # direct dispatch instead of surfacing a stale-daemon error.
             # daemon 사용 불가 → fallback to direct dispatch
+
+        if command in {
+            "plan_preview",
+            "plan_approve",
+            "plan_execute",
+            "job_status",
+            "job_reconcile",
+            "map_job_cancel",
+            "map_augment_start",
+            "map_traverse_start",
+            "map_traverse_resume",
+        }:
+            return _error_result(
+                f"{name}는 persistent daemon 전용이며 direct fallback을 허용하지 않습니다."
+            )
 
         ctx = DispatchContext(
             source="mcp",

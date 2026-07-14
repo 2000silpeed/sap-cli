@@ -11,6 +11,8 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from sap_cli.ui_action_catalog import UI_ACTION_COMMANDS, get_ui_action_def
+
 Factory = Callable[..., Any]
 
 # 녹화 중 AI가 실제 값 대신 플레이스홀더를 넘기는 것을 차단
@@ -26,9 +28,12 @@ REPORT_EXECUTE_VKEY = 8
 SAP_ACTION_COMMANDS: frozenset[str] = frozenset(
     {
         "command",
+        "api_object_action",
+        "api_live_probe",
         "combo_entries",
         "get",
         "inspect",
+        "map_scan",
         "press",
         "record_step",
         "run",
@@ -47,7 +52,7 @@ SAP_ACTION_COMMANDS: frozenset[str] = frozenset(
         "ui_action",
         "vkey",
     }
-)
+) | UI_ACTION_COMMANDS
 
 
 def is_sap_action_command(command: str) -> bool:
@@ -74,10 +79,20 @@ def dispatch_sap_action_command(
         return dispatch_set(args, ctx, get_sap, with_post_action)
     if command == "inspect":
         return dispatch_inspect(args, ctx, get_sap)
+    if command == "map_scan":
+        return get_sap(ctx.slot_id).scan_ui_state()
     if command == "scripting_query":
         return dispatch_scripting_query(args)
+    if command == "api_object_action":
+        return dispatch_api_object_action(args, ctx, get_sap)
+    if command == "api_live_probe":
+        return dispatch_api_live_probe(args, ctx, get_sap)
     if command == "ui_action":
         return dispatch_ui_action(args, ctx, get_sap, with_post_action)
+    if action_def := get_ui_action_def(command):
+        ui_args = dict(args)
+        ui_args["action"] = action_def.action
+        return dispatch_ui_action(ui_args, ctx, get_sap, with_post_action)
     if command == "get":
         return dispatch_get(args, ctx, get_sap)
     if command == "combo_entries":
@@ -201,6 +216,14 @@ def dispatch_inspect(args: dict[str, Any], ctx: Any, get_sap: Factory) -> dict[s
 
 def dispatch_scripting_query(args: dict[str, Any]) -> dict[str, Any]:
     """Query the SAP GUI Scripting API graph ontology."""
+    if bool(args.get("coverage", False)):
+        from sap_cli.scripting_coverage import default_coverage_report
+
+        return default_coverage_report(
+            include_gaps=bool(args.get("include_gaps", True)),
+            gap_limit=int(args.get("gap_limit", 50)),
+        )
+
     from sap_cli.scripting_api_graph import query_default_graph
 
     return query_default_graph(
@@ -209,6 +232,39 @@ def dispatch_scripting_query(args: dict[str, Any]) -> dict[str, Any]:
         intent=str(args.get("intent", "")),
         depth=int(args.get("depth", 1)),
     )
+
+
+def dispatch_api_object_action(
+    args: dict[str, Any], ctx: Any, get_sap: Factory
+) -> dict[str, Any]:
+    """Run a policy-described action on application/session hierarchy objects."""
+
+    method_args = args.get("method_args")
+    if method_args is None and args.get("args_json"):
+        method_args = json.loads(str(args["args_json"]))
+    if method_args is not None and not isinstance(method_args, list):
+        raise ValueError("method_args/args_json은 JSON 배열이어야 합니다.")
+    return get_sap(ctx.slot_id).perform_api_object_action(
+        str(args["scope"]),
+        str(args["action"]),
+        str(args["member_name"]),
+        method_args=method_args,
+        property_value=args.get("property_value"),
+    )
+
+
+def dispatch_api_live_probe(args: dict[str, Any], ctx: Any, get_sap: Factory) -> dict[str, Any]:
+    """Run a daemon-canary-only read-only member probe without returning values."""
+
+    if str(getattr(ctx, "source", "")) != "windows_canary":
+        raise ValueError("API live probe is reserved for the Windows canary")
+    result = get_sap(ctx.slot_id).probe_documented_member(
+        element_id=str(args.get("element_id", "")),
+        scope=str(args.get("scope", "")),
+        action=str(args.get("action", "get_property")),
+        member_name=str(args.get("member_name", "")),
+    )
+    return {"verified": True, "member_id": result["member_id"]}
 
 
 def dispatch_ui_action(

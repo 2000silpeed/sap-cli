@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from sap_cli.auth.policy import Permission
+from sap_cli.ui_action_catalog import get_ui_action_defs
 
 
 @dataclass(slots=True)
@@ -29,8 +30,79 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "connections": CommandDef("sap_connections", Permission.READ),
     "session": CommandDef("sap_session", Permission.READ),
     "screen": CommandDef("sap_screen", Permission.READ),
+    "map_scan": CommandDef(
+        "sap_map_scan", Permission.READ, category="ui_map", risk_level="low"
+    ),
+    "map_list": CommandDef(
+        "sap_map_list", Permission.READ, category="ui_map", risk_level="low"
+    ),
+    "map_search": CommandDef(
+        "sap_map_search", Permission.READ, category="ui_map", risk_level="low"
+    ),
+    "map_path": CommandDef(
+        "sap_map_path", Permission.READ, category="ui_map", risk_level="low"
+    ),
+    "map_report": CommandDef(
+        "sap_map_report", Permission.READ, category="ui_map", risk_level="low"
+    ),
+    "map_job_status": CommandDef(
+        "sap_map_job_status", Permission.READ, category="ui_map", risk_level="low"
+    ),
+    "map_job_cancel": CommandDef(
+        "sap_map_job_cancel", Permission.WRITE, category="ui_map", risk_level="medium"
+    ),
+    "map_augment_start": CommandDef(
+        "sap_map_augment_start", Permission.WRITE, category="ui_map", risk_level="medium"
+    ),
+    "map_traverse_start": CommandDef(
+        "sap_map_traverse_start", Permission.EXECUTE, category="ui_map", risk_level="high"
+    ),
+    "map_traverse_resume": CommandDef(
+        "sap_map_traverse_resume", Permission.EXECUTE, category="ui_map", risk_level="high"
+    ),
+    "plan_preview": CommandDef(
+        "sap_plan_preview", Permission.READ, category="planning", risk_level="low"
+    ),
+    "plan_approve": CommandDef(
+        "sap_plan_approve", Permission.ADMIN, category="planning", risk_level="high"
+    ),
+    "plan_execute": CommandDef(
+        "sap_plan_execute", Permission.WRITE, category="planning", risk_level="high"
+    ),
+    "job_status": CommandDef(
+        "sap_job_status", Permission.READ, category="jobs", risk_level="low"
+    ),
+    "job_reconcile": CommandDef(
+        "sap_job_reconcile", Permission.ADMIN, category="jobs", risk_level="high"
+    ),
     "inspect": CommandDef("sap_inspect_element", Permission.READ),
     "scripting_query": CommandDef("sap_scripting_query", Permission.READ),
+    "api_object_action": CommandDef(
+        "sap_api_object_action",
+        Permission.ADMIN,
+        category="ui_action",
+        risk_level="high",
+    ),
+    "api_live_probe": CommandDef(
+        "sap_api_live_probe",
+        Permission.ADMIN,
+        expose_cli=False,
+        expose_mcp=False,
+        category="canary",
+        risk_level="high",
+    ),
+    "event_subscribe": CommandDef(
+        "sap_event_subscribe", Permission.ADMIN, category="events", risk_level="high"
+    ),
+    "event_poll": CommandDef(
+        "sap_event_poll", Permission.ADMIN, category="events", risk_level="high"
+    ),
+    "event_unsubscribe": CommandDef(
+        "sap_event_unsubscribe", Permission.ADMIN, category="events", risk_level="high"
+    ),
+    "event_list": CommandDef(
+        "sap_event_list", Permission.ADMIN, category="events", risk_level="high"
+    ),
     "ui_action": CommandDef("sap_ui_action", Permission.WRITE),
     "combo_entries": CommandDef("sap_combo_entries", Permission.READ),
     "run": CommandDef("sap_run", Permission.EXECUTE),
@@ -216,6 +288,21 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
         risk_level="high",
     ),
 }
+
+COMMAND_REGISTRY.update(
+    {
+        definition.command: CommandDef(
+            definition.tool_name,
+            Permission(definition.permission),
+            expose_cli=True,
+            expose_mcp=True,
+            description=definition.description,
+            category="ui_action",
+            risk_level=definition.risk_level,
+        )
+        for definition in get_ui_action_defs()
+    }
+)
 
 COMMAND_TOOL_MAP: dict[str, str] = {
     command: definition.tool_name for command, definition in COMMAND_REGISTRY.items()

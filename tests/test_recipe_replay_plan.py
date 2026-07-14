@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
 from sap_cli.dispatcher import DispatchContext, dispatch_command
-from sap_cli.auth.policy import AgentPolicy, DangerousReport, DangerousTransaction, Policy, RelationBinding
+from sap_cli.auth.policy import (
+    AgentPolicy,
+    AuditConfig,
+    DangerousReport,
+    DangerousTransaction,
+    Policy,
+    RelationBinding,
+    TranscriptConfig,
+)
 from sap_cli.recipe import Recipe, RecipeStep, RecipeStore
 
 
@@ -607,3 +616,178 @@ def test_replay_execute_can_store_step_observations_by_scope(tmp_path: Path):
     assert "sap_status" in step_observations
     assert "sap_modal" in step_observations
     assert "sap_screen_summary" not in step_observations
+
+
+def test_replay_execute_rejects_unresolved_variables_before_sap_access(tmp_path: Path):
+    store = _store(tmp_path)
+    store.save(Recipe(
+        id="missing-variable",
+        description="누락 변수 차단",
+        steps=[
+            RecipeStep(tool="sap_run", args={"tcode": "${tcode}"}),
+            RecipeStep(
+                tool="sap_set_field",
+                args={"element_id": "F1", "value": "${material}"},
+                precondition={"tcode": "${tcode}"},
+            ),
+        ],
+    ))
+    sap = _ReplaySap()
+
+    with (
+        patch("sap_cli.dispatcher._get_recipe_store", return_value=store),
+        patch("sap_cli.dispatcher._get_sap", return_value=sap),
+    ):
+        result = dispatch_command(
+            "recipe_replay_execute",
+            {
+                "recipe_id": "missing-variable",
+                "variables": {"tcode": "VA01"},
+            },
+            DispatchContext(source="mcp", enforce_auth=False),
+        )
+
+    assert result["status"] == "blocked"
+    assert result["stage"] == "variable_binding"
+    issue = result["variable_binding"]["issues"][0]
+    assert issue["code"] == "unresolved_variables"
+    assert issue["variables"] == ["material"]
+    assert sap.calls == []
+
+
+def test_replay_execute_authorizes_resolved_dangerous_tcode(tmp_path: Path):
+    store = _store(tmp_path)
+    store.save(Recipe(
+        id="variable-dangerous-tcode",
+        description="변수 tcode 위험 검사",
+        steps=[RecipeStep(tool="sap_run", args={"tcode": "${tcode}"})],
+    ))
+    sap = _ReplaySap()
+    policy = Policy(
+        agents={
+            "standard": AgentPolicy(
+                relations=[RelationBinding(resource="tx:*", relation="operator")],
+            )
+        },
+        dangerous_transactions=[
+            DangerousTransaction(
+                tcode="SM30",
+                reason="테이블 직접 수정",
+                category="table_maintenance",
+                risk_level="critical",
+                preflight_code="dangerous_table_maintenance",
+            )
+        ],
+        active_agent="standard",
+    )
+
+    with (
+        patch("sap_cli.dispatcher._get_recipe_store", return_value=store),
+        patch("sap_cli.dispatcher._get_sap", return_value=sap),
+        patch("sap_cli.dispatcher.load_policy", return_value=policy),
+    ):
+        result = dispatch_command(
+            "recipe_replay_execute",
+            {
+                "recipe_id": "variable-dangerous-tcode",
+                "variables": {"tcode": "SM30"},
+            },
+            DispatchContext(source="mcp"),
+        )
+
+    assert result["status"] == "blocked"
+    assert result["stage"] == "preflight"
+    assert result["preflight"]["issues"][0]["code"] == "dangerous_table_maintenance"
+    assert sap.calls == []
+
+
+def test_replay_execute_resolves_args_and_preconditions_before_execution(tmp_path: Path):
+    store = _store(tmp_path)
+    store.save(Recipe(
+        id="resolved-steps",
+        description="변수 치환 실행",
+        steps=[
+            RecipeStep(tool="sap_run", args={"tcode": "${tcode}"}),
+            RecipeStep(
+                tool="sap_set_field",
+                args={"element_id": "F1", "value": "MAT-${material}"},
+                precondition={"tcode": "${tcode}", "screen_number": "0101"},
+            ),
+        ],
+    ))
+    sap = _ReplaySap()
+
+    with (
+        patch("sap_cli.dispatcher._get_recipe_store", return_value=store),
+        patch("sap_cli.dispatcher._get_sap", return_value=sap),
+    ):
+        result = dispatch_command(
+            "recipe_replay_execute",
+            {
+                "recipe_id": "resolved-steps",
+                "variables": {"tcode": "VA01", "material": "123"},
+                "auto_report": False,
+            },
+            DispatchContext(source="mcp", enforce_auth=False),
+        )
+
+    assert result["status"] == "success"
+    assert sap.calls == [("run", "VA01"), ("set", "F1", "MAT-123")]
+    assert result["plan"]["dry_run_plan"][1]["precondition"] == {
+        "tcode": "VA01",
+        "screen_number": "0101",
+    }
+
+
+def test_replay_sensitive_variable_is_redacted_from_result_audit_and_transcript(
+    tmp_path: Path,
+):
+    secret = "top-secret-987"
+    store = _store(tmp_path)
+    store.save(Recipe(
+        id="sensitive-variable",
+        description="민감 변수",
+        steps=[
+            RecipeStep(
+                tool="sap_set_field",
+                args={"element_id": "F1", "value": "${password}"},
+            ),
+        ],
+    ))
+    sap = _ReplaySap()
+    audit_dir = tmp_path / "audit"
+    transcript_dir = tmp_path / "transcripts"
+    policy = Policy(
+        audit=AuditConfig(enabled=True, log_dir=str(audit_dir), log_level="all"),
+        transcript=TranscriptConfig(
+            enabled=True,
+            log_dir=str(transcript_dir),
+            include_reads=True,
+        ),
+    )
+
+    with (
+        patch("sap_cli.dispatcher._get_recipe_store", return_value=store),
+        patch("sap_cli.dispatcher._get_sap", return_value=sap),
+        patch("sap_cli.dispatcher._get_existing_sap", return_value=sap),
+        patch("sap_cli.dispatcher.load_policy", return_value=policy),
+    ):
+        result = dispatch_command(
+            "recipe_replay_execute",
+            {
+                "recipe_id": "sensitive-variable",
+                "variables": {"password": {"value": secret, "sensitive": True}},
+                "auto_report": False,
+            },
+            DispatchContext(source="mcp", enforce_auth=False),
+        )
+
+    assert sap.calls == [("set", "F1", secret)]
+    assert secret not in json.dumps(result, ensure_ascii=False)
+    log_text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for root in (audit_dir, transcript_dir)
+        for path in root.glob("*.jsonl")
+    )
+    assert secret not in log_text
+    assert "<redacted>" in log_text

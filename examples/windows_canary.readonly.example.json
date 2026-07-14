@@ -1,0 +1,30 @@
+{
+  "tcode": "MM03",
+  "slot_id": "ses0",
+  "mapping": {
+    "map_id": "canary-mm03",
+    "mode": "passive",
+    "navigate": true,
+    "budget": {
+      "max_states": 50,
+      "max_transitions": 100,
+      "max_seconds": 300
+    },
+    "allowed_actions": []
+  },
+  "acknowledgements": {
+    "read_only_tcode": true,
+    "non_production_client": false,
+    "reversible_actions_only": false
+  },
+  "polling": {
+    "interval_seconds": 0.5,
+    "timeout_seconds": 300
+  },
+  "api_live_probes": [],
+  "plan": {
+    "enabled": false,
+    "request": "",
+    "values": {}
+  }
+}

@@ -40,6 +40,7 @@ from .dispatcher import (
     _resolve_agent_name,
 )
 from .storage import atomic_write_json
+from .ui_action_catalog import get_ui_action_defs
 
 app = typer.Typer(
     name="sap",
@@ -218,6 +219,26 @@ def _run_command(cmd: str, args: dict, *, allow_daemon: bool = False, slot_id: s
     effective_slot = slot_id or _global_slot_id
     if allow_daemon and _use_daemon_default() and _try_daemon(cmd, args, slot_id=effective_slot):
         return
+    if cmd in {
+        "plan_preview",
+        "plan_approve",
+        "plan_execute",
+        "job_status",
+        "job_reconcile",
+        "map_job_cancel",
+        "map_augment_start",
+        "map_traverse_start",
+        "map_traverse_resume",
+    }:
+        _handle_error(
+            RuntimeError(
+                "plan-execute는 persistent daemon 전용입니다. daemon을 시작하거나 재시작해 주세요."
+                if cmd == "plan_execute"
+                else "map-augment-start는 persistent daemon 전용입니다. daemon을 시작하거나 재시작해 주세요."
+                if cmd == "map_augment_start"
+                else f"{cmd.replace('_', '-')}는 persistent daemon 전용입니다. daemon을 시작하거나 재시작해 주세요."
+            )
+        )
     _output_json(_dispatch_local(cmd, args, slot_id=effective_slot))
 
 
@@ -230,10 +251,14 @@ def _use_daemon_default() -> bool:
 def _try_daemon(cmd: str, args: dict, slot_id: str = "ses0") -> bool:
     """데몬으로 명령 전송 시도. 성공하면 결과 출력 후 True 반환."""
     from . import daemon
-    result = daemon.send_command(cmd, args, context=_daemon_context(slot_id))
+    timeout_for = getattr(daemon, "command_timeout", lambda _cmd: 60.0)
+    send_kwargs = {"context": _daemon_context(slot_id)}
+    if cmd == "plan_execute":
+        send_kwargs["timeout"] = timeout_for(cmd)
+    result = daemon.send_command(cmd, args, **send_kwargs)
     if result is None and os.getenv("SAP_CLI_DAEMON_AUTOSTART", "1").strip().lower() not in {"0", "false", "no", "off"}:
         if daemon.start_daemon():
-            result = daemon.send_command(cmd, args, context=_daemon_context(slot_id))
+            result = daemon.send_command(cmd, args, **send_kwargs)
     if result is None:
         return False
     if result["ok"]:
@@ -384,6 +409,9 @@ def scripting_query(
     intent: str = typer.Option("", "--intent", "-i", help="의도/action (예: set, select_node)"),
     node_id: str = typer.Option("", "--node-id", "-n", help="graph node id (예: object:GuiComboBox)"),
     depth: int = typer.Option(1, "--depth", "-d", help="subgraph 확장 깊이"),
+    coverage: bool = typer.Option(False, "--coverage", help="공식 API 대비 coverage matrix 요약"),
+    include_gaps: bool = typer.Option(True, "--include-gaps/--no-gaps", help="coverage gap 샘플 포함"),
+    gap_limit: int = typer.Option(50, "--gap-limit", min=0, help="종류별 coverage gap 최대 출력 수"),
 ) -> None:
     """SAP GUI Scripting API 그래프 온톨로지 조회."""
     _run_command(
@@ -393,24 +421,415 @@ def scripting_query(
             "intent": intent,
             "node_id": node_id,
             "depth": depth,
+            "coverage": coverage,
+            "include_gaps": include_gaps,
+            "gap_limit": gap_limit,
         },
         allow_daemon=False,
     )
 
 
+@app.command("api-object")
+def api_object_action(
+    scope: str = typer.Argument(
+        help=(
+            "sap_gui_auto, rot_wrapper, application, connection, session, "
+            "session_info, active_window 또는 handle:<id>"
+        )
+    ),
+    action: str = typer.Argument(help="call_method, get_property, set_property"),
+    member_name: str = typer.Argument(help="공식 SAP GUI Scripting member 이름"),
+    args_json: str = typer.Option(
+        "", "--args-json", help="call_method ByVal 입력 JSON 배열(ByRef/out은 자동)"
+    ),
+    property_value: str | None = typer.Option(None, "--property-value", help="set_property 값"),
+) -> None:
+    """SAP GUI Scripting 객체 계층의 공식 API member를 실행."""
+    params: dict[str, Any] = {
+        "scope": scope,
+        "action": action,
+        "member_name": member_name,
+    }
+    if args_json:
+        params["args_json"] = args_json
+    if property_value is not None:
+        params["property_value"] = property_value
+    _run_command("api_object_action", params, allow_daemon=True)
+
+
+@app.command("map-scan")
+def map_scan() -> None:
+    """현재 SAP 창 전체를 계층형 UiState 지도로 수집."""
+    _run_command("map_scan", {}, allow_daemon=True)
+
+
+@app.command("map-list")
+def map_list(
+    tcode: str = typer.Option("", "--tcode"),
+    system_id: str = typer.Option("", "--system"),
+    client: str = typer.Option("", "--client"),
+    language: str = typer.Option("", "--language"),
+) -> None:
+    """저장된 최신 UI 지도를 SAP scope로 조회."""
+    _run_command(
+        "map_list",
+        {"tcode": tcode, "system_id": system_id, "client": client, "language": language},
+        allow_daemon=True,
+    )
+
+
+@app.command("map-search")
+def map_search(
+    map_id: str = typer.Argument(),
+    tcode: str = typer.Argument(),
+    query: str = typer.Argument(),
+    system_id: str = typer.Option("", "--system"),
+    client: str = typer.Option("", "--client"),
+    language: str = typer.Option("", "--language"),
+    version: int | None = typer.Option(None, "--version", min=1),
+    kinds: str = typer.Option("", "--kinds", help="state,component,transition"),
+    limit: int = typer.Option(50, "--limit", min=1, max=500),
+) -> None:
+    """저장된 지도에서 상태·요소·전이를 검색."""
+    _run_command(
+        "map_search",
+        {
+            "map_id": map_id, "tcode": tcode, "query": query,
+            "system_id": system_id, "client": client, "language": language,
+            "version": version, "kinds": kinds, "limit": limit,
+        },
+        allow_daemon=True,
+    )
+
+
+@app.command("map-path")
+def map_path(
+    map_id: str = typer.Argument(),
+    tcode: str = typer.Argument(),
+    from_state_id: str = typer.Argument(),
+    target: str = typer.Argument(),
+    target_type: str = typer.Option("state", "--target-type"),
+    system_id: str = typer.Option("", "--system"),
+    client: str = typer.Option("", "--client"),
+    language: str = typer.Option("", "--language"),
+    version: int | None = typer.Option(None, "--version", min=1),
+    limit: int = typer.Option(50, "--limit", min=1, max=500),
+) -> None:
+    """시작 상태에서 상태 또는 UI 요소까지 최단 경로를 조회."""
+    _run_command("map_path", locals(), allow_daemon=True)
+
+
+@app.command("map-job-status")
+def map_job_status(
+    job_id: str = typer.Argument(""),
+    status: str = typer.Option("", "--status"),
+    limit: int = typer.Option(50, "--limit", min=1, max=500),
+) -> None:
+    """지도 생성 job과 사용자 질문 상태를 조회."""
+    _run_command(
+        "map_job_status", {"job_id": job_id, "status": status or None, "limit": limit},
+        allow_daemon=True,
+    )
+
+
+@app.command("map-report")
+def map_report(
+    map_id: str = typer.Argument(),
+    tcode: str = typer.Argument(),
+    system_id: str = typer.Option("", "--system"),
+    client: str = typer.Option("", "--client"),
+    language: str = typer.Option("", "--language"),
+    version: int | None = typer.Option(None, "--version", min=1),
+) -> None:
+    """지도 구조 coverage·복구·스캔 계측을 업무 값 없이 출력."""
+    _run_command("map_report", locals(), allow_daemon=True)
+
+
+@app.command("map-job-cancel")
+def map_job_cancel(job_id: str = typer.Argument()) -> None:
+    """대기 또는 실행 중인 지도 생성 job을 취소."""
+    _run_command("map_job_cancel", {"job_id": job_id}, allow_daemon=True)
+
+
+@app.command("map-augment-start")
+def map_augment_start(
+    map_id: str = typer.Argument(),
+    tcode: str = typer.Argument(),
+    from_state_id: str = typer.Argument(),
+    request: str = typer.Argument(help="사용자가 직접 추가할 누락 화면 또는 분기 설명"),
+    system_id: str = typer.Option("", "--system"),
+    client: str = typer.Option("", "--client"),
+    language: str = typer.Option("", "--language"),
+    version: int | None = typer.Option(None, "--version", min=1),
+    scope_json: str = typer.Option("{}", "--scope-json"),
+) -> None:
+    """완료된 기존 지도에 사용자 안내형 누락 화면 보강 job을 생성."""
+    try:
+        scope = json.loads(scope_json)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter("--scope-json must be a JSON object") from exc
+    if not isinstance(scope, dict):
+        raise typer.BadParameter("--scope-json must be a JSON object")
+    _run_command(
+        "map_augment_start",
+        {
+            "map_id": map_id,
+            "tcode": tcode,
+            "from_state_id": from_state_id,
+            "request": request,
+            "system_id": system_id,
+            "client": client,
+            "language": language,
+            "version": version,
+            "scope": scope,
+        },
+        allow_daemon=True,
+    )
+
+
+@app.command("map-traverse-start")
+def map_traverse_start(
+    tcode: str = typer.Argument(),
+    map_id: str = typer.Option("", "--map-id"),
+    mode: str = typer.Option("passive", "--mode"),
+    budget_json: str = typer.Option("{}", "--budget-json"),
+    allowed_actions: str = typer.Option("", "--allowed-actions"),
+    allowed_branches_json: str = typer.Option("[]", "--allowed-branches-json"),
+    navigate: bool = typer.Option(True, "--navigate/--no-navigate"),
+    test_client_confirmed: bool = typer.Option(False, "--test-client-confirmed"),
+) -> None:
+    """daemon에 cooperative 지도 순회 job을 등록하고 즉시 반환."""
+    try:
+        budget = json.loads(budget_json)
+        allowed_branches = json.loads(allowed_branches_json)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(
+            "--budget-json and --allowed-branches-json must be valid JSON"
+        ) from exc
+    if not isinstance(allowed_branches, list):
+        raise typer.BadParameter("--allowed-branches-json must be a JSON array")
+    _run_command(
+        "map_traverse_start",
+        {
+            "tcode": tcode, "map_id": map_id, "mode": mode, "budget": budget,
+            "allowed_actions": [item.strip() for item in allowed_actions.split(",") if item.strip()],
+            "allowed_branches": allowed_branches,
+            "navigate": navigate, "test_client_confirmed": test_client_confirmed,
+        },
+        allow_daemon=True,
+    )
+
+
+@app.command("map-traverse-resume")
+def map_traverse_resume(
+    job_id: str = typer.Argument(),
+    answers_json: str = typer.Argument("{}", help="resume_token별 답변 JSON object"),
+    budget_json: str = typer.Option("{}", "--budget-json", help="paused job의 확장 budget"),
+) -> None:
+    """사용자 답변 또는 더 큰 budget으로 지도 순회를 재개."""
+    try:
+        answers = json.loads(answers_json)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter("answers_json must be a JSON object") from exc
+    try:
+        budget = json.loads(budget_json)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter("--budget-json must be a JSON object") from exc
+    if not isinstance(answers, dict) or not isinstance(budget, dict):
+        raise typer.BadParameter("answers_json and --budget-json must be JSON objects")
+    if not answers and not budget:
+        raise typer.BadParameter("answers_json or --budget-json is required")
+    _run_command(
+        "map_traverse_resume",
+        {"job_id": job_id, "answers": answers, "budget": budget},
+        allow_daemon=True,
+    )
+
+
+@app.command("plan-preview")
+def plan_preview(
+    request: str = typer.Argument(help="SAP에서 수행할 자연어 요청"),
+    tcode: str = typer.Option("", "--tcode"),
+    map_id: str = typer.Option("", "--map-id"),
+    system_id: str = typer.Option("", "--system"),
+    client: str = typer.Option("", "--client"),
+    current_state_id: str = typer.Option("", "--current-state"),
+    goal_query: str = typer.Option("", "--goal"),
+    values_json: str = typer.Option("{}", "--values-json"),
+    success_criteria_json: str = typer.Option("[]", "--success-criteria-json"),
+    api_version: str = typer.Option("", "--api-version"),
+    gui_version: str = typer.Option("", "--gui-version"),
+    application_release: str = typer.Option("", "--application-release"),
+    schema_version: str = typer.Option("", "--schema-version"),
+) -> None:
+    """자연어 요청을 저장 지도 기반의 실행 전 전체 계획으로 컴파일."""
+    try:
+        values = json.loads(values_json)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter("--values-json must be a JSON object") from exc
+    try:
+        success_criteria = json.loads(success_criteria_json)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter("--success-criteria-json must be a JSON array") from exc
+    if not isinstance(success_criteria, list) or not all(
+        isinstance(item, str) for item in success_criteria
+    ):
+        raise typer.BadParameter("--success-criteria-json must be a JSON string array")
+    _run_command(
+        "plan_preview",
+        {
+            "request": request, "tcode": tcode, "map_id": map_id,
+            "system_id": system_id, "client": client,
+            "current_state_id": current_state_id, "goal_query": goal_query,
+            "values": values, "success_criteria": success_criteria,
+            "api_version": api_version, "gui_version": gui_version,
+            "application_release": application_release, "schema_version": schema_version,
+        },
+        allow_daemon=True,
+    )
+
+
+@app.command("plan-execute")
+def plan_execute(
+    plan_id: str = typer.Argument(),
+    plan_hash: str = typer.Argument(),
+    execution_id: str = typer.Argument(help="중복 실행을 막는 호출자 지정 ID"),
+    verify_mode: str = typer.Option("cheap", "--verify"),
+    approval_token: str = typer.Option("", "--approval-token"),
+) -> None:
+    """daemon 메모리에 보관된 불변 계획을 IPC 한 번으로 실행."""
+    _run_command(
+        "plan_execute",
+        {
+            "plan_id": plan_id,
+            "plan_hash": plan_hash,
+            "execution_id": execution_id,
+            "verify_mode": verify_mode,
+            "approval_token": approval_token,
+        },
+        allow_daemon=True,
+    )
+
+
+@app.command("plan-approve")
+def plan_approve(
+    plan_id: str = typer.Argument(),
+    plan_hash: str = typer.Argument(),
+    subject_agent: str = typer.Argument(help="승인 대상 실행 에이전트"),
+    step_ids_json: str = typer.Argument(help="승인할 step_id JSON array"),
+    expires_in_seconds: float = typer.Option(300.0, "--expires-in"),
+) -> None:
+    """관리자가 daemon 메모리에 일회용 계획 승인 토큰을 발급."""
+    try:
+        step_ids = json.loads(step_ids_json)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter("step_ids_json must be a JSON array") from exc
+    if not isinstance(step_ids, list):
+        raise typer.BadParameter("step_ids_json must be a JSON array")
+    _run_command(
+        "plan_approve",
+        {
+            "plan_id": plan_id,
+            "plan_hash": plan_hash,
+            "subject_agent": subject_agent,
+            "step_ids": step_ids,
+            "expires_in_seconds": expires_in_seconds,
+        },
+        allow_daemon=True,
+    )
+
+
+@app.command("job-status")
+def job_status(job_id: str = typer.Argument("")) -> None:
+    """daemon의 계획 실행·지도 순회 공통 작업 상태를 조회."""
+    _run_command("job_status", {"job_id": job_id}, allow_daemon=True)
+
+
+@app.command("job-reconcile")
+def job_reconcile(
+    job_id: str = typer.Argument(),
+    resolution: str = typer.Argument(),
+) -> None:
+    """미확정 작업을 수동 확인 결과에 따라 명시적으로 정리."""
+    _run_command(
+        "job_reconcile",
+        {"job_id": job_id, "resolution": resolution},
+        allow_daemon=True,
+    )
+
+
+@app.command("event-subscribe")
+def event_subscribe(
+    scope: str = typer.Argument(help="application 또는 session"),
+    events: str = typer.Argument(help="쉼표로 구분한 공식 이벤트 이름"),
+    ttl_seconds: float = typer.Option(300, "--ttl"),
+    queue_limit: int = typer.Option(256, "--queue-limit", min=1),
+) -> None:
+    """상주 daemon에서 SAP GUI 이벤트를 구독."""
+    _run_command(
+        "event_subscribe",
+        {
+            "scope": scope,
+            "events": [item.strip() for item in events.split(",") if item.strip()],
+            "ttl_seconds": ttl_seconds,
+            "queue_limit": queue_limit,
+        },
+        allow_daemon=True,
+    )
+
+
+@app.command("event-poll")
+def event_poll(
+    subscription_id: str = typer.Argument(),
+    cursor: int = typer.Option(0, "--cursor", min=0),
+    limit: int = typer.Option(100, "--limit", min=1),
+) -> None:
+    """구독된 SAP GUI 이벤트를 비차단 조회."""
+    _run_command(
+        "event_poll",
+        {"subscription_id": subscription_id, "cursor": cursor, "limit": limit},
+        allow_daemon=True,
+    )
+
+
+@app.command("event-unsubscribe")
+def event_unsubscribe(subscription_id: str = typer.Argument()) -> None:
+    """SAP GUI 이벤트 구독을 해제."""
+    _run_command(
+        "event_unsubscribe",
+        {"subscription_id": subscription_id},
+        allow_daemon=True,
+    )
+
+
+@app.command("event-list")
+def event_list() -> None:
+    """현재 slot의 SAP GUI 이벤트 구독을 조회."""
+    _run_command("event_list", {}, allow_daemon=True)
+
+
 @app.command("scripting-graph-build")
 def scripting_graph_build(
-    input_source: str = typer.Argument(help="Text/Markdown export, local file, stdin '-' 또는 공식 HTTP(S) URL"),
     out: Optional[str] = typer.Option(
         None,
         "--out",
         "-o",
         help="생성 graph JSON 경로. 기본값: 패키지 overlay graph.generated.json",
     ),
-    source: str = typer.Option("", "--source", help="graph metadata에 기록할 공식 source URL override"),
+    version: str = typer.Option("800.08", "--version", help="SAP Help deliverable version"),
+    snapshot_dir: Optional[str] = typer.Option(
+        None, "--snapshot-dir", help="공식 metadata/TOC/XHTML snapshot 보관 경로"
+    ),
+    request_delay: float = typer.Option(
+        0.02, "--request-delay", min=0.0, help="SAP Help page 요청 간격(초)"
+    ),
 ) -> None:
-    """SAP GUI Scripting API 문서에서 generated graph overlay를 생성."""
-    from scripts.build_sap_scripting_graph import build_graph, read_source, write_graph
+    """공식 SAP Help XHTML에서 strict 검증된 API overlay를 생성."""
+    from scripts.build_sap_help_manifest import (
+        build_graph,
+        fetch_official_pages,
+        validate_graph,
+    )
 
     default_out = (
         Path(__file__).resolve().parent
@@ -423,18 +842,60 @@ def scripting_graph_build(
     if out_path == "-":
         raise typer.BadParameter("CLI 명령은 JSON summary를 출력해야 하므로 --out '-'는 지원하지 않습니다.")
 
-    text, detected_source = read_source(input_source)
-    graph = build_graph(text, source=source or detected_source)
-    write_graph(graph, out_path)
+    metadata, toc, pages = fetch_official_pages(
+        version=version,
+        snapshot_dir=Path(snapshot_dir).expanduser() if snapshot_dir else None,
+        request_delay=request_delay,
+    )
+    graph = build_graph(metadata=metadata, toc=toc, pages=pages)
+    counts = validate_graph(graph, toc, strict=True)
+    target = Path(out_path).expanduser()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        json.dumps(graph, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     _output_json({
         "status": "ok",
+        "validation": "strict_official_xhtml",
+        "version": graph["version"],
         "nodes": len(graph["nodes"]),
         "edges": len(graph["edges"]),
-        "out": str(Path(out_path).expanduser()),
-        "source": source or detected_source,
-        "overlay_loaded_by_runtime": Path(out_path).resolve() == default_out.resolve(),
+        "counts": counts,
+        "out": str(target),
+        "source": graph["sources"][0]["url"],
+        "overlay_loaded_by_runtime": target.resolve() == default_out.resolve(),
         "next_check": "sap scripting-query --type GuiSession --depth 1",
     })
+
+
+@app.command("scripting-graph-build-legacy")
+def scripting_graph_build_legacy(
+    input_source: str = typer.Argument(
+        help="검토용 Text/Markdown export, local file, stdin '-' 또는 HTTP(S) URL"
+    ),
+    out: str = typer.Option(..., "--out", "-o", help="검토용 graph JSON 경로"),
+    source: str = typer.Option("", "--source", help="graph source URL override"),
+) -> None:
+    """Best-effort parser로 검토용 graph를 생성하며 runtime overlay는 보호."""
+    from scripts.build_sap_scripting_graph import build_graph, read_source, write_graph
+
+    text, detected_source = read_source(input_source)
+    graph = build_graph(text, source=source or detected_source)
+    try:
+        write_graph(graph, out)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--out") from exc
+    _output_json(
+        {
+            "status": "review_required",
+            "validation": "best_effort_legacy",
+            "nodes": len(graph["nodes"]),
+            "edges": len(graph["edges"]),
+            "out": str(Path(out).expanduser()),
+            "source": source or detected_source,
+            "overlay_loaded_by_runtime": False,
+        }
+    )
 
 
 @app.command("act")
@@ -447,7 +908,9 @@ def ui_action(
     row: int | None = typer.Option(None, "--row", help="테이블 행 번호 (0-based)"),
     max_rows: int = typer.Option(50, "--max-rows", help="read_table 최대 행 수"),
     columns: str = typer.Option("", "--columns", help="read_table 컬럼 목록(쉼표 구분)"),
-    args_json: str = typer.Option("", "--args-json", help="call_method 인자 JSON 배열"),
+    args_json: str = typer.Option(
+        "", "--args-json", help="call_method ByVal 입력 JSON 배열(ByRef/out은 자동)"
+    ),
     property_name: str = typer.Option("", "--property-name", help="get_property/set_property 대상 속성명"),
     property_value: str = typer.Option("", "--property-value", help="set_property 값(value 인자 대신 사용 가능)"),
 ) -> None:
@@ -475,6 +938,55 @@ def ui_action(
     if property_value:
         params["property_value"] = property_value
     _run_command("ui_action", params, allow_daemon=True)
+
+
+def _make_generated_ui_action_command(action_command: str, action_name: str):
+    def generated_ui_action(
+        element_id: str = typer.Argument(help="대상 SAP GUI element ID"),
+        value: str | None = typer.Argument(None, help="액션 값 (필드값, node_key, row, method/property 이름 등)"),
+        node_key: str = typer.Option("", "--node-key", help="트리 node_key"),
+        column: str = typer.Option("", "--column", help="테이블 컬럼, 트리 컬럼, toolbar/menu item id, method 이름 등"),
+        row: int | None = typer.Option(None, "--row", help="테이블 행 번호 (0-based)"),
+        max_rows: int = typer.Option(50, "--max-rows", help="read_table 최대 행 수"),
+        columns: str = typer.Option("", "--columns", help="read_table 컬럼 목록(쉼표 구분)"),
+        args_json: str = typer.Option(
+            "", "--args-json", help="call_method ByVal 입력 JSON 배열(ByRef/out은 자동)"
+        ),
+        property_name: str = typer.Option("", "--property-name", help="get_property/set_property 대상 속성명"),
+        property_value: str = typer.Option("", "--property-value", help="set_property 값(value 인자 대신 사용 가능)"),
+    ) -> None:
+        """SAP GUI Scripting capability 기반 개별 UI 액션 실행."""
+        params: dict[str, Any] = {"element_id": element_id}
+        if value is not None:
+            params["value"] = value
+        if node_key:
+            params["node_key"] = node_key
+        if column:
+            params["column"] = column
+        if row is not None:
+            params["row"] = row
+        if max_rows != 50:
+            params["max_rows"] = max_rows
+        if columns:
+            params["columns"] = columns
+        if args_json:
+            params["args_json"] = args_json
+        if property_name:
+            params["property_name"] = property_name
+        if property_value:
+            params["property_value"] = property_value
+        _run_command(action_command, params, allow_daemon=True)
+
+    generated_ui_action.__name__ = f"{action_command}_command"
+    generated_ui_action.__doc__ = f"Adaptive UI action: {action_name}"
+    return generated_ui_action
+
+
+for _ui_action_def in get_ui_action_defs():
+    app.command(
+        _ui_action_def.cli_name,
+        help=_ui_action_def.description,
+    )(_make_generated_ui_action_command(_ui_action_def.command, _ui_action_def.action))
 
 
 @app.command("fill")

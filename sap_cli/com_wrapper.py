@@ -15,6 +15,7 @@ Usage:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -38,8 +39,10 @@ from .ontology.schema import (
     SemanticContext,
     StatusMessageType,
 )
+from .api_handles import ApiHandleError, ApiHandleRegistry
 from .scripting_api_graph import query_default_graph
 from .scripting_ontology import component_capability, normalize_action
+from .ui_map.schema import modal_window_signature
 
 # win32com은 Windows 전용 - 임포트 실패 시 스텁 제공
 _WIN32 = platform.system() == "Windows"
@@ -51,6 +54,38 @@ if _WIN32:
 
 class SapGuiError(Exception):
     """SAP GUI 조작 중 발생하는 에러."""
+
+
+def _member_kind(action: str) -> str:
+    return "method" if action == "call_method" else "property"
+
+
+def _scope_handle_id(scope: str) -> str:
+    return scope.split(":", 1)[1] if scope.lower().startswith("handle:") else ""
+
+
+_NO_NATIVE_ENUM_RESULT = object()
+
+
+class _NativeGuiEnumAdapter:
+    """Thin marker around pywin32's PyIEnumVARIANT interface."""
+
+    _sap_cli_native_enum = True
+
+    def __init__(self, enum: Any) -> None:
+        self._enum = enum
+
+    def Next(self, count: int) -> Any:
+        return self._enum.Next(count)
+
+    def Clone(self) -> Any:
+        return self._enum.Clone()
+
+    def Reset(self) -> Any:
+        return self._enum.Reset()
+
+    def Skip(self, count: int) -> Any:
+        return self._enum.Skip(count)
 
 
 class SapGuiWrapper:
@@ -66,6 +101,8 @@ class SapGuiWrapper:
 
     def __init__(self) -> None:
         self._application: Any = None
+        self._sap_gui_auto: Any = None
+        self._rot_wrapper: Any = None
         self._connection: Any = None
         self._session: Any = None
         self._user_tcode: str | None = None  # sap run으로 실행한 원래 tcode
@@ -75,6 +112,7 @@ class SapGuiWrapper:
         self._connected_identity: dict[str, str] | None = None
         self._auto_reconnect: bool = True
         self._max_reconnect_attempts: int = 3
+        self._api_handles = ApiHandleRegistry()
 
     # -------------------------------------------------------------------
     # Connection Management
@@ -96,6 +134,7 @@ class SapGuiWrapper:
         self._ensure_com_initialized()
         try:
             rot_entry = win32com.client.GetObject("SAPGUI")
+            self._sap_gui_auto = rot_entry
             self._application = rot_entry.GetScriptingEngine
             return self._application
         except Exception as e:
@@ -325,9 +364,12 @@ class SapGuiWrapper:
         )
 
     def disconnect(self) -> None:
+        self._api_handles.clear()
         self._session = None
         self._connection = None
         self._application = None
+        self._sap_gui_auto = None
+        self._rot_wrapper = None
 
     # -------------------------------------------------------------------
     # Session Info
@@ -564,6 +606,8 @@ class SapGuiWrapper:
                 "name": self._safe_attr(element, "Name", self._extract_name(element_id)),
                 "text": self._safe_attr(element, "Text", ""),
                 "tooltip": self._safe_attr(element, "Tooltip", ""),
+                "visible": self._safe_attr(element, "Visible", None),
+                "enabled": self._safe_attr(element, "Enabled", None),
                 "changeable": bool(self._safe_attr(element, "Changeable", False)),
                 "selected": self._safe_attr(element, "Selected", ""),
                 "value": self._element_value(element, element_id),
@@ -591,6 +635,7 @@ class SapGuiWrapper:
         method_args: list[Any] | None = None,
         property_name: str = "",
         property_value: Any = None,
+        trusted_plan: bool = False,
     ) -> dict[str, Any]:
         """Perform a generic UI action using live component capabilities.
 
@@ -783,23 +828,43 @@ class SapGuiWrapper:
             method_name = value or column
             if not method_name:
                 raise SapGuiError("call_method에는 value 또는 column(method name)이 필요합니다.")
-            result = self.call_component_method(element_id, method_name, method_args or [])
-            return {"method_called": method_name, "result": result, **used}
+            policy = self._api_member_policy(component_type, "method", method_name)
+            self._require_plan_for_high_risk_member(policy, trusted_plan)
+            result = self.call_component_method(
+                element_id,
+                method_name,
+                method_args or [],
+                expected_type=str(policy.get("return_type", "")),
+                member_policy=policy,
+            )
+            self._record_live_api_member(policy)
+            return {"method_called": method_name, "result": result, "member_policy": policy, **used}
 
         if normalized == "get_property":
             prop = property_name or value or column
             if not prop:
                 raise SapGuiError("get_property에는 property_name 또는 value가 필요합니다.")
-            result = self.get_component_property(element_id, prop)
-            return {"property": prop, "value": result, **used}
+            policy = self._api_member_policy(component_type, "property", prop)
+            result = self.get_component_property(
+                element_id,
+                prop,
+                expected_type=str(policy.get("property_type", "")),
+            )
+            self._record_live_api_member(policy)
+            return {"property": prop, "value": result, "member_policy": policy, **used}
 
         if normalized == "set_property":
             prop = property_name or column
             if not prop:
                 raise SapGuiError("set_property에는 property_name 또는 column이 필요합니다.")
             prop_value = property_value if property_value is not None else value
+            policy = self._api_member_policy(component_type, "property", prop)
+            self._require_plan_for_high_risk_member(policy, trusted_plan)
+            if policy.get("documented") and "write" not in str(policy.get("documented_access", "")):
+                raise SapGuiError(f"공식 API에서 읽기 전용인 속성은 설정할 수 없습니다: {component_type}.{prop}")
             self.set_component_property(element_id, prop, prop_value)
-            return {"property_set": prop, "value": self._json_safe(prop_value), **used}
+            self._record_live_api_member(policy)
+            return {"property_set": prop, "value": self._json_safe(prop_value), "member_policy": policy, **used}
 
         if normalized == "select_node":
             key = node_key or value or ""
@@ -1118,6 +1183,18 @@ class SapGuiWrapper:
         except Exception as e:
             logger.warning("상태바 조회 실패 (화면 스캔에는 영향 없음): %s", e)
         return screen
+
+    def scan_ui_state(self) -> dict[str, Any]:
+        """Capture the lossless, hierarchical map state without UI actions."""
+
+        from .ui_map.scanner import UiMapScanner
+
+        scanner = UiMapScanner()
+        state = scanner.scan(self.session, tcode=self._user_tcode or "")
+        return {
+            "state": state.model_dump(mode="json"),
+            "metrics": scanner.metrics.as_dict(),
+        }
 
     def _get_object_tree(self, window_id: str) -> dict[str, Any] | None:
         """GetObjectTree()로 JSON UI 트리 획득 (SAP GUI 7.70 PL3+)."""
@@ -2017,24 +2094,23 @@ class SapGuiWrapper:
                     except Exception:
                         pass
 
-                # 컬럼 이름을 못 구했어도 아이템 직접 탐색 시도
+                # 컬럼 이름을 못 구했으면 공식 node header API를 사용
                 if not items and not col_names:
                     try:
-                        ic = tree.GetItemCount(key)
-                        for ci in range(ic):
-                            try:
-                                cn = str(tree.GetItemName(key, ci))
-                                cv = str(tree.GetItemText(key, cn))
-                                if cv:
-                                    items[cn] = cv
-                            except Exception:
-                                pass
+                        headers = tree.GetNodeItemHeaders(key)
+                        for ci in range(self._collection_count(headers)):
+                            cn = str(self._collection_item(headers, ci) or "")
+                            if not cn:
+                                continue
+                            cv = str(tree.GetItemText(key, cn))
+                            if cv:
+                                items[cn] = cv
                     except Exception:
                         pass
 
                 level = 0
                 try:
-                    level = int(tree.GetNodeLevel(key))
+                    level = int(tree.GetHierarchyLevel(key))
                 except Exception:
                     pass
 
@@ -2052,9 +2128,8 @@ class SapGuiWrapper:
 
             # --- 부모-자식 관계 구성 ---
             # 전략 1: GetSubNodesCol (자식 직접 조회)
-            children_built = False
+            assigned_children: set[str] = set()
             try:
-                has_children = set()
                 for key in nodes_by_key:
                     try:
                         sub = tree.GetSubNodesCol(key)
@@ -2066,37 +2141,26 @@ class SapGuiWrapper:
                                     ck = str(sub(ci))
                                 if ck in nodes_by_key:
                                     nodes_by_key[key].children.append(nodes_by_key[ck])
-                                    has_children.add(ck)
+                                    assigned_children.add(ck)
                     except Exception:
                         pass
                 # root = 누구의 자식도 아닌 노드
-                root_keys = [k for k in nodes_by_key if k not in has_children]
-                children_built = len(has_children) > 0
             except Exception:
                 pass
 
-            # 전략 2: GetParentNodeKey
-            if not children_built:
-                root_keys.clear()
-                parent_map: dict[str, str] = {}
-                for key in nodes_by_key:
-                    parent_key = None
-                    try:
-                        pk = tree.GetParentNodeKey(key)
-                        if pk is not None:
-                            pk_str = str(pk).strip()
-                            if pk_str and pk_str in nodes_by_key:
-                                parent_key = pk_str
-                    except Exception:
-                        pass
-                    if parent_key:
-                        parent_map[key] = parent_key
-                    else:
-                        root_keys.append(key)
-                if parent_map:
-                    for child_key, par_key in parent_map.items():
-                        nodes_by_key[par_key].children.append(nodes_by_key[child_key])
-                    children_built = True
+            # 전략 2: 공식 GetParent로 부분 실패한 노드를 보완
+            for key in nodes_by_key:
+                if key in assigned_children:
+                    continue
+                try:
+                    parent_key = str(tree.GetParent(key) or "").strip()
+                except Exception:
+                    parent_key = ""
+                if parent_key in nodes_by_key and parent_key != key:
+                    nodes_by_key[parent_key].children.append(nodes_by_key[key])
+                    assigned_children.add(key)
+            root_keys = [key for key in nodes_by_key if key not in assigned_children]
+            children_built = bool(assigned_children)
 
             # 전략 3: level 기반 계층 재구성
             if not children_built and len(nodes_by_key) > 1:
@@ -2544,7 +2608,15 @@ class SapGuiWrapper:
                 errors.append(f"{method}: {exc}")
         raise SapGuiError("; ".join(errors))
 
-    def call_component_method(self, element_id: str, method_name: str, args: list[Any]) -> Any:
+    def call_component_method(
+        self,
+        element_id: str,
+        method_name: str,
+        args: list[Any],
+        *,
+        expected_type: str = "",
+        member_policy: dict[str, Any] | None = None,
+    ) -> Any:
         """Call an explicit public SAP GUI Scripting method on a live element."""
         if method_name.startswith("_"):
             raise SapGuiError("private/internal method names are not allowed")
@@ -2553,7 +2625,14 @@ class SapGuiWrapper:
             method = getattr(element, method_name)
             if not callable(method):
                 raise SapGuiError(f"{method_name} is not callable")
-            return self._json_safe(method(*args))
+            return self._invoke_documented_method(
+                method,
+                object_type=str(self._safe_attr(element, "Type", "")),
+                method_name=method_name,
+                method_args=args,
+                member_policy=member_policy or {},
+                expected_type=expected_type,
+            )
         except SapGuiError:
             raise
         except Exception as e:
@@ -2561,13 +2640,21 @@ class SapGuiWrapper:
                 f"메서드 호출 실패 [{element_id}, method={method_name}, args={args}]: {e}"
             ) from e
 
-    def get_component_property(self, element_id: str, property_name: str) -> Any:
+    def get_component_property(
+        self,
+        element_id: str,
+        property_name: str,
+        *,
+        expected_type: str = "",
+    ) -> Any:
         """Read an explicit public SAP GUI Scripting property."""
         if property_name.startswith("_"):
             raise SapGuiError("private/internal property names are not allowed")
         try:
             element = self.session.FindById(element_id)
-            return self._json_safe(getattr(element, property_name))
+            return self._serialize_api_value(
+                getattr(element, property_name), expected_type=expected_type
+            )
         except Exception as e:
             raise SapGuiError(
                 f"속성 읽기 실패 [{element_id}, property={property_name}]: {e}"
@@ -2584,6 +2671,541 @@ class SapGuiWrapper:
             raise SapGuiError(
                 f"속성 설정 실패 [{element_id}, property={property_name}, value={value}]: {e}"
             ) from e
+
+    def perform_api_object_action(
+        self,
+        scope: str,
+        action: str,
+        member_name: str,
+        *,
+        method_args: list[Any] | None = None,
+        property_value: Any = None,
+    ) -> dict[str, Any]:
+        """Access documented non-element SAP GUI Scripting objects.
+
+        Visual controls continue to use ``perform_ui_action`` and FindById.
+        This path covers the application/connection/session hierarchy without
+        pretending those objects have element ids.
+        """
+
+        obj, object_type = self._resolve_api_object_scope(scope)
+        normalized = action.strip().lower().replace("-", "_")
+        if normalized not in {"call_method", "get_property", "set_property"}:
+            raise SapGuiError(f"지원하지 않는 API object action: {action}")
+        if not member_name or member_name.startswith("_"):
+            raise SapGuiError("public API member name이 필요합니다.")
+        policy = self._api_member_policy(object_type, _member_kind(normalized), member_name)
+
+        if normalized == "call_method":
+            try:
+                method = getattr(obj, member_name)
+                if callable(method):
+                    result = self._invoke_documented_method(
+                        method,
+                        object_type=object_type,
+                        method_name=member_name,
+                        method_args=method_args or [],
+                        member_policy=policy,
+                        expected_type=str(policy.get("return_type", "")),
+                        parent_handle=_scope_handle_id(scope),
+                    )
+                elif not method_args:
+                    # Some pywin32 dispatch wrappers expose zero-argument COM
+                    # functions (notably GetScriptingEngine) as properties.
+                    result = self._serialize_api_value(
+                        method,
+                        expected_type=str(policy.get("return_type", "")),
+                        parent_handle=_scope_handle_id(scope),
+                    )
+                else:
+                    raise SapGuiError(f"{object_type}.{member_name} is not callable")
+            except SapGuiError:
+                raise
+            except Exception as exc:
+                raise SapGuiError(
+                    f"API object 메서드 호출 실패 [{scope}.{member_name}]: {exc}"
+                ) from exc
+            self._record_live_api_member(policy)
+            return {
+                "scope": scope,
+                "object_type": object_type,
+                "method_called": member_name,
+                "result": result,
+                "member_policy": policy,
+            }
+
+        if normalized == "get_property":
+            try:
+                result = self._serialize_api_value(
+                    getattr(obj, member_name),
+                    expected_type=str(policy.get("property_type", "")),
+                    parent_handle=_scope_handle_id(scope),
+                )
+            except Exception as exc:
+                raise SapGuiError(
+                    f"API object 속성 읽기 실패 [{scope}.{member_name}]: {exc}"
+                ) from exc
+            self._record_live_api_member(policy)
+            return {
+                "scope": scope,
+                "object_type": object_type,
+                "property": member_name,
+                "value": result,
+                "member_policy": policy,
+            }
+
+        if policy.get("documented") and "write" not in str(
+            policy.get("documented_access", "")
+        ):
+            raise SapGuiError(
+                f"공식 API에서 읽기 전용인 속성은 설정할 수 없습니다: "
+                f"{object_type}.{member_name}"
+            )
+        try:
+            setattr(obj, member_name, property_value)
+        except Exception as exc:
+            raise SapGuiError(
+                f"API object 속성 설정 실패 [{scope}.{member_name}]: {exc}"
+            ) from exc
+        self._record_live_api_member(policy)
+        return {
+            "scope": scope,
+            "object_type": object_type,
+            "property_set": member_name,
+            "value": self._json_safe(property_value),
+            "member_policy": policy,
+        }
+
+    def probe_documented_member(
+        self,
+        *,
+        element_id: str = "",
+        scope: str = "",
+        action: str = "get_property",
+        member_name: str,
+    ) -> dict[str, str]:
+        """Execute one safe official member for the Windows conformance canary.
+
+        The probe is intentionally closed to low-risk reads and zero-argument
+        methods.  It returns no SAP value, locator, scope, or error payload.
+        """
+
+        normalized = action.strip().lower().replace("-", "_")
+        if normalized not in {"get_property", "call_method"} or not member_name:
+            raise SapGuiError("live probe accepts only a named read-only member")
+        kind = "property" if normalized == "get_property" else "method"
+        if bool(element_id) == bool(scope):
+            raise SapGuiError("live probe requires exactly one element_id or scope")
+        if element_id:
+            element = self.session.FindById(element_id)
+            object_type = str(self._safe_attr(element, "Type", "Unknown"))
+            policy = self._api_member_policy(object_type, kind, member_name)
+            target = lambda: self.perform_ui_action(
+                element_id, normalized, member_name if kind == "method" else None,
+                property_name=member_name if kind == "property" else "",
+            )
+        else:
+            _obj, object_type = self._resolve_api_object_scope(scope)
+            policy = self._api_member_policy(object_type, kind, member_name)
+            target = lambda: self.perform_api_object_action(
+                scope, normalized, member_name, method_args=[]
+            )
+        if policy.get("permission") != "read" or policy.get("risk_level") != "low":
+            raise SapGuiError("live probe permits only low-risk documented reads")
+        target()
+        return {"member_id": f"{policy['member_kind']}:{policy['declared_on']}.{policy['member_name']}"}
+
+    def _resolve_api_object_scope(self, scope: str) -> tuple[Any, str]:
+        if scope.lower().startswith("handle:"):
+            handle_id = scope.split(":", 1)[1]
+            try:
+                handle = self._api_handles.resolve(handle_id)
+            except ApiHandleError as exc:
+                raise SapGuiError(str(exc)) from exc
+            return handle.value, handle.object_type
+        normalized = scope.strip().lower().replace("-", "_")
+        if normalized == "sap_gui_auto":
+            return self._get_sap_gui_auto(), "SapGuiAuto"
+        if normalized == "rot_wrapper":
+            return self._get_rot_wrapper(), "CSapROTWrapper"
+        if normalized == "application":
+            return self._application or self._get_application(), "GuiApplication"
+        if normalized == "connection":
+            _ = self.session
+            return self._connection, "GuiConnection"
+        if normalized == "session":
+            return self.session, "GuiSession"
+        if normalized == "session_info":
+            return self.session.Info, "GuiSessionInfo"
+        if normalized == "active_window":
+            window = self.session.ActiveWindow
+            return window, str(self._safe_attr(window, "Type", "GuiFrameWindow"))
+        raise SapGuiError(
+            "scope은 sap_gui_auto, rot_wrapper, application, connection, session, "
+            "session_info, active_window 또는 "
+            "handle:<id> 중 하나여야 합니다."
+        )
+
+    def _get_sap_gui_auto(self) -> Any:
+        if self._sap_gui_auto is not None:
+            return self._sap_gui_auto
+        if not _WIN32:
+            raise SapGuiError("SAP GUI COM is only available on Windows")
+        self._ensure_com_initialized()
+        self._sap_gui_auto = win32com.client.GetObject("SAPGUI")
+        return self._sap_gui_auto
+
+    def _get_rot_wrapper(self) -> Any:
+        if self._rot_wrapper is not None:
+            return self._rot_wrapper
+        if not _WIN32:
+            raise SapGuiError("SAP GUI COM is only available on Windows")
+        self._ensure_com_initialized()
+        self._rot_wrapper = win32com.client.Dispatch("SapROTWr.SapROTWrapper")
+        return self._rot_wrapper
+
+    @staticmethod
+    def _api_member_policy(
+        component_type: str, member_kind: str, member_name: str
+    ) -> dict[str, Any]:
+        from .scripting_coverage import lookup_member_coverage
+
+        row = lookup_member_coverage(component_type, member_kind, member_name)
+        if row is None:
+            raise SapGuiError(
+                "bundled 공식 API graph에 없는 member는 실행할 수 없습니다: "
+                f"{component_type}.{member_name} ({member_kind})"
+            )
+        from .scripting_api_graph import get_default_graph
+        from .scripting_contracts import effective_result_type
+
+        member_id = f"{row.member_kind}:{row.object_name}.{row.member_name}"
+        member_node = get_default_graph().nodes.get(member_id, {})
+        result_type = effective_result_type(
+            row.object_name, row.member_kind, row.member_name, member_node
+        )
+        return {
+            "documented": True,
+            "declared_on": row.object_name,
+            "member_name": row.member_name,
+            "member_kind": row.member_kind,
+            "documented_access": row.documented_access,
+            "permission": row.permission,
+            "risk_level": row.risk_level,
+            "access_path": row.access_path,
+            "return_type": result_type if row.member_kind == "method" else "",
+            "property_type": result_type if row.member_kind == "property" else "",
+            "parameters": [dict(item) for item in member_node.get("parameters", [])],
+        }
+
+    @staticmethod
+    def _require_plan_for_high_risk_member(
+        policy: dict[str, Any], trusted_plan: bool
+    ) -> None:
+        """Prevent a broad ui_action grant from bypassing member risk policy."""
+
+        if (
+            str(policy.get("risk_level", "")).casefold() in {"high", "critical"}
+            and not trusted_plan
+        ):
+            raise SapGuiError(
+                "high-risk documented API member requires an approved immutable plan"
+            )
+
+    @staticmethod
+    def _record_live_api_member(policy: dict[str, Any]) -> None:
+        """Persist only successful documented calls as Windows conformance evidence."""
+
+        if not _WIN32:
+            return
+        try:
+            from .scripting_api_graph import get_default_graph
+            from .scripting_live_coverage import record_live_member
+
+            declared_on = str(policy.get("declared_on", ""))
+            member_kind = str(policy.get("member_kind", ""))
+            member_name = str(policy.get("member_name", ""))
+            if not member_name:
+                # The member name is absent from the compact policy payload;
+                # callers add it just before this hook.
+                return
+            record_live_member(
+                f"{member_kind}:{declared_on}.{member_name}",
+                api_version=str(get_default_graph().data.get("version", "")),
+            )
+        except Exception:
+            # Evidence persistence must not turn a successful SAP operation
+            # into an apparent COM failure.  The missing row remains visible.
+            return
+
+    def _invoke_documented_method(
+        self,
+        method: Any,
+        *,
+        object_type: str,
+        method_name: str,
+        method_args: list[Any],
+        member_policy: dict[str, Any],
+        expected_type: str = "",
+        parent_handle: str = "",
+    ) -> Any:
+        """Invoke a graph-described method and preserve ByRef/out values."""
+
+        native_enum_result = self._invoke_native_gui_enum_method(
+            method,
+            object_type=object_type,
+            method_name=method_name,
+            method_args=method_args,
+            parent_handle=parent_handle,
+        )
+        if native_enum_result is not _NO_NATIVE_ENUM_RESULT:
+            return native_enum_result
+        call_args, out_parameters = self._prepare_method_arguments(
+            object_type, method_name, method_args, member_policy
+        )
+        raw_result = method(*call_args)
+        result = self._serialize_api_value(
+            raw_result,
+            expected_type=expected_type,
+            parent_handle=parent_handle,
+        )
+        if not out_parameters:
+            return result
+        serialized_out = {
+            name: self._serialize_api_value(
+                reference.value,
+                expected_type=parameter_type,
+                parent_handle=parent_handle,
+            )
+            for name, parameter_type, reference in out_parameters
+        }
+        return {"return_value": result, "out_parameters": serialized_out}
+
+    def _invoke_native_gui_enum_method(
+        self,
+        method: Any,
+        *,
+        object_type: str,
+        method_name: str,
+        method_args: list[Any],
+        parent_handle: str,
+    ) -> Any:
+        """Use pywin32's native PyIEnumVARIANT contract when available."""
+
+        if object_type != "GuiEnum" or method_name not in {"Next", "Clone"}:
+            return _NO_NATIVE_ENUM_RESULT
+        owner = getattr(method, "__self__", None)
+        if not bool(getattr(owner, "_sap_cli_native_enum", False)):
+            return _NO_NATIVE_ENUM_RESULT
+        if method_name == "Next":
+            if len(method_args) != 1:
+                raise SapGuiError("GuiEnum.Next에는 celt 입력 하나가 필요합니다.")
+            count = int(self._resolve_api_argument(method_args[0], "ULong"))
+            if count < 0:
+                raise SapGuiError("GuiEnum.Next celt는 0 이상이어야 합니다.")
+            raw_values = method(count)
+            values = list(raw_values or ())
+            return {
+                "return_value": 0 if len(values) == count else 1,
+                "out_parameters": {
+                    "rgvar": self._serialize_api_value(
+                        values, parent_handle=parent_handle
+                    ),
+                    "pceltFetched": len(values),
+                },
+            }
+        if method_args:
+            raise SapGuiError("GuiEnum.Clone에는 ByVal 입력이 없습니다.")
+        clone = method()
+        return {
+            "return_value": 0,
+            "out_parameters": {
+                "ppenum": self._serialize_api_value(
+                    clone,
+                    expected_type="GuiEnum",
+                    parent_handle=parent_handle,
+                )
+            },
+        }
+
+    def _prepare_method_arguments(
+        self,
+        object_type: str,
+        method_name: str,
+        method_args: list[Any],
+        member_policy: dict[str, Any],
+    ) -> tuple[list[Any], list[tuple[str, str, Any]]]:
+        parameters = [dict(item) for item in member_policy.get("parameters", [])]
+        if not parameters:
+            return [self._resolve_api_argument(value, "") for value in method_args], []
+
+        call_args: list[Any] = []
+        out_parameters: list[tuple[str, str, Any]] = []
+        input_index = 0
+        for parameter in parameters:
+            name = str(parameter.get("name", ""))
+            parameter_type = str(parameter.get("type", ""))
+            if str(parameter.get("passing", "")).lower() == "byref":
+                reference = self._make_byref_variant(parameter_type)
+                call_args.append(reference)
+                out_parameters.append((name, parameter_type, reference))
+                continue
+            if input_index < len(method_args):
+                call_args.append(
+                    self._resolve_api_argument(method_args[input_index], parameter_type)
+                )
+                input_index += 1
+                continue
+            if not bool(parameter.get("optional", False)):
+                raise SapGuiError(
+                    f"필수 method argument가 없습니다: "
+                    f"{object_type}.{method_name}.{name}"
+                )
+        if input_index != len(method_args):
+            raise SapGuiError(
+                f"method argument 수가 공식 signature와 다릅니다: "
+                f"{object_type}.{method_name}"
+            )
+        return call_args, out_parameters
+
+    def _make_byref_variant(self, parameter_type: str) -> Any:
+        """Allocate a pywin32 VARIANT, with an injectable fake-test seam."""
+
+        factory = getattr(self, "_byref_variant_factory", None)
+        initial = None if parameter_type in {"GuiEnum", "Variant"} else 0
+        if factory is not None:
+            return factory(parameter_type, initial)
+        if not _WIN32:
+            raise SapGuiError("ByRef/out SAP GUI API calls require Windows pywin32")
+        variant_types = {
+            "GuiEnum": pythoncom.VT_UNKNOWN,
+            "Variant": pythoncom.VT_VARIANT,
+            "ULong": pythoncom.VT_UI4,
+        }
+        value_type = variant_types.get(parameter_type)
+        if value_type is None:
+            raise SapGuiError(f"지원하지 않는 ByRef/out type: {parameter_type}")
+        return win32com.client.VARIANT(pythoncom.VT_BYREF | value_type, initial)
+
+    def _resolve_api_argument(self, value: Any, expected_type: str) -> Any:
+        """Resolve a slot-local handle argument without accepting raw COM objects."""
+
+        handle_id = ""
+        if isinstance(value, str) and value.lower().startswith("handle:"):
+            handle_id = value.split(":", 1)[1]
+        elif isinstance(value, dict) and isinstance(value.get("handle_id"), str):
+            handle_id = str(value["handle_id"])
+        if not handle_id:
+            return value
+        try:
+            handle = self._api_handles.resolve(handle_id)
+        except ApiHandleError as exc:
+            raise SapGuiError(str(exc)) from exc
+        if expected_type and expected_type not in {"Object", "Variant", "Unknown"}:
+            if not self._api_type_is_compatible(handle.object_type, expected_type):
+                raise SapGuiError(
+                    f"SAP API handle type mismatch: expected {expected_type}, "
+                    f"got {handle.object_type}"
+                )
+        return handle.value
+
+    @staticmethod
+    def _api_type_is_compatible(actual_type: str, expected_type: str) -> bool:
+        if actual_type == expected_type:
+            return True
+        from .scripting_api_graph import get_default_graph
+
+        graph = get_default_graph()
+        pending = [f"object:{actual_type}"]
+        seen: set[str] = set()
+        expected_id = f"object:{expected_type}"
+        while pending:
+            current = pending.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            for edge in graph.out_edges.get(current, []):
+                if edge.get("type") != "EXTENDS":
+                    continue
+                target = str(edge["target"])
+                if target == expected_id:
+                    return True
+                pending.append(target)
+        return False
+
+    def _serialize_api_value(
+        self,
+        value: Any,
+        *,
+        expected_type: str = "",
+        parent_handle: str = "",
+    ) -> Any:
+        """Serialize scalars and retain COM objects as slot-local handles."""
+
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, (list, tuple)):
+            return [
+                self._serialize_api_value(item, parent_handle=parent_handle)
+                for item in value
+            ]
+        if isinstance(value, dict):
+            return {
+                str(key): self._serialize_api_value(item, parent_handle=parent_handle)
+                for key, item in value.items()
+            }
+
+        runtime_type = str(self._safe_attr(value, "Type", ""))
+        from .scripting_api_graph import get_default_graph
+
+        graph = get_default_graph()
+        expected_node = graph.nodes.get(f"object:{expected_type}")
+        object_type = expected_type if expected_node is not None else runtime_type
+        if not object_type:
+            object_type = type(value).__name__
+        node = graph.nodes.get(f"object:{object_type}")
+        if node is None or node.get("type") not in {"api_object", "api_collection"}:
+            return self._json_safe(value)
+
+        if _WIN32:
+            # ``_NewEnum`` commonly arrives as PyIUnknown.  Promote it to a
+            # native PyIEnumVARIANT first; unlike IDispatch this exposes
+            # Pythonic Next(count) and Clone() without fragile multi-ByRef
+            # argument ordering.
+            if object_type == "GuiEnum":
+                try:
+                    value = _NativeGuiEnumAdapter(
+                        value.QueryInterface(pythoncom.IID_IEnumVARIANT)
+                    )
+                except Exception:
+                    pass
+            if not isinstance(value, _NativeGuiEnumAdapter):
+                try:
+                    value = win32com.client.Dispatch(value)
+                except Exception:
+                    pass
+
+        handle = self._api_handles.register(
+            value, object_type, parent_handle=parent_handle
+        )
+        count = self._safe_attr(value, "Count", None)
+        try:
+            serialized_count = int(count) if count is not None else None
+        except (TypeError, ValueError):
+            serialized_count = None
+        return {
+            "kind": (
+                "collection_handle"
+                if node.get("type") == "api_collection" or count is not None
+                else "object_handle"
+            ),
+            "handle_id": handle.handle_id,
+            "object_type": object_type,
+            "id": str(self._safe_attr(value, "Id", "")),
+            "name": str(self._safe_attr(value, "Name", "")),
+            **({"count": serialized_count} if serialized_count is not None else {}),
+            "ttl_seconds": 900,
+        }
 
     @classmethod
     def _json_safe(cls, value: Any) -> Any:
@@ -2699,6 +3321,25 @@ class SapGuiWrapper:
     def has_modal(self, wait_seconds: float = 0.0) -> bool:
         """모달 윈도우(팝업) 존재 여부."""
         return self._modal_window(wait_seconds=wait_seconds) is not None
+
+    def is_busy(self) -> bool:
+        """Return the current SAP GUI session busy state without waiting."""
+        return self._session_is_busy()
+
+    def get_modal_state(self, wait_seconds: float = 0.0) -> dict[str, Any]:
+        """Return a stable, text-minimal modal descriptor for plan verification."""
+        modal = self._modal_window(wait_seconds=wait_seconds)
+        if modal is None:
+            return {"has_modal": False, "signature": "", "text": ""}
+        modal_type = str(self._safe_attr(modal, "Type", "GuiModalWindow"))
+        modal_id = str(self._safe_attr(modal, "Id", ""))
+        title = str(self._safe_attr(modal, "Text", ""))
+        return {
+            "has_modal": True,
+            # Must match UiMapScanner's persisted WindowDescriptor signature.
+            "signature": modal_window_signature(modal_type, modal_id, title),
+            "text": title,
+        }
 
     def get_modal_text(self, wait_seconds: float = 0.0) -> str:
         """모달 윈도우의 텍스트 내용."""

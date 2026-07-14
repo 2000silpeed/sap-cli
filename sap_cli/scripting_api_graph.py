@@ -20,7 +20,7 @@ DEFAULT_GENERATED_GRAPH_PATH = (
 def merge_graph_data(*graphs: dict[str, Any]) -> dict[str, Any]:
     """Merge graph JSON documents while preserving curated seed metadata."""
     node_by_id: dict[str, dict[str, Any]] = {}
-    edge_by_key: dict[tuple[Any, ...], dict[str, Any]] = {}
+    edge_by_key: dict[tuple[str, str, str], dict[str, Any]] = {}
     sources_by_key: dict[tuple[str, str], dict[str, Any]] = {}
     versions: list[str] = []
 
@@ -41,20 +41,16 @@ def merge_graph_data(*graphs: dict[str, Any]) -> dict[str, Any]:
             else:
                 node_by_id[node_id] = dict(node)
         for graph_edge in graph.get("edges", []):
-            props = tuple(
-                sorted(
-                    (key, json.dumps(value, sort_keys=True, ensure_ascii=False))
-                    for key, value in graph_edge.items()
-                    if key not in {"source", "target", "type"}
-                )
-            )
             key = (
                 str(graph_edge["source"]),
                 str(graph_edge["target"]),
                 str(graph_edge["type"]),
-                props,
             )
-            edge_by_key[key] = dict(graph_edge)
+            # A seed and an official overlay may describe the same semantic
+            # edge with different metadata (for example ``read`` versus
+            # ``read-only``). Keep one edge and let the later, version-pinned
+            # overlay provide the authoritative metadata.
+            edge_by_key[key] = {**edge_by_key.get(key, {}), **dict(graph_edge)}
 
     return {
         "version": "+".join(dict.fromkeys(versions)),

@@ -69,6 +69,37 @@ SKIP:
 14.x MCP 연결:
 15.x daemon 모드:
 16.x multi-session slot:
+17.x passive/reversible 지도 생성:
+18.x needs_user_input 중단 및 질문 내용:
+19.x 사용자 수동 이동 후 동일 job 재개:
+20.x 누락 화면의 비파괴 증분 병합:
+21.x 사용자 지정 분기 외 추가 탐색 없음:
+22.x ALV/Table/Tree/Modal 구조 coverage:
+23.x 계획 1회 컴파일 + warmup 1회 + cheap 실행 20회:
+```
+
+### 4.1 사용자 안내형 누락 화면 보강
+
+자동 순회에서 빠진 화면이 있으면 새 지도 작업을 만들지 않고 기존 job을 이어서
+검증합니다. 업무 입력값 자체는 리포트에 적지 않습니다.
+
+```text
+map job 식별자(마스킹):
+중단 상태: needs_user_input / 해당 없음
+질문 목적과 필요한 정보 종류:
+사용자가 직접 이동한 화면 종류:
+재개 횟수:
+추가된 state 수:
+추가된 transition 수:
+user_guided_navigation 전이 확인: PASS / PARTIAL / FAIL / SKIP
+사용자 route teaching(action + logical ID, 값 없음): PASS / PARTIAL / FAIL / SKIP
+route teaching 뒤 plan preview가 replayable 전이를 사용: PASS / PARTIAL / FAIL / SKIP
+20회 cheap 실행의 full screen scan 합계: `0` / FAIL
+지도 scope(system/client/language/TCode) 불일치 차단: PASS / PARTIAL / FAIL / SKIP
+기존 state/transition 보존: PASS / PARTIAL / FAIL / SKIP
+동일 state 중복 방지: PASS / PARTIAL / FAIL / SKIP
+요청한 분기만 추가: PASS / PARTIAL / FAIL / SKIP
+답변 원문 비저장: PASS / PARTIAL / FAIL / SKIP
 ```
 
 ## 5. 실패/부분 성공 상세
@@ -110,12 +141,32 @@ modal 여부:
 ```text
 로그:
 JSON 출력:
+canary JSONL:
+canary report JSON:
+canary report Markdown:
+map-report 요약:
 스크린샷:
 capture:
 기타:
 ```
 
-## 8. 후속 조치
+## 8. 성능 및 안정성 요약
+
+```text
+계획 컴파일 횟수:
+warmup 횟수:
+측정 실행 횟수:
+성공률:
+p50:
+p95:
+drift율:
+retry 횟수:
+recovery 횟수:
+full scan 횟수:
+failure domain/code:
+```
+
+## 9. 후속 조치
 
 ```text
 - [ ] 운영 전 차단 이슈 해결

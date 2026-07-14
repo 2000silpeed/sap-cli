@@ -59,7 +59,11 @@ class AuditLogger:
         }
 
         # 인자에서 민감 정보 제거
-        safe_args = {k: v for k, v in arguments.items() if k not in ("password", "secret")}
+        safe_args = {
+            k: v
+            for k, v in arguments.items()
+            if k not in ("password", "secret", "approval_token", "approval_grants")
+        }
         entry["arguments"] = safe_args
 
         log_file = self._log_dir / f"audit-{datetime.now().strftime('%Y-%m-%d')}.jsonl"

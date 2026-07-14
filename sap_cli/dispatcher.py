@@ -8,14 +8,16 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 _logger = logging.getLogger(__name__)
 
-from .auth.checker import PermissionChecker
-from .auth.policy import TOOL_PERMISSION_MAP, Permission, Policy, load_policy
+from .auth.policy import Policy, load_policy
+from .auth.preflight import preflight_tool_call
 from .auth.transcript import TranscriptLogger
 from .command_parser import extract_tcode_from_command
 from .com_wrapper import SapGuiWrapper
@@ -149,6 +151,10 @@ from .dispatchers.execution_logging import (
     extract_transcript_state_from_result as _extract_transcript_state_from_result_impl,
     log_transcript as _log_transcript_impl,
 )
+from .dispatchers.events import dispatch_event_command, is_event_command
+from .dispatchers.ui_maps import dispatch_ui_map_command, is_ui_map_command
+from .dispatchers.planning import dispatch_planning_command, is_planning_command
+from .dispatchers.jobs import dispatch_job_command, is_job_command
 from .dispatchers.sap_actions import (
     dispatch_command_text as _dispatch_command_text_impl,
     dispatch_get as _dispatch_get_impl,
@@ -185,6 +191,10 @@ from .service import (
 
 
 TRANSCRIPT_OMIT_COMMANDS = {
+    "plan_approve",
+    "plan_execute",
+    "job_status",
+    "job_reconcile",
     "transcript_query",
     "transcript_plan",
     "session_start",
@@ -240,6 +250,7 @@ class DispatchContext:
     slot_id: str = "ses0"
     cli_invocation: str = ""
     raw_argv: list[str] = field(default_factory=list)
+    sensitive_values: tuple[str, ...] = ()
 
 
 def dispatch_command(
@@ -255,8 +266,10 @@ def dispatch_command(
 
     cmd_def = COMMAND_REGISTRY[command]
     tool_name = ctx.tool_name or cmd_def.tool_name
+    sensitive_values = _dispatch_sensitive_values(command, args, ctx.sensitive_values)
+    logging_args = _redact_sensitive_payload(args, sensitive_values)
     authz, policy = _evaluate_authorization(tool_name, args, ctx)
-    _audit_authorization(policy, authz, tool_name, args)
+    _audit_authorization(policy, authz, tool_name, logging_args)
 
     transcript = TranscriptLogger(policy.transcript if policy else None)
     should_log_transcript = transcript.should_log(authz.permission) and command not in TRANSCRIPT_OMIT_COMMANDS
@@ -279,7 +292,7 @@ def dispatch_command(
             command=command,
             tool_name=tool_name,
             authz=authz,
-            arguments=args,
+            arguments=logging_args,
             outcome="denied",
             before_state=before_state,
         )
@@ -293,7 +306,7 @@ def dispatch_command(
             command=command,
             tool_name=tool_name,
             authz=authz,
-            arguments=args,
+            arguments=logging_args,
             outcome="approval_required",
             before_state=before_state,
         )
@@ -316,19 +329,19 @@ def dispatch_command(
             command=command,
             tool_name=tool_name,
             authz=authz,
-            arguments=args,
+            arguments=logging_args,
             outcome="error",
             before_state=before_state,
             after_state=after_state,
-            error=str(exc),
+            error=_redact_sensitive_text(str(exc), sensitive_values),
         )
         _log_session_step(
             ctx=ctx,
             command=command,
             tool_name=tool_name,
-            arguments=args,
+            arguments=logging_args,
             outcome="error",
-            error=str(exc),
+            error=_redact_sensitive_text(str(exc), sensitive_values),
             before_state=before_state,
             after_state=after_state,
         )
@@ -348,22 +361,22 @@ def dispatch_command(
         command=command,
         tool_name=tool_name,
         authz=authz,
-        arguments=args,
+        arguments=logging_args,
         outcome="success",
         before_state=before_state,
         after_state=after_state,
-        result=result,
+        result=_redact_sensitive_payload(result, sensitive_values),
     )
     _log_session_step(
         ctx=ctx,
         command=command,
         tool_name=tool_name,
-        arguments=args,
+        arguments=logging_args,
         outcome="success",
         before_state=before_state,
         after_state=after_state,
     )
-    return result
+    return _redact_sensitive_payload(result, sensitive_values)
 
 
 def _execute_command(
@@ -374,6 +387,37 @@ def _execute_command(
 ) -> dict[str, Any]:
     if command == "recipe_replay_execute":
         return _dispatch_recipe_replay_execute(args, ctx, policy)
+    if is_event_command(command):
+        return dispatch_event_command(command, args, ctx, get_sap=_get_sap)
+    if is_job_command(command):
+        return dispatch_job_command(command, args, ctx)
+    if is_ui_map_command(command):
+        return dispatch_ui_map_command(
+            command,
+            args,
+            ctx,
+            preflight_tcode=lambda tcode: preflight_tool_call(
+                "sap_run",
+                {"tcode": tcode},
+                policy=policy,
+                agent_name=ctx.agent_name,
+                enforce_auth=ctx.enforce_auth,
+            ),
+        )
+    if is_planning_command(command):
+        return dispatch_planning_command(
+            command,
+            args,
+            get_recipe_store=_get_recipe_store,
+            policy=policy,
+            agent_name=ctx.agent_name,
+            enforce_auth=ctx.enforce_auth,
+            ctx=ctx,
+            get_sap=_get_sap,
+            authorize_slot=lambda slot_id, agent: _get_pool().authorize_slot(
+                slot_id, agent
+            ),
+        )
     if is_connection_command(command):
         return dispatch_connection_command(
             command,
@@ -405,6 +449,8 @@ def _execute_command(
             get_macro_store=_get_macro_store,
             get_sap=_get_sap,
             with_post_action=_with_post_action,
+            dispatch_step=dispatch_command,
+            policy=policy,
         )
     if is_ontology_command(command):
         return dispatch_ontology_command(
@@ -849,6 +895,198 @@ _ALLOWED_REPLAY_STEP_COMMANDS: frozenset[str] = frozenset(
     }
 )
 
+_REPLAY_PLACEHOLDER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+_SENSITIVE_VARIABLE_RE = re.compile(
+    r"(?:password|passwd|passcode|secret|token|credential|api[_-]?key|pin|pwd)",
+    re.IGNORECASE,
+)
+_REDACTED = "<redacted>"
+
+
+def _normalize_replay_variables(raw: Any) -> dict[str, str]:
+    """Normalize replay variables using the established macro payload shapes."""
+
+    from .macro.variables import normalize_runtime_variables
+
+    return normalize_runtime_variables(raw)
+
+
+def _explicit_sensitive_variable_names(raw: Any) -> set[str]:
+    """Collect variable names explicitly marked ``sensitive`` in structured input."""
+
+    names: set[str] = set()
+    if isinstance(raw, Mapping):
+        if raw.get("sensitive") is True:
+            name = raw.get("name") or raw.get("key") or raw.get("id") or raw.get("variable")
+            if name:
+                names.add(str(name))
+        for key, value in raw.items():
+            if isinstance(value, Mapping) and value.get("sensitive") is True:
+                names.add(str(key))
+            names.update(_explicit_sensitive_variable_names(value))
+    elif isinstance(raw, Sequence) and not isinstance(raw, (str, bytes, bytearray)):
+        for value in raw:
+            names.update(_explicit_sensitive_variable_names(value))
+    return names
+
+
+def _sensitive_replay_values(raw: Any) -> tuple[str, ...]:
+    if raw in (None, ""):
+        return ()
+    try:
+        variables = _normalize_replay_variables(raw)
+    except (TypeError, ValueError):
+        return ()
+    explicit = {name.casefold() for name in _explicit_sensitive_variable_names(raw)}
+    values = {
+        str(value)
+        for name, value in variables.items()
+        if value not in (None, "")
+        and (_SENSITIVE_VARIABLE_RE.search(name) or name.casefold() in explicit)
+    }
+    return tuple(sorted(values, key=lambda value: (-len(value), value)))
+
+
+def _sensitive_plan_values(args: Mapping[str, Any]) -> tuple[str, ...]:
+    from .planning.intent import parse_intent
+
+    parsed = parse_intent(str(args.get("request") or args.get("text") or ""))
+    values = {
+        str(parsed.inputs[name])
+        for name in parsed.sensitive_inputs
+        if parsed.inputs.get(name) not in (None, "")
+    }
+    supplied = args.get("values") or args.get("supplied_values") or {}
+    if isinstance(supplied, Mapping):
+        values.update(
+            str(value)
+            for name, value in supplied.items()
+            if value not in (None, "") and _SENSITIVE_VARIABLE_RE.search(str(name))
+        )
+    return tuple(sorted(values, key=lambda value: (-len(value), value)))
+
+
+def _dispatch_sensitive_values(
+    command: str,
+    args: dict[str, Any],
+    inherited: Sequence[str] = (),
+) -> tuple[str, ...]:
+    values = {str(value) for value in inherited if str(value)}
+    if command == "recipe_replay_execute":
+        values.update(_sensitive_replay_values(args.get("variables")))
+    elif command == "macro_play":
+        values.update(_sensitive_replay_values(args.get("variables")))
+    elif command == "plan_preview":
+        values.update(_sensitive_plan_values(args))
+    elif command == "plan_execute":
+        token = str(args.get("approval_token", "") or "")
+        if token:
+            values.add(token)
+    elif command == "plan_approve":
+        step_ids = args.get("step_ids")
+        if isinstance(step_ids, (list, tuple, set)):
+            values.update(str(item) for item in step_ids if str(item))
+    return tuple(sorted(values, key=lambda value: (-len(value), value)))
+
+
+def _redact_sensitive_text(value: str, sensitive_values: Sequence[str]) -> str:
+    redacted = value
+    for secret in sensitive_values:
+        if secret:
+            redacted = redacted.replace(secret, _REDACTED)
+    return redacted
+
+
+def _redact_sensitive_payload(value: Any, sensitive_values: Sequence[str]) -> Any:
+    if not sensitive_values:
+        return value
+    if isinstance(value, str):
+        return _redact_sensitive_text(value, sensitive_values)
+    if isinstance(value, Mapping):
+        return {
+            key: _redact_sensitive_payload(item, sensitive_values)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_sensitive_payload(item, sensitive_values) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_sensitive_payload(item, sensitive_values) for item in value)
+    return value
+
+
+def _resolve_replay_value(
+    value: Any,
+    variables: Mapping[str, str],
+    missing: set[str],
+) -> Any:
+    if isinstance(value, str):
+        exact = _REPLAY_PLACEHOLDER_RE.fullmatch(value)
+        if exact:
+            name = exact.group(1)
+            if name not in variables:
+                missing.add(name)
+                return value
+            resolved = variables[name]
+            for unresolved in _REPLAY_PLACEHOLDER_RE.findall(str(resolved)):
+                missing.add(unresolved)
+            return resolved
+
+        def replace(match: re.Match[str]) -> str:
+            name = match.group(1)
+            if name not in variables:
+                missing.add(name)
+                return match.group(0)
+            return str(variables[name])
+
+        resolved = _REPLAY_PLACEHOLDER_RE.sub(replace, value)
+        for unresolved in _REPLAY_PLACEHOLDER_RE.findall(resolved):
+            missing.add(unresolved)
+        return resolved
+    if isinstance(value, list):
+        return [_resolve_replay_value(item, variables, missing) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_resolve_replay_value(item, variables, missing) for item in value)
+    if isinstance(value, Mapping):
+        return {
+            key: _resolve_replay_value(item, variables, missing)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _resolve_recipe_replay_steps(
+    dry_run_plan: list[dict[str, Any]],
+    raw_variables: Any,
+) -> dict[str, Any]:
+    """Strictly bind every placeholder before authorization or SAP access."""
+
+    try:
+        variables = _normalize_replay_variables(raw_variables)
+    except (TypeError, ValueError) as exc:
+        return {
+            "status": "blocked",
+            "steps": [],
+            "issues": [{
+                "code": "invalid_variables",
+                "message": f"recipe variables 구조가 올바르지 않습니다: {type(exc).__name__}",
+            }],
+        }
+
+    missing: set[str] = set()
+    resolved = _resolve_replay_value(dry_run_plan, variables, missing)
+    assert isinstance(resolved, list)
+    if missing:
+        return {
+            "status": "blocked",
+            "steps": [],
+            "issues": [{
+                "code": "unresolved_variables",
+                "variables": sorted(missing),
+                "message": "필수 recipe 변수가 누락되었거나 치환 후에도 미해결 상태입니다.",
+            }],
+        }
+    return {"status": "ok", "steps": resolved, "issues": []}
+
 
 def _dispatch_recipe_replay_execute(
     args: dict[str, Any],
@@ -877,14 +1115,34 @@ def _dispatch_recipe_replay_execute(
             "message": "precheck가 blocked 상태라 recipe replay를 실행하지 않았습니다.",
         }
 
-    preflight = _preflight_recipe_replay_steps(plan.get("dry_run_plan", []), ctx)
+    sensitive_values = _dispatch_sensitive_values(
+        "recipe_replay_execute", args, ctx.sensitive_values
+    )
+    binding = _resolve_recipe_replay_steps(
+        plan.get("dry_run_plan", []), args.get("variables", {})
+    )
+    if binding["status"] != "ok":
+        return {
+            "recipe_id": recipe_id,
+            "status": "blocked",
+            "stage": "variable_binding",
+            "plan": plan,
+            "variable_binding": binding,
+            "executed_steps": [],
+            "report_called": False,
+            "message": "recipe 변수가 완전히 치환되지 않아 실행하지 않았습니다.",
+        }
+
+    resolved_steps = binding["steps"]
+    plan["dry_run_plan"] = _redact_sensitive_payload(resolved_steps, sensitive_values)
+    preflight = _preflight_recipe_replay_steps(resolved_steps, ctx)
     if preflight["status"] != "ok":
         return {
             "recipe_id": recipe_id,
             "status": "blocked",
             "stage": "preflight",
             "plan": plan,
-            "preflight": preflight,
+            "preflight": _redact_sensitive_payload(preflight, sensitive_values),
             "executed_steps": [],
             "report_called": False,
             "message": "step 권한/approval/risk 검사를 통과하지 못해 실행하지 않았습니다.",
@@ -917,6 +1175,7 @@ def _dispatch_recipe_replay_execute(
         include_screen_summary=False,
         session_id=ctx.session_id,
         slot_id=ctx.slot_id,
+        sensitive_values=sensitive_values,
     )
     for step in preflight["steps"]:
         order = step["order"]
@@ -981,7 +1240,9 @@ def _dispatch_recipe_replay_execute(
                 success_criteria_persisted=success_criteria_persisted,
             )
         except Exception as exc:
-            reason = f"step {order} execution error: {exc}"
+            reason = _redact_sensitive_text(
+                f"step {order} execution error: {exc}", sensitive_values
+            )
             return _recipe_replay_failed(
                 recipe_id,
                 "execution_error",
@@ -1000,9 +1261,9 @@ def _dispatch_recipe_replay_execute(
             "order": order,
             "tool": step["tool"],
             "command": command,
-            "args": step_args,
+            "args": _redact_sensitive_payload(step_args, sensitive_values),
             "execution_ms": _elapsed_ms(step_started_at),
-            "result": result,
+            "result": _redact_sensitive_payload(result, sensitive_values),
         }
         if observation_scope in {"status", "screen"}:
             executed_step["observations"] = _collect_recipe_replay_observations(
@@ -1547,65 +1808,24 @@ def _evaluate_authorization(
     ctx: DispatchContext,
 ) -> tuple[AuthorizationDecision, Policy | None]:
     policy = load_policy()
-    checker = PermissionChecker(policy)
     configured_agent = _resolve_agent_name(policy, ctx.agent_name)
-    if configured_agent:
-        checker.set_agent(configured_agent)
-    check = checker.check_tool(tool_name, args)
-    permission = TOOL_PERMISSION_MAP.get(tool_name, "")
-    resource = checker.resolve_resource(tool_name, args)
-    risk_metadata = checker.risk_metadata(tool_name, args)
-    effective_agent = checker.agent_name or configured_agent or "anonymous"
-
-    if not ctx.enforce_auth:
-        return (
-            AuthorizationDecision(
-                agent=effective_agent,
-                permission=permission.value if permission else "",
-                resource=resource,
-                allowed=True,
-                reason="auth_disabled",
-                risk_metadata=risk_metadata,
-            ),
-            policy,
-        )
-
-    if not check:
-        return (
-            AuthorizationDecision(
-                agent=effective_agent,
-                permission=permission.value if permission else "",
-                resource=resource,
-                allowed=False,
-                reason=check.reason,
-                risk_metadata=check.risk_metadata or risk_metadata,
-            ),
-            policy,
-        )
-
-    approval_reason = checker.requires_approval(tool_name, args)
-    if approval_reason:
-        return (
-            AuthorizationDecision(
-                agent=effective_agent,
-                permission=permission.value if permission else "",
-                resource=resource,
-                allowed=True,
-                reason=check.reason,
-                approval_required=True,
-                approval_reason=approval_reason,
-                risk_metadata=risk_metadata,
-            ),
-            policy,
-        )
+    preview = preflight_tool_call(
+        tool_name,
+        args,
+        policy=policy,
+        agent_name=configured_agent,
+        enforce_auth=ctx.enforce_auth,
+    )
     return (
         AuthorizationDecision(
-            agent=effective_agent,
-            permission=permission.value if permission else "",
-            resource=resource,
-            allowed=True,
-            reason=check.reason,
-            risk_metadata=risk_metadata,
+            agent=preview.agent,
+            permission=preview.permission,
+            resource=preview.resource,
+            allowed=preview.allowed,
+            reason=preview.reason,
+            approval_required=preview.approval_required,
+            approval_reason=preview.approval_reason,
+            risk_metadata=preview.risk_metadata,
         ),
         policy,
     )

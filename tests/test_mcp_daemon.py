@@ -12,6 +12,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from sap_cli.ipc_auth import IpcAuthenticator
+
 # MCP 의존성이 없는 환경에서도 테스트 가능하도록 TextContent 모킹
 try:
     from mcp.types import TextContent
@@ -47,6 +49,14 @@ def _patch_mcp_deps():
 # daemon.send_command context 전달 테스트
 # ---------------------------------------------------------------------------
 
+
+def _client_auth():
+    return IpcAuthenticator(
+        b"test-daemon-secret".ljust(32, b"!"),
+        clock=lambda: 1_700_000_000,
+        nonce_factory=lambda: "test_nonce_0000000000000001",
+    )
+
 class TestDaemonSendCommandContext:
     """send_command가 context를 TCP 페이로드에 포함하는지 검증."""
 
@@ -72,6 +82,7 @@ class TestDaemonSendCommandContext:
                 "screen",
                 {"tcode": "MM03"},
                 context={"source": "mcp", "tool_name": "sap_screen"},
+                authenticator=_client_auth(),
             )
 
         assert result is not None
@@ -80,6 +91,12 @@ class TestDaemonSendCommandContext:
         assert sent["cmd"] == "screen"
         assert sent["context"]["source"] == "mcp"
         assert sent["context"]["tool_name"] == "sap_screen"
+        assert "test-daemon-secret" not in json.dumps(sent)
+        verifier = IpcAuthenticator(
+            b"test-daemon-secret".ljust(32, b"!"),
+            clock=lambda: 1_700_000_000,
+        )
+        verifier.verify_request(sent)
 
     def test_send_command_without_context(self):
         import json
@@ -95,10 +112,35 @@ class TestDaemonSendCommandContext:
 
         with patch("socket.socket", return_value=mock_sock):
             from sap_cli.daemon import send_command
-            send_command("ping")
+            send_command("ping", authenticator=_client_auth())
 
         sent = json.loads(received_data[0].decode().strip())
         assert "context" not in sent
+
+    def test_plan_execute_uses_one_socket_payload_for_the_whole_batch(self):
+        mock_sock = MagicMock()
+        sent = []
+        mock_sock.sendall = lambda payload: sent.append(payload)
+        mock_sock.recv = MagicMock(
+            side_effect=[json.dumps({"ok": True, "data": {"status": "completed"}}).encode(), b""]
+        )
+
+        with patch("socket.socket", return_value=mock_sock):
+            from sap_cli.daemon import send_command
+
+            result = send_command(
+                "plan_execute",
+                {
+                    "plan_id": "p1",
+                    "plan_hash": "h1",
+                    "execution_id": "e1",
+                },
+                authenticator=_client_auth(),
+            )
+
+        assert result["data"]["status"] == "completed"
+        assert len(sent) == 1
+        assert json.loads(sent[0])["cmd"] == "plan_execute"
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +281,62 @@ class TestMcpHandleToolDaemon:
         data = json.loads(result[0].text)
         assert data["fallback"] is True
 
+    @pytest.mark.parametrize("tool", ["sap_plan_approve", "sap_plan_execute"])
+    def test_plan_security_tools_never_fall_back_to_direct_dispatch(
+        self, monkeypatch, tool
+    ):
+        monkeypatch.setenv("SAP_CLI_USE_DAEMON", "1")
+        monkeypatch.setattr("sap_cli.mcp_server.load_policy", lambda: None)
+
+        with patch("sap_cli.mcp_server._dispatch_via_daemon", return_value=None):
+            with patch("sap_cli.mcp_server.dispatch_command") as direct:
+                from sap_cli.mcp_server import handle_tool
+
+                result = handle_tool(
+                    tool,
+                    {"plan_id": "p", "plan_hash": "h", "execution_id": "e"},
+                )
+
+        direct.assert_not_called()
+        assert "daemon" in result[0].text
+
+    def test_job_commands_never_fall_back_to_direct_dispatch(self, monkeypatch):
+        monkeypatch.setenv("SAP_CLI_USE_DAEMON", "1")
+        monkeypatch.setattr("sap_cli.mcp_server.load_policy", lambda: None)
+
+        with patch("sap_cli.mcp_server._dispatch_via_daemon", return_value=None):
+            with patch("sap_cli.mcp_server.dispatch_command") as direct:
+                from sap_cli.mcp_server import handle_tool
+
+                for tool in ("sap_job_status", "sap_job_reconcile"):
+                    result = handle_tool(
+                        tool,
+                        {"job_id": "plan:e", "resolution": "release_after_manual_verification"},
+                    )
+                    assert "daemon" in result[0].text
+        direct.assert_not_called()
+
+    def test_map_augment_start_never_falls_back_to_direct_dispatch(self, monkeypatch):
+        monkeypatch.setenv("SAP_CLI_USE_DAEMON", "1")
+        monkeypatch.setattr("sap_cli.mcp_server.load_policy", lambda: None)
+
+        with patch("sap_cli.mcp_server._dispatch_via_daemon", return_value=None):
+            with patch("sap_cli.mcp_server.dispatch_command") as direct:
+                from sap_cli.mcp_server import handle_tool
+
+                result = handle_tool(
+                    "sap_map_augment_start",
+                    {
+                        "map_id": "map",
+                        "tcode": "ZMAP",
+                        "from_state_id": "state",
+                        "request": "누락 화면",
+                    },
+                )
+
+        direct.assert_not_called()
+        assert "daemon" in result[0].text
+
     def test_daemon_mode_off_uses_direct(self, monkeypatch):
         """SAP_CLI_USE_DAEMON=0이면 daemon 위임 안 함."""
         monkeypatch.setenv("SAP_CLI_USE_DAEMON", "0")
@@ -336,12 +434,12 @@ class TestDispatchViaDaemon:
     def test_auto_starts_daemon(self, monkeypatch):
         monkeypatch.setenv("SAP_CLI_MCP_SCREEN_SUMMARY", "1")
         started = []
+        responses = [None, {"ok": True, "data": {}}]
 
-        with patch("sap_cli.daemon.is_running", return_value=False):
-            with patch("sap_cli.daemon.start_daemon", side_effect=lambda: started.append(1) or True):
-                with patch("sap_cli.daemon.send_command", return_value={"ok": True, "data": {}}):
-                    from sap_cli.mcp_server import _dispatch_via_daemon
-                    result = _dispatch_via_daemon("status", {}, "sap_status", None)
+        with patch("sap_cli.daemon.start_daemon", side_effect=lambda: started.append(1) or True):
+            with patch("sap_cli.daemon.send_command", side_effect=lambda *_, **__: responses.pop(0)):
+                from sap_cli.mcp_server import _dispatch_via_daemon
+                result = _dispatch_via_daemon("status", {}, "sap_status", None)
 
         assert len(started) == 1
         assert result is not None
@@ -349,7 +447,7 @@ class TestDispatchViaDaemon:
     def test_returns_none_when_daemon_start_fails(self, monkeypatch):
         monkeypatch.setenv("SAP_CLI_MCP_SCREEN_SUMMARY", "0")
 
-        with patch("sap_cli.daemon.is_running", return_value=False):
+        with patch("sap_cli.daemon.send_command", return_value=None):
             with patch("sap_cli.daemon.start_daemon", return_value=False):
                 from sap_cli.mcp_server import _dispatch_via_daemon
                 result = _dispatch_via_daemon("status", {}, "sap_status", None)
@@ -364,15 +462,14 @@ class TestDispatchViaDaemon:
             captured.append((cmd, args, context))
             return {"ok": True, "data": {}}
 
-        with patch("sap_cli.daemon.is_running", return_value=True):
-            with patch("sap_cli.daemon.send_command", mock_send):
-                from sap_cli.mcp_server import _dispatch_via_daemon
-                _dispatch_via_daemon(
-                    "screen",
-                    {"fields_only": True, "actions_only": False},
-                    "sap_screen",
-                    "operator",
-                )
+        with patch("sap_cli.daemon.send_command", mock_send):
+            from sap_cli.mcp_server import _dispatch_via_daemon
+            _dispatch_via_daemon(
+                "screen",
+                {"fields_only": True, "actions_only": False},
+                "sap_screen",
+                "operator",
+            )
 
         cmd, args, ctx = captured[0]
         assert cmd == "screen"
@@ -391,10 +488,9 @@ class TestDispatchViaDaemon:
             captured.append(context)
             return {"ok": True, "data": {"connected": True}}
 
-        with patch("sap_cli.daemon.is_running", return_value=True):
-            with patch("sap_cli.daemon.send_command", mock_send):
-                from sap_cli.mcp_server import _dispatch_via_daemon
-                result = _dispatch_via_daemon("connect", {}, "sap_connect", "operator")
+        with patch("sap_cli.daemon.send_command", mock_send):
+            from sap_cli.mcp_server import _dispatch_via_daemon
+            result = _dispatch_via_daemon("connect", {}, "sap_connect", "operator")
 
         assert result == {"ok": True, "data": {"connected": True}}
         ctx = captured[0]
@@ -403,3 +499,17 @@ class TestDispatchViaDaemon:
         assert ctx["agent_name"] == "operator"
         assert ctx["include_post_action_context"] is False
         assert ctx["include_screen_summary"] is False
+
+    def test_screen_summary_is_off_by_default(self, monkeypatch):
+        monkeypatch.delenv("SAP_CLI_MCP_SCREEN_SUMMARY", raising=False)
+        captured = []
+
+        def mock_send(cmd, args, timeout=60, context=None):
+            captured.append(context)
+            return {"ok": True, "data": {}}
+
+        with patch("sap_cli.daemon.send_command", mock_send):
+            from sap_cli.mcp_server import _dispatch_via_daemon
+            _dispatch_via_daemon("status", {}, "sap_status", None)
+
+        assert captured[0]["include_screen_summary"] is False

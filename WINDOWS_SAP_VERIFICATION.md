@@ -79,6 +79,121 @@ sap --help
 
 ## 4. 검증 결과 기록 방식
 
+### 4.1 자동 canary 실행
+
+먼저 조회 전용 예제 설정을 복사해 현장 TCode와 지도 ID만 맞춘다. `plan`은
+업무값 없이 실행 가능한 조회 계획이 준비되기 전까지 비활성 상태로 둔다.
+
+```powershell
+Copy-Item examples\windows_canary.readonly.example.json canary.local.json
+sap daemon start
+python scripts\windows_canary.py --config canary.local.json --output artifacts\sap-canary.jsonl
+```
+
+공식 API live evidence도 함께 확인하려면 아래 예제를 사용한다. 이 예제는
+`GuiSessionInfo.Client`처럼 값 반환을 canary 결과에 남기지 않는 low-risk read만
+검증한다.
+
+```powershell
+Copy-Item examples\windows_canary.api-probes.example.json canary.local.json
+```
+
+실행기는 다음 조건을 강제로 확인한다.
+
+- Windows와 persistent daemon에서만 실제 canary를 수행한다.
+- passive 수집을 기본값으로 사용한다.
+- reversible 수집은 비운영 client와 복구 가능한 동작만 명시적으로 확인해야 한다.
+- Save, Post, Delete, Release, Send, Print, VKey 11/27, 승인 및 commit 계획을 차단한다.
+- 계획에 업무 입력값이나 해결된 변수가 있으면 반복 실행하지 않는다.
+- 안전한 계획은 한 번만 컴파일하고 warmup 1회 뒤 cheap 실행 20회를 측정한다.
+- `api_live_probes`를 지정하면 daemon 전용 low-risk read member만 검증하고,
+  성공한 공식 member를 API live coverage 원장에 기록한다. 결과에는 개수만 남는다.
+
+결과는 업무값과 화면 텍스트를 제외한 세 파일로 남는다.
+
+- `sap-canary.jsonl`
+- `sap-canary.report.json`
+- `sap-canary.report.md`
+
+지도 구조는 별도로 확인할 수 있다.
+
+```powershell
+sap map-report canary-mm03 MM03
+```
+
+`needs_user_input`이 나오면 사용자가 요청된 조회 화면으로 직접 이동한 뒤 기존
+`map-traverse-resume` 절차로 이어 간다. 이어서 같은 설정의
+`mapping.existing_job_id`에 해당 job ID를 넣고 canary를 다시 실행하면 새 지도
+작업을 만들지 않고 기존 checkpoint를 계속 관찰한다. 알려지지 않은 모달을 자동으로 닫거나
+저장성 버튼을 눌러 coverage를 늘리면 안 된다.
+
+### 4.2 정확한 allowlisted 분기와 사용자 route teaching
+
+테스트 client에서만, 미리 확인한 조회성 버튼·메뉴·ALV 항목 하나를 정확한 구조
+규칙으로 허용해 다음 화면 수집과 기준 화면 복귀를 검증한다. 동작명만 허용하면 안
+되며 source state(또는 fingerprint), logical ID, SAP ID, type, 복원 VKey를 모두
+명시한다. `save`, `post`, `delete`, `release`, `send`, `print`가 이름·ID·항목에
+들어간 규칙은 의도적으로 거부되어야 한다.
+
+```powershell
+$branches = @'
+[
+  {
+    "action":"press",
+    "source_state_id":"<map-path에서 확인한 state>",
+    "target_logical_id":"<조회성 버튼 logical id>",
+    "target_sap_id":"<SAP id>",
+    "component_type":"GuiButton",
+    "restore_vkey":3,
+    "expected_program":"<선택>",
+    "expected_screen_number":<다음 화면 번호>
+  }
+]
+'@
+sap map-traverse-start <TCode> --map-id <map-id> --mode allowlisted --test-client-confirmed --allowed-branches-json $branches
+```
+
+이미 만들어진 지도에 사용자가 누락 화면을 붙일 때는 `map-augment-start`를 사용한다.
+job 조회 결과의 `choices`에 안전한 `transition` 후보가 있으면, 사용자는 화면을
+직접 이동한 뒤 **값 없이** 해당 action과 logical ID만 확인해 route를 가르칠 수 있다.
+이 annotation이 없으면 화면은 저장되지만 `user_guided_navigation`으로 남아 자동
+계획은 다시 사용자 안내를 요청한다.
+
+```powershell
+sap map-augment-start <map-id> <TCode> <from-state-id> "누락된 조회 화면"
+sap map-job-status <job-id>
+sap map-traverse-resume <job-id> '{"<resume-token>":{"continue":true,"transition":{"action":"press","target_logical_id":"<choice의 logical id>"}}}'
+sap map-report <map-id> <TCode>
+```
+
+재개 전 SAP session의 system/client/language/TCode가 지도와 다르면 job은 화면을
+스캔하거나 저장하지 않고 실패해야 한다.
+
+### 4.2 GuiEnum ByRef/out live conformance
+
+상주 daemon을 유지한 채 `GuiComponentCollection.NewEnum`에서 받은 handle로
+`GuiEnum.Next`와 `Clone`을 호출한다. ByRef/out 인자는 사용자가 placeholder를
+넘기지 않으며 graph signature에 따라 adapter가 생성한다.
+
+```powershell
+$children = sap api-object session get_property Children | ConvertFrom-Json
+$enum = sap api-object "handle:$($children.value.handle_id)" get_property NewEnum | ConvertFrom-Json
+sap api-object "handle:$($enum.value.handle_id)" call_method Next --args-json '[1]'
+sap api-object "handle:$($enum.value.handle_id)" call_method Clone --args-json '[]'
+```
+
+기대 결과:
+
+- `NewEnum` 결과의 `object_type`은 `GuiEnum`이다.
+- `Next.result.out_parameters`에 `rgvar`와 `pceltFetched`가 모두 존재한다.
+- `Clone.result.out_parameters.ppenum`은 다시 사용할 수 있는 `GuiEnum` handle이다.
+- handle은 같은 slot/daemon에서만 유효하고 다른 slot이나 만료된 handle은 거부된다.
+
+나머지 `GuiCollection`, `GuiTableColumn`, `GuiTableRow.NewEnum`은 각각 해당 객체
+handle을 반환하는 실제 화면 fixture가 필요하다. ALV/table 화면과 `DumpState`
+결과에서 세 handle을 확보한 뒤 같은 검증을 반복하고, 확보하지 못한 타입은
+성공으로 추정하지 말고 `SKIP`으로 기록한다.
+
 각 항목은 아래 상태 중 하나로 기록한다.
 
 - `PASS`: 기대 결과와 일치
@@ -484,6 +599,20 @@ sap daemon status
 - daemon start 후 status가 running으로 표시된다.
 - daemon 경유 명령이 일반 CLI 명령과 같은 SAP 세션을 읽는다.
 - daemon stop 후 status가 stopped 또는 미실행 상태로 표시된다.
+- `~/.sap_cli/daemon.secret`에 해당하는 사용자 프로필의 secret 파일은 현재
+  Windows 사용자만 접근할 수 있는 ACL로 생성된다.
+- 서명되지 않았거나 변조·만료·재전송된 localhost 요청은 SAP dispatcher에
+  도달하기 전에 거부된다.
+
+보안 경계:
+
+- HMAC 인증은 다른 OS 사용자나 우발적인 localhost 클라이언트의 요청 위조를
+  막는다. 같은 Windows 사용자 권한으로 실행되는 악성 프로세스는 secret 파일을
+  읽을 수 있으므로 이 방식만으로는 차단할 수 없다.
+- 다중 사용자 단말이나 더 강한 격리가 필요한 운영 환경에서는 loopback TCP 대신
+  Windows named pipe와 사용자별 DACL을 적용하는 전송 계층을 권장한다.
+- `SAP_CLI_DAEMON_SECRET_FILE`로 경로를 바꿀 때도 공유 폴더나 다른 사용자가 쓸 수
+  있는 디렉터리는 사용하지 않는다.
 
 실패 시 확인 포인트:
 

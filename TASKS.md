@@ -1,5 +1,71 @@
 # SAP CLI 작업 이력
 
+## 2026-06-25: MCP 속도 개선 + UI action 자동 노출
+
+### 완료한 작업
+
+- MCP 단계별 지연 감소
+  - `SAP_CLI_MCP_SCREEN_SUMMARY` 기본값을 `0`으로 변경
+  - MCP -> daemon 호출 시 매번 선행 ping을 하지 않고, 우선 명령 전송 후 실패 시 daemon 자동 시작
+  - README의 Claude Code MCP env 예시를 fast mode 기준으로 갱신
+- SAP GUI Scripting action 노출 구조 개선
+  - `sap_cli/ui_action_catalog.py` 추가
+  - `COMPONENT_CAPABILITIES`에서 UI action 목록을 자동 수집
+  - 수집된 action을 dispatcher command, ReBAC permission map, MCP tool definition, CLI subcommand에 자동 연결
+  - 기존 `sap act ...`는 유지하고, `sap ui-set`, `sap ui-append-text`, `sap ui-scroll-to`, `sap ui-get-property`, `sap ui-call-method` 같은 개별 CLI 명령 추가
+  - MCP에는 `sap_ui_set`, `sap_ui_append_text`, `sap_ui_scroll_to`, `sap_ui_get_property`, `sap_ui_call_method` 등 `sap_ui_*` 도구 자동 노출
+- SAP GUI Scripting API PDF 기준 확인
+  - 기준 문서: `https://help.sap.com/doc/9215986e54174174854b0af6bb14305a/800.08/en-US/sap_gui_scripting_api.pdf`
+  - PDF의 모든 COM method를 개별 도구로 노출하지 않고, 저수준 method/property는 `call_method/get_property/set_property` 경로로 처리
+  - 사용자 동작 단위 action은 capability catalog에서 자동 노출하는 방향으로 정리
+
+### 현재 기준
+
+- 자동 생성 UI action: 47개
+- MCP tool surface: 126개
+- 전체 자동 테스트: `653 passed`
+- `git diff --check`: 통과
+- CLI help에서 `ui-append-text`, `ui-scroll-to`, `ui-get-property`, `ui-call-method` 노출 확인
+
+### Windows SAP GUI 실기 검증 필요
+
+1. MCP 설정에 fast mode env 적용
+
+```json
+{
+  "SAP_CLI_USE_DAEMON": "1",
+  "SAP_CLI_MCP_SCREEN_SUMMARY": "0",
+  "SAP_CLI_IDLE_WAIT_SECONDS": "0.3",
+  "SAP_CLI_POST_BUSY_SETTLE_SECONDS": "0.02"
+}
+```
+
+2. daemon 상태 확인
+
+```powershell
+sap daemon stop
+sap daemon start
+sap daemon status
+```
+
+3. 대표 action 실기 검증
+
+```powershell
+sap ui-set "wnd[0]/usr/ctxtRMMG1-MATNR" "100-100"
+sap ui-press "wnd[0]/tbar[0]/btn[0]"
+sap ui-get-property "wnd[0]/usr/ctxtRMMG1-MATNR" "Text"
+sap ui-call-method "<element_id>" "<method_name>" --args-json "[]"
+```
+
+4. MCP 대표 도구 검증
+   - `sap_ui_set`
+   - `sap_ui_append_text`
+   - `sap_ui_scroll_to`
+   - `sap_ui_get_property`
+   - `sap_ui_call_method`
+
+---
+
 ## 2026-05-09: 현재 계획 현행화
 
 ### 현재 기준
@@ -13,11 +79,11 @@
   - `sap recipe-version-up`
 - SAP GUI Scripting API graph 생성 CLI 추가 완료
   - `sap scripting-graph-build`
-- SAP GUI Scripting generated graph 실제 생성/검증 완료
+- SAP GUI Scripting strict official graph 실제 생성/검증 완료
   - output: `sap_cli/ontology/knowledge/scripting_api/graph.generated.json`
-  - generated nodes: 1550
-  - generated edges: 1507
-  - runtime merged graph: nodes 1567, edges 1548
+  - official nodes: 1410
+  - official edges: 1391
+  - coverage rows: 1410
   - `generated_overlay_loaded=true` 확인
 
 ### 현재 남은 실제 작업
@@ -26,10 +92,10 @@
    - `WINDOWS_SAP_VERIFICATION.md` 기준으로 실제 Windows + SAP GUI COM 환경에서 검증
    - 자동 테스트로 대체할 수 없는 `connect/screen/table/tree/capture/MCP/daemon/slot` 확인
 
-2. generated graph 품질 리뷰
-   - 생성 그래프는 `generated-review-required` 상태
-   - parser artifact로 보이는 node/event가 있는지 샘플 리뷰
-   - 필요 시 builder parser 보정
+2. API adapter Windows live conformance
+   - `GuiEnum.Clone/Next` ByRef/out VARIANT marshaling을 실제 pywin32에서 검증
+   - 네 `NewEnum`의 GuiEnum handle 반환과 후속 호출을 실제 SAP collection에서 검증
+   - fake COM contract 기준 `adapter_missing=0`, live 결과는 별도 기록
 
 3. ADT 온톨로지 통합 전제 조건 확인
    - `/sap/bc/adt` SICF 활성화 여부
@@ -46,12 +112,12 @@
 
 ```text
 sap scripting-graph-build \
-  https://help.sap.com/doc/9215986e54174174854b0af6bb14305a/800.08/en-US/sap_gui_scripting_api.pdf \
+  --version 800.08 \
   --out sap_cli/ontology/knowledge/scripting_api/graph.generated.json
 
 결과:
-- nodes: 1550
-- edges: 1507
+- nodes: 1410
+- edges: 1391
 - overlay_loaded_by_runtime: true
 
 검증:

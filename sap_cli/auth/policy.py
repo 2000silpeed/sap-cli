@@ -17,6 +17,8 @@ except ImportError:
 
 import json
 
+from sap_cli.ui_action_catalog import get_ui_action_defs
+
 
 class Permission(str, Enum):
     READ = "read"
@@ -44,6 +46,21 @@ TOOL_PERMISSION_MAP: dict[str, Permission] = {
     "sap_connections": Permission.READ,
     "sap_session": Permission.READ,
     "sap_screen": Permission.READ,
+    "sap_map_scan": Permission.READ,
+    "sap_map_list": Permission.READ,
+    "sap_map_search": Permission.READ,
+    "sap_map_path": Permission.READ,
+    "sap_map_report": Permission.READ,
+    "sap_map_job_status": Permission.READ,
+    "sap_map_job_cancel": Permission.WRITE,
+    "sap_map_augment_start": Permission.WRITE,
+    "sap_map_traverse_start": Permission.EXECUTE,
+    "sap_map_traverse_resume": Permission.EXECUTE,
+    "sap_plan_preview": Permission.READ,
+    "sap_plan_approve": Permission.ADMIN,
+    "sap_plan_execute": Permission.WRITE,
+    "sap_job_status": Permission.READ,
+    "sap_job_reconcile": Permission.ADMIN,
     "sap_inspect_element": Permission.READ,
     "sap_scripting_query": Permission.READ,
     "sap_combo_entries": Permission.READ,
@@ -58,6 +75,8 @@ TOOL_PERMISSION_MAP: dict[str, Permission] = {
     "sap_send_vkey": Permission.EXECUTE,
     "sap_command": Permission.EXECUTE,
     "sap_ui_action": Permission.WRITE,
+    "sap_api_object_action": Permission.ADMIN,
+    "sap_api_live_probe": Permission.ADMIN,
     "sap_set_field": Permission.WRITE,
     "sap_fill_fields": Permission.WRITE,
     "sap_learn": Permission.ADMIN,
@@ -119,7 +138,18 @@ TOOL_PERMISSION_MAP: dict[str, Permission] = {
     "sap_session_pool": Permission.READ,
     "sap_session_allocate": Permission.ADMIN,
     "sap_session_release": Permission.ADMIN,
+    "sap_event_subscribe": Permission.ADMIN,
+    "sap_event_poll": Permission.ADMIN,
+    "sap_event_unsubscribe": Permission.ADMIN,
+    "sap_event_list": Permission.ADMIN,
 }
+
+TOOL_PERMISSION_MAP.update(
+    {
+        definition.tool_name: Permission(definition.permission)
+        for definition in get_ui_action_defs()
+    }
+)
 
 
 class RelationBinding(BaseModel):

@@ -7,14 +7,33 @@ based tests.
 
 from __future__ import annotations
 
+import copy
+import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
-from ..macro.player import MacroPlayer
+from ..auth.preflight import preflight_tool_call
+from ..macro.compiler import MacroCompileError, compile_macro
+from ..macro.schema import MacroStepResult
 
 Factory = Callable[..., Any]
 PostActionHook = Callable[[dict[str, Any], Any, str, Any], dict[str, Any]]
+
+
+def _redact_values(value: Any, secrets: tuple[str, ...]) -> Any:
+    if isinstance(value, str):
+        for secret in secrets:
+            if secret:
+                value = value.replace(secret, "<redacted>")
+        return value
+    if isinstance(value, dict):
+        return {key: _redact_values(item, secrets) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_values(item, secrets) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_values(item, secrets) for item in value)
+    return value
 
 
 MACRO_COMMANDS: frozenset[str] = frozenset(
@@ -42,12 +61,22 @@ def dispatch_macro_command(
     get_macro_store: Factory,
     get_sap: Factory,
     with_post_action: PostActionHook,
+    dispatch_step: Factory | None = None,
+    policy: Any = None,
 ) -> dict[str, Any]:
     """Dispatch a macro command with facade-provided compatibility hooks."""
     if command == "macro_control":
         return dispatch_macro_control(args, get_recorder, get_macro_store)
     if command == "macro_play":
-        return dispatch_macro_play(args, ctx, get_macro_store, get_sap, with_post_action)
+        return dispatch_macro_play(
+            args,
+            ctx,
+            get_macro_store,
+            get_sap,
+            with_post_action,
+            dispatch_step=dispatch_step,
+            policy=policy,
+        )
     if command == "macro_list":
         return dispatch_macro_list(args, get_macro_store)
     if command == "macro_show":
@@ -131,8 +160,11 @@ def dispatch_macro_play(
     get_macro_store: Factory,
     get_sap: Factory,
     with_post_action: PostActionHook,
+    *,
+    dispatch_step: Factory | None = None,
+    policy: Any = None,
 ) -> dict[str, Any]:
-    """Play or dry-run a saved macro."""
+    """Compile every macro step, preflight all, then use central dispatch."""
     store = get_macro_store()
     macro_ref = str(args["macro_id"])
     macro = store.resolve(macro_ref)
@@ -140,13 +172,152 @@ def dispatch_macro_play(
         raise ValueError(f"매크로 '{macro_ref}'를 찾을 수 없습니다. macro-list로 ID/이름을 확인하세요.")
 
     variables = args.get("variables", {}) or {}
-    sap = get_sap(ctx.slot_id)
-    player = MacroPlayer(sap)
+    try:
+        compiled = compile_macro(macro, variables)
+    except MacroCompileError as exc:
+        return {
+            "macro_id": macro.id,
+            "macro_name": macro.name,
+            "success": False,
+            "stage": "compile",
+            "error": str(exc),
+            "completed_steps": 0,
+            "total_steps": len(macro.steps),
+        }
 
+    decisions = []
+    for step in compiled.steps:
+        decision = preflight_tool_call(
+            step.tool,
+            step.reveal_params(),
+            policy=policy,
+            agent_name=getattr(ctx, "agent_name", None),
+            enforce_auth=bool(getattr(ctx, "enforce_auth", True)),
+        )
+        decisions.append((step, decision))
+    blocked = [
+        {
+            "step_id": step.step_id,
+            "allowed": decision.allowed,
+            "approval_required": bool(
+                decision.approval_required or step.approval_required
+            ),
+            "risk": decision.risk_metadata,
+        }
+        for step, decision in decisions
+        if not decision.allowed
+        or decision.approval_required
+        or step.approval_required
+    ]
+    if blocked:
+        return {
+            "macro_id": macro.id,
+            "macro_name": macro.name,
+            "success": False,
+            "stage": "preflight",
+            "blocked_steps": blocked,
+            "completed_steps": 0,
+            "total_steps": len(macro.steps),
+        }
+
+    safe_variables = {
+        name: variable.model_dump(mode="json")
+        for name, variable in compiled.variables.items()
+    }
     if args.get("dry_run"):
-        return player.dry_run(macro, variables).model_dump(mode="json")
+        return {
+            "macro_id": macro.id,
+            "macro_name": macro.name,
+            "success": True,
+            "dry_run": True,
+            "variables_used": safe_variables,
+            "compiled_steps": [
+                step.model_dump(mode="json") for step in compiled.steps
+            ],
+            "total_steps": len(macro.steps),
+            "completed_steps": 0,
+        }
+    if dispatch_step is None:
+        raise RuntimeError("macro execution requires the central dispatcher callback")
 
-    payload = player.play(macro, variables).model_dump(mode="json")
+    started_at = datetime.now().isoformat()
+    child_ctx = copy.copy(ctx)
+    child_ctx.tool_name = None
+    child_ctx.include_post_action_context = False
+    child_ctx.include_screen_summary = False
+    step_results: list[dict[str, Any]] = []
+    for step in compiled.steps:
+        child_ctx.sensitive_values = tuple(step.sensitive_values)
+        try:
+            result = dispatch_step(
+                step.command,
+                step.reveal_params(),
+                child_ctx,
+            )
+            status = dispatch_step("status", {}, child_ctx)
+            status_type = str(status.get("type", "S"))
+            if status_type.upper() in {"E", "A"}:
+                raise RuntimeError("SAP status indicates error or abort")
+            actual_screen = 0
+            if step.expected_screen is not None:
+                session = dispatch_step("session", {}, child_ctx)
+                actual_screen = int(session.get("screen_number", 0) or 0)
+                if actual_screen != step.expected_screen:
+                    raise RuntimeError("macro expected_screen mismatch")
+            step_results.append(
+                {
+                    **MacroStepResult(
+                        step_number=step.macro_step_number,
+                        success=True,
+                        actual_screen=actual_screen,
+                        status_message=str(status.get("message", "")),
+                        status_type=status_type,
+                    ).model_dump(mode="json"),
+                    "step_id": step.step_id,
+                    "command": step.command,
+                    "result": _redact_values(result, step.sensitive_values),
+                }
+            )
+        except Exception:
+            step_results.append(
+                {
+                    **MacroStepResult(
+                        step_number=step.macro_step_number,
+                        success=False,
+                        error="macro step dispatch failed",
+                    ).model_dump(mode="json"),
+                    "step_id": step.step_id,
+                    "command": step.command,
+                }
+            )
+            return {
+                "macro_id": macro.id,
+                "macro_name": macro.name,
+                "success": False,
+                "stage": "execute",
+                "variables_used": safe_variables,
+                "step_results": step_results,
+                "total_steps": len(macro.steps),
+                "completed_steps": sum(item["success"] for item in step_results),
+                "error_step": step.macro_step_number,
+                "started_at": started_at,
+                "finished_at": datetime.now().isoformat(),
+            }
+        if step.wait_after > 0:
+            time.sleep(step.wait_after)
+
+    sap = get_sap(ctx.slot_id)
+    payload = {
+        "macro_id": macro.id,
+        "macro_name": macro.name,
+        "success": True,
+        "variables_used": safe_variables,
+        "step_results": step_results,
+        "total_steps": len(macro.steps),
+        "completed_steps": len([step for step in compiled.steps if not step.synthetic]),
+        "started_at": started_at,
+        "finished_at": datetime.now().isoformat(),
+    }
     return with_post_action(payload, sap, "macro_play", ctx)
 
 
