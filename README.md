@@ -18,6 +18,7 @@ SOS(Study Ontology System)의 온톨로지 사상을 적용하여, 단순 스크
    - 4.10 [트리 컨트롤 (SPRO 등)](#410-트리-컨트롤-spro-등)
    - 4.11 [AI 네비게이션 레시피](#411-ai-네비게이션-레시피)
    - 4.14 [온톨로지 Q&A (시맨틱 검색)](#414-온톨로지-qa-시맨틱-검색)
+   - 4.15 [UI 지도 생성과 지도 기반 계획 실행](#415-ui-지도-생성과-지도-기반-계획-실행)
 5. [매크로 녹화/재생](#5-매크로-녹화재생)
 6. [온톨로지 시스템](#6-온톨로지-시스템)
    - 6.4 [스크린샷 캡처](#64-스크린샷-캡처-사용자-설명서-제작)
@@ -615,6 +616,116 @@ sap_process_path(from_tcode="MM01", to_tcode="MIRO")
 ```
 
 > 온톨로지 Q&A는 SAP 연결 없이도 동작합니다 — 저장된 온톨로지 JSON에서 직접 답변을 생성합니다.
+
+### 4.15 UI 지도 생성과 지도 기반 계획 실행
+
+이 기능은 한 번 수집한 화면 구조를 버전이 있는 UI 지도로 보관하고, 이후 자연어
+요청을 그 지도에서 실행 계획으로 먼저 확정한 뒤 한 번에 실행합니다. 실행 단계마다
+`sap screen`으로 화면 전체를 다시 읽지 않습니다. daemon이 유지한 SAP GUI 연결로
+TCode·상태바·모달·대상 요소의 가시성만 가볍게 확인합니다.
+
+지도는 SAP 시스템, client, 언어, TCode별로 분리됩니다. 다른 시스템이나 언어에서
+만든 지도를 재사용하지 않으며, 지도 버전이나 fingerprint가 바뀌면 기존 계획은
+실행 전에 폐기됩니다.
+
+#### 1) daemon과 SAP 세션 준비
+
+SAP GUI에 로그인한 뒤 daemon을 한 번만 시작합니다. 이후 지도 수집과 계획 실행은
+각 단계마다 Python 프로세스나 COM 연결을 새로 만들지 않고 이 daemon을 사용합니다.
+
+```powershell
+sap daemon start
+sap connect
+sap session
+```
+
+#### 2) TCode의 기준 화면 수집
+
+가장 안전한 시작은 `passive` 모드입니다. 해당 TCode를 열고 현재 화면의 필드,
+탭, 버튼, 툴바, 테이블/ALV, 트리, 콤보박스 같은 구조 정보를 값 없이 수집합니다.
+`map-id`는 같은 업무 화면군에서 계속 사용할 이름입니다.
+
+```powershell
+sap map-traverse-start MM03 --map-id mm03-readonly --mode passive
+sap map-job-status <job-id>
+sap map-report mm03-readonly MM03
+```
+
+`passive`는 현재 상태 하나를 안전하게 기록합니다. 탭 전환·트리 확장처럼 되돌릴 수
+있는 화면 이동까지 자동 수집하려면 반드시 테스트 client에서만 `reversible` 모드를
+사용하고, state 수·깊이·시간 한도를 함께 둡니다.
+
+```powershell
+sap map-traverse-start MM03 --map-id mm03-readonly --mode reversible --test-client-confirmed --budget-json '{"max_states":100,"max_depth":5,"max_seconds":300}'
+sap map-job-status <job-id>
+sap map-report mm03-readonly MM03
+```
+
+버튼, 메뉴, 툴바/ALV 항목을 눌러 다음 화면으로 가는 분기는 자동으로 추측하지
+않습니다. `save`, `post`, `delete`, `release`, `send`, `print` 같은 변경·외부 전송
+동작은 어떤 모드에서도 지도 수집 대상으로 허용되지 않습니다. 조회성 분기만 정확한
+source state, logical ID, SAP ID, control type, 복귀 VKey를 지정해 `allowlisted`
+모드로 추가합니다. 전체 규칙 예시는 [Windows 검증 가이드](WINDOWS_SAP_VERIFICATION.md)에 있습니다.
+
+#### 3) 누락 화면을 사용자와 함께 지도에 보강
+
+지도 수집 job이 `needs_user_input`으로 멈추면 결과의 `resume_token`, `choices`를
+확인합니다. 사용자가 SAP GUI에서 누락 화면으로 직접 이동한 뒤, 다음 명령으로 그
+상태를 추가합니다. 값은 넘기지 않고 `continue`와 선택한 구조적 전이만 저장하므로
+업무 데이터가 지도에 남지 않습니다.
+
+```powershell
+sap map-augment-start mm03-readonly MM03 <from-state-id> "분류 탭의 조회 화면"
+sap map-job-status <job-id>
+sap map-traverse-resume <job-id> '{"<resume-token>":{"continue":true,"transition":{"action":"press","target_logical_id":"<choice의 logical id>"}}}'
+sap map-report mm03-readonly MM03
+```
+
+이 과정을 반복하면 지도의 `states`, `transitions`, 미해결 화면(`unreachable`),
+사용자 확인 대기 항목을 `map-report`에서 확인할 수 있습니다. 모든 화면을 무작정
+순회하는 대신, 안전하게 확인된 경로와 사용자가 가르친 경로만 늘어납니다.
+
+#### 4) 자연어 요청을 실행 전 계획으로 변환
+
+지도 수집이 끝난 뒤에는 자연어 요청과 필요한 업무값을 `plan-preview`로 보냅니다.
+이 명령은 SAP를 조작하지 않고 저장된 지도와 레시피에서 전체 step, 변수, 필요한
+승인, 지도 버전/fingerprint를 확정합니다. `validation.valid`가 `true`이고
+`plan_ref`가 있어야 실행할 수 있습니다.
+
+```powershell
+$preview = sap plan-preview "MM03에서 자재 기본 데이터를 조회해줘" --tcode MM03 --map-id mm03-readonly --goal "기본 데이터" --values-json '{"material":"TEST_MATNR"}' | ConvertFrom-Json
+$preview.validation
+$preview.plan.steps
+$preview.plan_ref
+```
+
+지도에 목표 필드나 필요한 전이가 없다면 계획은 실행하지 않고 `map_missing`,
+`goal_not_found`, `needs_user_input` 같은 오류 또는 질문을 반환합니다. 이때 3단계로
+돌아가 지도를 보강한 뒤 새 계획을 만듭니다.
+
+#### 5) 승인 후 확정 계획을 한 번에 실행
+
+조회성 계획은 `plan_ref`의 ID와 hash, 새 `execution_id`만으로 실행합니다. 동일한
+`execution_id`를 다시 보내면 중복 SAP 조작 대신 이전 결과를 돌려줍니다.
+
+```powershell
+$executionId = [guid]::NewGuid().ToString()
+sap plan-execute $preview.plan_ref.plan_id $preview.plan_ref.plan_hash $executionId --verify cheap
+```
+
+변경, 저장, 전표 생성, 승인, 외부 전송이 포함된 계획은 미리보기 결과의
+`required_approvals`에 있는 step만 관리자가 승인해야 합니다. 승인 토큰은 특정
+계획 hash와 실행 agent에 묶인 일회용 값입니다.
+
+```powershell
+$approval = sap plan-approve $preview.plan_ref.plan_id $preview.plan_ref.plan_hash <실행-agent> '["<승인할 step-id>"]' | ConvertFrom-Json
+sap plan-execute $preview.plan_ref.plan_id $preview.plan_ref.plan_hash $executionId --verify cheap --approval-token $approval.approval_token
+```
+
+기본값 `--verify cheap`은 전체 화면 스캔을 하지 않는 빠른 실행 경로입니다. locator가
+달라지거나 지도 scope가 맞지 않으면 실패하고 새 미리보기 또는 지도 보강을 요구합니다.
+`--verify full`은 마지막 검증을 위해 화면을 다시 읽을 수 있으므로, 조사·검증 목적에만
+사용합니다.
 
 ---
 
