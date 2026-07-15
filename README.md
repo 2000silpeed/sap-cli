@@ -4,7 +4,23 @@ SAP GUI Scripting API를 CLI/MCP로 래핑하여, AI 에이전트가 SAP 시스�
 
 SOS(Study Ontology System)의 온톨로지 사상을 적용하여, 단순 스크립트 실행이 아닌 **SAP 도메인을 이해하는 AI**를 구축한다.
 
-인터랙티브 개요 문서는 [sap-cli-interactive-guide.html](./sap-cli-interactive-guide.html)에서 바로 볼 수 있다.
+인터랙티브 지도·계획·실행 가이드는 [sap-cli-interactive-guide.html](./sap-cli-interactive-guide.html)에서 바로 볼 수 있다.
+
+## AI로 시작하는 10분 퀵스타트
+
+SAP 업무는 익숙하지만 스크립팅이 처음이라면 명령어를 외울 필요가 없습니다. SAP GUI가
+로그인된 Windows PC에서 SAP CLI에 연결된 AI에게 아래 순서대로 요청하면 됩니다. 작업은
+반드시 테스트 client의 조회성 TCode부터 시작하세요.
+
+1. 지도 만들기: “`MM03` 조회 화면의 지도를 만들어줘. 저장·변경 동작은 하지 말고,
+   화면 선택이 필요하면 나에게 물어봐.”
+2. 계획 검토: “만든 지도에서 자재 기본 데이터를 조회하는 계획을 보여줘. 아직 실행하지
+   마.”
+3. 실행: 단계와 입력값을 확인한 뒤 “방금 승인한 계획 그대로 실행해줘.”라고 요청합니다.
+
+지도에 없는 화면이 나오면 AI가 멈춰서 현재 화면으로 이동해 달라고 묻습니다. 사용자가
+이동을 마치면 AI가 그 화면과 경로를 지도에 덧붙입니다. 전체 안내와 바로 쓸 수 있는
+요청문은 [AI 초보자용 지도·계획·실행 가이드](AI_MAP_PLANNING_BEGINNER_GUIDE.md)에 있습니다.
 
 ---
 
