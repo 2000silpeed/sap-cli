@@ -545,6 +545,19 @@ def map_report(
     _run_command("map_report", locals(), allow_daemon=True)
 
 
+@app.command("map-view")
+def map_view(
+    map_id: str = typer.Argument(),
+    tcode: str = typer.Argument(),
+    system_id: str = typer.Option("", "--system"),
+    client: str = typer.Option("", "--client"),
+    language: str = typer.Option("", "--language"),
+    version: int | None = typer.Option(None, "--version", min=1),
+) -> None:
+    """화면과 다음 화면 연결을 구조화된 그래프 뷰로 출력."""
+    _run_command("map_view", locals(), allow_daemon=True)
+
+
 @app.command("map-job-cancel")
 def map_job_cancel(job_id: str = typer.Argument()) -> None:
     """대기 또는 실행 중인 지도 생성 job을 취소."""

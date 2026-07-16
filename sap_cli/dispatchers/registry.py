@@ -45,6 +45,9 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "map_report": CommandDef(
         "sap_map_report", Permission.READ, category="ui_map", risk_level="low"
     ),
+    "map_view": CommandDef(
+        "sap_map_view", Permission.READ, category="ui_map", risk_level="low"
+    ),
     "map_job_status": CommandDef(
         "sap_map_job_status", Permission.READ, category="ui_map", risk_level="low"
     ),

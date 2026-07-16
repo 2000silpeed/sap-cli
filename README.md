@@ -674,6 +674,19 @@ sap map-job-status <job-id>
 sap map-report mm03-readonly MM03
 ```
 
+#### 저장된 화면 연결 지도 보기
+
+화면 노드와 다음 화면으로 이동하는 연결을 읽기 쉬운 outline과 Mermaid 그래프로
+확인하려면 다음 명령을 사용합니다. 업무값과 관찰 파라미터는 출력하지 않습니다.
+
+```powershell
+sap map-view mm03-readonly MM03
+```
+
+MCP에서는 `sap_map_view`를 호출하면 같은 구조를 받습니다. 응답의 `mermaid`는
+대화형 AI 화면에서 그대로 그래프로 렌더링할 수 있고, `outline`은 화면별 다음 경로를
+텍스트로 확인할 때 사용합니다.
+
 `passive` 다음에는 테스트 client에서 `guided` 모드를 권장합니다. 이 모드는 안전하게
 되돌릴 수 있는 탭·트리·스크롤 후보를 목록으로 보여 주고, 사용자가 고른 하나만 실행해
 다음 화면을 지도에 추가합니다. 선택 값은 업무 데이터가 아니라 구조적 candidate ID뿐이며,

@@ -5,6 +5,7 @@ from .fingerprint import compute_map_fingerprint
 from .cache import CachedUiMapStore
 from .jobs import JobStatus, MapJobRecord, MapJobStore
 from .search import ComponentPath, SearchResult, UiMapSearch, search_map
+from .view import map_view
 from .scheduler import UiMapScheduler
 from .schema import (
     ApiCoverageManifest,
@@ -89,4 +90,5 @@ __all__ = [
     "modal_window_signature",
     "structural_fingerprint",
     "search_map",
+    "map_view",
 ]

@@ -164,6 +164,15 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         }, "required": ["map_id", "tcode"]},
     },
     {
+        "name": "sap_map_view",
+        "description": "저장된 UI 지도를 화면 노드와 다음 화면 연결선으로 읽기 쉽게 반환합니다. 업무값·관찰 파라미터 없이 outline, connection 목록과 Mermaid 그래프를 제공합니다.",
+        "inputSchema": {"type": "object", "properties": {
+            "map_id": {"type": "string"}, "tcode": {"type": "string"},
+            "system_id": {"type": "string"}, "client": {"type": "string"},
+            "language": {"type": "string"}, "version": {"type": "integer", "minimum": 1}
+        }, "required": ["map_id", "tcode"]},
+    },
+    {
         "name": "sap_map_job_cancel",
         "description": "지도 생성 job을 취소합니다.",
         "inputSchema": {"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]},
@@ -1697,6 +1706,7 @@ COMPACT_TOOL_NAMES = frozenset(
         "sap_map_list",
         "sap_map_search",
         "sap_map_report",
+        "sap_map_view",
         "sap_map_job_cancel",
         "sap_map_augment_start",
         "sap_map_traverse_start",

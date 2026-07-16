@@ -10,6 +10,7 @@ from sap_cli.ui_map.jobs import MapJobRecord, MapJobStore
 from sap_cli.ui_map.search import UiMapSearch
 from sap_cli.ui_map.store import UiMapStore
 from sap_cli.ui_map.fingerprint import compute_map_fingerprint
+from sap_cli.ui_map.view import map_view
 
 
 UI_MAP_COMMANDS = frozenset(
@@ -18,6 +19,7 @@ UI_MAP_COMMANDS = frozenset(
         "map_search",
         "map_path",
         "map_report",
+        "map_view",
         "map_job_status",
         "map_job_cancel",
         "map_augment_start",
@@ -93,6 +95,9 @@ def dispatch_ui_map_command(
 
     if command == "map_report":
         return _structural_report(_load_map(map_store, args))
+
+    if command == "map_view":
+        return map_view(_load_map(map_store, args))
 
     if command == "map_job_status":
         job_id = str(args.get("job_id", "")).strip()

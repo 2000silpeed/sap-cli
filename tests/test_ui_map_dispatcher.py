@@ -113,6 +113,22 @@ def test_list_search_and_path_return_safe_summaries(stores):
     assert report["coverage_gate"]["manifest_completeness"] == 0.0
     assert "DO-NOT-RETURN" not in str(report)
 
+    view = call("map_view", scope(), stores)
+    assert view["summary"] == {
+        "states": 2,
+        "connections": 1,
+        "unresolved_connections": 0,
+        "pending_interactions": 0,
+    }
+    assert view["outline"][0]["next"][0] == {
+        "action": "select_tab",
+        "target_logical_id": "details",
+        "to_node_id": "S2",
+        "status": "connected",
+    }
+    assert "S1 -->|select_tab · details| S2" in view["mermaid"]
+    assert "DO-NOT-RETURN" not in str(view)
+
 
 def test_report_counts_pending_actionable_and_partial_collection_gaps(tmp_path):
     maps = UiMapStore(tmp_path / "maps")
