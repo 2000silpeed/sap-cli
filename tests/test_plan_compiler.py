@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from sap_cli.planning.compiler import PlanCompiler
 from sap_cli.planning.schema import NaturalLanguageRequest
+from sap_cli.ui_map.fingerprint import compute_map_fingerprint
 from sap_cli.ui_map.schema import (
     CollectionColumn,
     CollectionDescriptor,
@@ -12,6 +13,7 @@ from sap_cli.ui_map.schema import (
     UiComponent,
     UiMap,
     UiState,
+    UserInputRequest,
 )
 from sap_cli.ui_map.store import UiMapStore
 
@@ -188,6 +190,195 @@ def test_compiles_korean_request_from_saved_map_without_live_scan(tmp_path):
     assert result.plan.steps[1].params["value"] == "${material}"
     assert result.plan.steps[2].map_transition_id == "to-basic"
     assert result.plan.scan_policy == "fast"
+
+
+def test_compiler_loads_a_graph_slice_but_keeps_full_snapshot_fingerprint(tmp_path):
+    """Planning must not silently weaken the executor's map dependency."""
+
+    store, saved = saved_map(tmp_path)
+    full = saved.model_copy(deep=True)
+    full.states["unrelated"] = UiState(
+        state_id="unrelated",
+        tcode="MM03",
+        title="Unrelated large branch",
+        components=[
+            UiComponent(
+                logical_id="unrelated-control",
+                sap_id="wnd[0]/usr/btnUNRELATED",
+                type="GuiButton",
+                text="Unrelated",
+            )
+        ],
+    )
+    saved = store.save(full)
+    slice_map = UiMap(
+        manifest=saved.manifest.model_copy(deep=True),
+        states={
+            state_id: saved.states[state_id].model_copy(deep=True)
+            for state_id in ("start", "detail")
+        },
+        transitions=[item.model_copy(deep=True) for item in saved.transitions],
+    )
+    full_fingerprint = compute_map_fingerprint(saved)
+
+    class LazyStore:
+        def __init__(self):
+            self.slice_calls = []
+
+        def list_latest_heads(self, **filters):
+            assert filters == {"tcode": "MM03", "system_id": "DEV", "client": "100"}
+            return [
+                {
+                    "version": saved.manifest.map_version,
+                    "content_fingerprint": full_fingerprint,
+                    "scope": {
+                        "map_id": saved.manifest.map_id,
+                        "tcode": "MM03",
+                        "system_id": "DEV",
+                        "client": "100",
+                        "language": "KO",
+                    },
+                }
+            ]
+
+        def load_graph_slice(self, map_id, version, **kwargs):
+            self.slice_calls.append((map_id, version, kwargs))
+            return slice_map.model_copy(deep=True)
+
+        def list_latest(self, **_kwargs):
+            raise AssertionError("the full map must not be loaded for planning")
+
+        @staticmethod
+        def stale_reasons(*_args, **_kwargs):
+            return {}
+
+    lazy_store = LazyStore()
+    result = PlanCompiler(lazy_store).compile(
+        NaturalLanguageRequest(
+            text="티코드 MM03에서 자재번호 'MAT-100'의 기본 데이터 조회",
+            system_id="DEV",
+            client="100",
+        ),
+        goal_query="기본 데이터",
+    )
+
+    assert result.validation.valid
+    assert result.plan is not None
+    assert result.plan.map_fingerprint == full_fingerprint
+    assert result.plan.map_fingerprint != compute_map_fingerprint(slice_map)
+    assert all(step.map_fingerprint == full_fingerprint for step in result.plan.steps)
+    assert lazy_store.slice_calls == [
+        (
+            saved.manifest.map_id,
+            saved.manifest.map_version,
+            {
+                "tcode": "MM03",
+                "system_id": "DEV",
+                "client": "100",
+                "language": "KO",
+                "start_state_id": "",
+                "goal_query": "기본 데이터",
+                "operation": "display",
+            },
+        )
+    ]
+
+
+def test_compiler_widens_a_partial_graph_slice_before_returning_goal_ambiguous(
+    tmp_path, monkeypatch
+):
+    """A deep ALV column is not indexed as component text in the graph index."""
+
+    states: dict[str, UiState] = {}
+    transitions: list[Transition] = []
+    for index in range(15):
+        state_id = f"state-{index:02d}"
+        components = []
+        collections = []
+        if index < 14:
+            components.append(
+                UiComponent(
+                    logical_id=f"next-{index:02d}",
+                    sap_id=f"wnd[0]/usr/btnNEXT_{index:02d}",
+                    type="GuiButton",
+                    text="다음",
+                )
+            )
+            transitions.append(
+                Transition(
+                    transition_id=f"next-{index:02d}",
+                    from_state_id=state_id,
+                    to_state_id=f"state-{index + 1:02d}",
+                    action="press",
+                    target_logical_id=f"next-{index:02d}",
+                    target_locator={
+                        "sap_id": f"wnd[0]/usr/btnNEXT_{index:02d}",
+                        "component_type": "GuiButton",
+                    },
+                    side_effect=SideEffectClass.REVERSIBLE,
+                    reversible=True,
+                )
+            )
+        else:
+            components.append(
+                UiComponent(
+                    logical_id="result-grid",
+                    sap_id="wnd[0]/usr/cntlRESULT/shellcont/shell",
+                    type="GuiGridView",
+                    role="collection",
+                )
+            )
+            collections.append(
+                CollectionDescriptor(
+                    component_logical_id="result-grid",
+                    kind="alv",
+                    columns=[CollectionColumn(id="QTY", title="재고 수량", position=0)],
+                )
+            )
+        states[state_id] = UiState(
+            state_id=state_id,
+            tcode="MM03",
+            program="SAPLDEEP",
+            screen_number=100 + index,
+            components=components,
+            collections=collections,
+        )
+    store = UiMapStore(tmp_path)
+    saved = store.save(
+        UiMap(
+            manifest=MapManifest(
+                map_id="DEV-100-MM03-DEEP",
+                tcode="MM03",
+                system_id="DEV",
+                client="100",
+                language="KO",
+            ),
+            states=states,
+            transitions=transitions,
+        )
+    )
+    monkeypatch.setattr(
+        store,
+        "_load_version",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("planner must widen graph slices, not load the snapshot")
+        ),
+    )
+
+    result = PlanCompiler(store).compile(
+        NaturalLanguageRequest(
+            text="티코드 MM03에서 재고 수량 조회",
+            system_id="DEV",
+            client="100",
+        ),
+        goal_query="재고 수량",
+    )
+
+    assert result.validation.valid
+    assert result.plan is not None
+    assert result.plan.goal_state_id == "state-14"
+    assert [step.command for step in result.plan.steps][-1] == "ui_read_table"
+    assert result.plan.map_version == saved.manifest.map_version
 
 
 def test_current_state_omits_tcode_navigation_step(tmp_path):
@@ -453,6 +644,33 @@ def test_missing_tcode_map_and_stale_map_are_explicit(tmp_path):
         runtime_versions={"api_version": "800.09"},
     )
     assert stale.validation.errors == ["saved_map_is_stale"]
+
+
+def test_planning_refuses_a_map_that_is_waiting_for_mapping_input(tmp_path):
+    store, _ = saved_map(tmp_path)
+    partial = store.latest(
+        "DEV-100-MM03",
+        tcode="MM03",
+        system_id="DEV",
+        client="100",
+        language="KO",
+    )
+    partial.pending_interactions.append(
+        UserInputRequest(
+            question="다음 지도 확장 후보를 선택해 주세요.",
+            current_state_id=next(iter(partial.states)),
+            reason="guided_candidate_selection",
+            resume_token="guided-pending",
+        )
+    )
+    store.save(partial)
+
+    result = PlanCompiler(store).compile(
+        "tcode MM03 기본 데이터 조회", goal_query="기본 데이터"
+    )
+
+    assert result.plan is None
+    assert result.validation.errors == ["map_build_incomplete"]
 
 
 def test_ambiguous_operation_is_hitl_and_explicit_success_criteria_are_kept(tmp_path):
@@ -729,3 +947,150 @@ def test_only_verified_recipes_are_attached_to_plan(tmp_path):
 
     assert result.plan is not None
     assert result.plan.recipe_ids == ["verified"]
+
+
+def test_natural_goal_phrase_falls_back_only_to_a_unique_saved_target(tmp_path):
+    store = UiMapStore(tmp_path)
+    store.save(
+        UiMap(
+            manifest=MapManifest(map_id="phrase", tcode="ZPHRASE"),
+            states={
+                "start": UiState(
+                    state_id="start",
+                    tcode="ZPHRASE",
+                    components=[
+                        UiComponent(
+                            logical_id="open-details",
+                            sap_id="wnd[0]/usr/btnDETAIL",
+                            type="GuiButton",
+                            text="상세 보기",
+                        )
+                    ],
+                ),
+                "detail": UiState(
+                    state_id="detail",
+                    tcode="ZPHRASE",
+                    components=[
+                        UiComponent(
+                            logical_id="basic-data",
+                            sap_id="wnd[0]/usr/txtBASIC",
+                            type="GuiLabel",
+                            text="기본 데이터",
+                        )
+                    ],
+                ),
+            },
+            transitions=[
+                Transition(
+                    transition_id="open-details",
+                    from_state_id="start",
+                    to_state_id="detail",
+                    action="press",
+                    target_logical_id="open-details",
+                    target_locator={"sap_id": "wnd[0]/usr/btnDETAIL"},
+                )
+            ],
+        )
+    )
+
+    result = PlanCompiler(store).compile("tcode ZPHRASE 자재 기본 데이터 조회")
+
+    assert result.validation.valid
+    assert result.plan is not None
+    assert result.plan.goal_state_id == "detail"
+    assert result.plan.goal_component_id == "basic-data"
+
+
+def test_ambiguous_goal_returns_saved_structural_choices(tmp_path):
+    store = UiMapStore(tmp_path)
+    store.save(
+        UiMap(
+            manifest=MapManifest(map_id="choices", tcode="ZCHOICE"),
+            states={
+                "start": UiState(
+                    state_id="start",
+                    tcode="ZCHOICE",
+                    components=[
+                        UiComponent(
+                            logical_id="open-a",
+                            sap_id="wnd[0]/usr/btnA",
+                            type="GuiButton",
+                            text="A 열기",
+                        ),
+                        UiComponent(
+                            logical_id="open-b",
+                            sap_id="wnd[0]/usr/btnB",
+                            type="GuiButton",
+                            text="B 열기",
+                        ),
+                    ],
+                ),
+                "a": UiState(
+                    state_id="a",
+                    tcode="ZCHOICE",
+                    components=[
+                        UiComponent(
+                            logical_id="basic-data-a",
+                            sap_id="wnd[0]/usr/txtA",
+                            type="GuiLabel",
+                            text="기본 데이터",
+                        )
+                    ],
+                ),
+                "b": UiState(
+                    state_id="b",
+                    tcode="ZCHOICE",
+                    components=[
+                        UiComponent(
+                            logical_id="basic-data-b",
+                            sap_id="wnd[0]/usr/txtB",
+                            type="GuiLabel",
+                            text="기본 데이터",
+                        )
+                    ],
+                ),
+            },
+            transitions=[
+                Transition(
+                    transition_id="to-a",
+                    from_state_id="start",
+                    to_state_id="a",
+                    action="press",
+                    target_logical_id="open-a",
+                ),
+                Transition(
+                    transition_id="to-b",
+                    from_state_id="start",
+                    to_state_id="b",
+                    action="press",
+                    target_logical_id="open-b",
+                ),
+            ],
+        )
+    )
+
+    result = PlanCompiler(store).compile("tcode ZCHOICE 자재 기본 데이터 조회")
+
+    assert result.plan is None
+    assert result.validation.errors == ["goal_ambiguous"]
+    question = result.validation.questions[0]
+    assert question["code"] == "goal_ambiguous"
+    assert {item["use_goal_query"] for item in question["choices"]} >= {
+        "basic-data-a",
+        "basic-data-b",
+    }
+
+    # An explicit goal can reveal the tie immediately; do not widen the graph
+    # or return generic controls before asking the user to select one.
+    explicit = PlanCompiler(store).compile(
+        "tcode ZCHOICE 기본 데이터 조회", goal_query="기본 데이터"
+    )
+
+    assert explicit.plan is None
+    assert explicit.validation.errors == ["goal_selection_required"]
+    explicit_question = explicit.validation.questions[0]
+    assert explicit_question["code"] == "goal_selection_required"
+    assert {item["use_goal_query"] for item in explicit_question["choices"]} == {
+        "basic-data-a",
+        "basic-data-b",
+    }

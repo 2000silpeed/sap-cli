@@ -384,6 +384,22 @@ def test_plan_execute_is_idempotent_and_cheap_path_never_scans(tmp_path):
                 "Recipes", (), {"query_for_ai": lambda *a, **k: []}
             )(),
         )
+        activation = preview["activation"]
+        assert activation["tool"] == "sap_plan_execute"
+        assert activation["arguments"]["plan_ref"] == preview["plan_ref"]
+        assert activation["requires_user_confirmation"] is True
+        activated = dispatch_planning_command(
+            "plan_execute",
+            activation["arguments"],
+            get_map_store=lambda: store,
+            policy=None,
+            agent_name="agent-a",
+            ctx=SimpleNamespace(slot_id="ses0", agent_name="agent-a"),
+            get_sap=lambda slot: sap,
+        )
+        assert activated["status"] == "completed"
+        assert activated["execution_id"].startswith("plan-")
+        activated_action_count = len(sap.actions)
         args = {
             **preview["plan_ref"],
             "execution_id": "exec-1",
@@ -415,7 +431,7 @@ def test_plan_execute_is_idempotent_and_cheap_path_never_scans(tmp_path):
             assert "approval_grants are forbidden" in str(exc)
         else:
             raise AssertionError("mismatched approval grant was accepted")
-        assert sap.actions == []
+        assert len(sap.actions) == activated_action_count
         first = dispatch_planning_command(
             "plan_execute",
             args,

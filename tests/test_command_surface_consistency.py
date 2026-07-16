@@ -173,8 +173,9 @@ def test_mcp_tool_definitions_resolve_to_registered_commands():
         assert COMMAND_REGISTRY[command].tool_name == tool_name
 
 
-def test_rebac_enforcing_exposes_recent_mcp_tools_by_permission_level():
+def test_rebac_enforcing_exposes_recent_mcp_tools_by_permission_level(monkeypatch):
     """정책 enforcing 모드에서 최근 추가 MCP 도구가 permission 분류대로 노출된다."""
+    monkeypatch.setenv("SAP_CLI_MCP_SURFACE", "full")
     viewer = PermissionChecker(_make_policy("viewer", "viewer"))
     operator = PermissionChecker(_make_policy("operator", "operator"))
     supervisor = PermissionChecker(_make_policy("supervisor", "supervisor"))

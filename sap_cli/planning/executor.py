@@ -133,10 +133,12 @@ class PlanExecutor:
             return self._blocked(plan, [freshness_error])
 
         try:
-            ui_map = self._load_exact_map(plan)
+            ui_map, is_graph_slice = self._load_exact_map(plan)
         except Exception:
             return self._blocked(plan, ["exact UI map version could not be loaded"])
-        map_errors = self._map_errors(plan, ui_map)
+        map_errors = self._map_errors(
+            plan, ui_map, fingerprint_verified_by_head=is_graph_slice
+        )
         if map_errors:
             return self._blocked(plan, map_errors)
 
@@ -458,15 +460,59 @@ class PlanExecutor:
             get_screen_count=screen_count,
         )
 
-    def _load_exact_map(self, plan: ExecutionPlan) -> UiMap:
+    def _load_exact_map(self, plan: ExecutionPlan) -> tuple[UiMap, bool]:
+        """Load only the map records referred to by an immutable plan.
+
+        The graph store keeps state and transition records independently.  A
+        plan already names its endpoint states and observed transition ids, so
+        execution does not need to materialize unrelated tabs, screens, or
+        collections.  The full-map fingerprint remains protected by the
+        latest-head check before this call.
+
+        Stores from before graph sidecars retain the full-snapshot fallback.
+        """
+
+        scope = {
+            "tcode": plan.tcode,
+            "system_id": str(plan.map_scope.get("system_id", "")),
+            "client": str(plan.map_scope.get("client", "")),
+            "language": str(plan.map_scope.get("language", "")),
+        }
+        load_slice = getattr(self._map_store, "load_graph_slice", None)
+        if callable(load_slice):
+            required_states = tuple(
+                state_id
+                for state_id in (plan.start_state_id, plan.goal_state_id)
+                if state_id
+            )
+            required_transitions = tuple(
+                sorted(
+                    {
+                        step.map_transition_id
+                        for step in plan.steps
+                        if step.map_transition_id
+                    }
+                )
+            )
+            return (
+                load_slice(
+                    plan.map_id,
+                    plan.map_version,
+                    **scope,
+                    start_state_id=plan.start_state_id,
+                    required_state_ids=required_states,
+                    required_transition_ids=required_transitions,
+                    # Direct required records already identify the execution
+                    # path; do not broaden into unrelated graph neighbours.
+                    max_states=1,
+                    max_depth=0,
+                    neighborhood=0,
+                ),
+                True,
+            )
         return self._map_store.load_version(
-            plan.map_id,
-            plan.map_version,
-            tcode=plan.tcode,
-            system_id=str(plan.map_scope.get("system_id", "")),
-            client=str(plan.map_scope.get("client", "")),
-            language=str(plan.map_scope.get("language", "")),
-        )
+            plan.map_id, plan.map_version, **scope
+        ), False
 
     def _latest_map_error(self, plan: ExecutionPlan) -> str:
         """Fail closed when a newer snapshot superseded the compiled plan."""
@@ -487,6 +533,9 @@ class PlanExecutor:
             return "latest UI map head could not be verified"
         if latest_version != plan.map_version:
             return "stale plan: a newer UI map version is available"
+        fingerprint = str(head.get("content_fingerprint", ""))
+        if fingerprint and fingerprint != plan.map_fingerprint:
+            return "UI map fingerprint mismatch"
         return ""
 
     def _recover_locator(
@@ -524,7 +573,12 @@ class PlanExecutor:
         return None
 
     @staticmethod
-    def _map_errors(plan: ExecutionPlan, ui_map: UiMap) -> list[str]:
+    def _map_errors(
+        plan: ExecutionPlan,
+        ui_map: UiMap,
+        *,
+        fingerprint_verified_by_head: bool = False,
+    ) -> list[str]:
         errors: list[str] = []
         manifest = ui_map.manifest
         if manifest.map_id != plan.map_id or manifest.map_version != plan.map_version:
@@ -539,7 +593,10 @@ class PlanExecutor:
             for key, value in expected_scope.items()
         ):
             errors.append("UI map scope mismatch")
-        if compute_map_fingerprint(ui_map) != plan.map_fingerprint:
+        if (
+            not fingerprint_verified_by_head
+            and compute_map_fingerprint(ui_map) != plan.map_fingerprint
+        ):
             errors.append("UI map fingerprint mismatch")
         for step in plan.steps:
             if step.map_id and step.map_id != plan.map_id:

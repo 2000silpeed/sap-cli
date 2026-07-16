@@ -106,6 +106,29 @@ class _MapStore:
         return {"version": self.ui_map.manifest.map_version}
 
 
+@dataclass
+class _GraphMapStore(_MapStore):
+    """Test double that proves execution asks for plan-addressed records."""
+
+    def __post_init__(self):
+        self.slice_calls = []
+        self.full_loads = 0
+
+    def load_version(self, map_id, version, **scope):
+        self.full_loads += 1
+        raise AssertionError("execution must not load the full UI map")
+
+    def load_graph_slice(self, map_id, version, **kwargs):
+        self.slice_calls.append((map_id, version, kwargs))
+        return self.ui_map
+
+    def latest_head(self, map_id, **scope):
+        return {
+            "version": self.ui_map.manifest.map_version,
+            "content_fingerprint": compute_map_fingerprint(self.ui_map),
+        }
+
+
 def _map(*, component_text="Material"):
     state = UiState(
         state_id="s1",
@@ -218,6 +241,28 @@ def _executor(
         execute_set_group=set_group,
         probe=probe,
     )
+
+
+def test_execution_loads_only_plan_addressed_graph_records():
+    ui_map = _map()
+    store = _GraphMapStore(ui_map)
+    executor = PlanExecutor(
+        get_sap=lambda: _Sap(),
+        map_store=store,
+        auth_hook=lambda *args: {"allowed": True},
+    )
+
+    result = executor.execute(_plan(ui_map))
+
+    assert result.status == "success"
+    assert store.full_loads == 0
+    assert len(store.slice_calls) == 1
+    _, _, kwargs = store.slice_calls[0]
+    assert kwargs["required_state_ids"] == ("s1", "s1")
+    assert kwargs["required_transition_ids"] == ()
+    assert kwargs["max_states"] == 1
+    assert kwargs["max_depth"] == 0
+    assert kwargs["neighborhood"] == 0
 
 
 def test_hash_map_and_all_authorization_gates_precede_sap_access():

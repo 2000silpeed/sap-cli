@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -8,6 +9,9 @@ import pytest
 from sap_cli.ui_map.fingerprint import compute_map_fingerprint
 from sap_cli.ui_map.schema import (
     MapManifest,
+    SemanticLink,
+    Transition,
+    UiComponent,
     UiMap,
     UiState,
     UserInputRequest,
@@ -106,6 +110,31 @@ def test_latest_head_returns_fresh_payload_and_tracks_new_version(tmp_path):
     assert second["scope"]["client"] == "100"
 
 
+def test_graph_slice_keeps_semantic_links_for_selected_states(tmp_path):
+    store = UiMapStore(tmp_path)
+    ui_map = _map()
+    ui_map.semantic_links.append(
+        SemanticLink(
+            link_id="semantic-state-1",
+            subject_kind="state",
+            subject_id="state-1",
+            predicate="has_ui_role",
+            object_id="ui_role:overview",
+            status="confirmed",
+        )
+    )
+    saved = store.save(ui_map)
+
+    sliced = store.load_graph_slice(saved.manifest, start_state_id="state-1")
+
+    assert [(item.link_id, item.status) for item in sliced.semantic_links] == [
+        ("semantic-state-1", "confirmed")
+    ]
+    assert [item.state_id for item in store.search_graph(saved.manifest, "overview")] == [
+        "state-1"
+    ]
+
+
 def test_scope_separates_system_client_and_language(tmp_path):
     store = UiMapStore(tmp_path)
     first = _map()
@@ -173,6 +202,23 @@ def test_save_delta_advances_interaction_lifecycle_without_replacing_question(tm
     assert interaction.status == "resolved"
     assert interaction.provenance["answer_value_stored"] is False
     assert store.load_version(base.manifest, 1).pending_interactions[0].status == "pending"
+
+
+def test_save_delta_does_not_create_a_version_for_an_unchanged_checkpoint(tmp_path):
+    store = UiMapStore(tmp_path)
+    base = store.save(_map())
+
+    saved = store.save_delta(base.model_copy(deep=True))
+
+    assert saved.manifest.map_version == 1
+    assert store.list_versions(base.manifest) == [1]
+
+
+def test_graph_index_reports_pending_interactions_without_loading_full_map(tmp_path):
+    store = UiMapStore(tmp_path)
+    base = store.save(_map())
+
+    assert store.has_unresolved_interactions(base.manifest) is True
 
 
 def test_save_delta_full_copy_does_not_resolve_existing_coverage_gap(tmp_path):
@@ -303,3 +349,102 @@ def test_concurrent_writes_across_store_instances_get_unique_versions(tmp_path):
     assert versions == list(range(1, 21))
     assert stores[0].list_versions(ui_map.manifest) == list(range(1, 21))
     assert stores[1].latest(ui_map.manifest).manifest.map_version == 20
+
+
+def _graph_map() -> UiMap:
+    ui_map = _map(state_id="start")
+    ui_map.states.update({
+        "items": UiState(
+            state_id="items", tcode="SE16", title="품목 목록",
+            components=[],
+        ),
+        "detail": UiState(
+            state_id="detail", tcode="SE16", title="품목 상세",
+        ),
+        "unrelated": UiState(
+            state_id="unrelated", tcode="SE16", title="무관한 화면",
+        ),
+    })
+    ui_map.states["items"].components = [
+        UiComponent(
+            logical_id="item-grid", sap_id="wnd[0]/grid", type="GuiGridView",
+            role="alv", tooltip="품목 목록",
+        )
+    ]
+    ui_map.transitions = [
+        Transition(
+            transition_id="to-items", from_state_id="start", to_state_id="items",
+            action="select_tab",
+        ),
+        Transition(
+            transition_id="to-detail", from_state_id="items", to_state_id="detail",
+            action="press",
+        ),
+        Transition(
+            transition_id="to-unrelated", from_state_id="start", to_state_id="unrelated",
+            action="press",
+        ),
+    ]
+    return ui_map
+
+
+def test_graph_slice_reads_route_without_materializing_full_snapshot(tmp_path, monkeypatch):
+    store = UiMapStore(tmp_path)
+    saved = store.save(_graph_map())
+    original = store._load_version
+
+    def fail_full_load(*_args, **_kwargs):
+        raise AssertionError("graph slice must not load v*.json")
+
+    monkeypatch.setattr(store, "_load_version", fail_full_load)
+    sliced = store.load_graph_slice(
+        saved.manifest, start_state_id="start", goal_query="품목 상세", neighborhood=0
+    )
+
+    assert set(sliced.states) == {"start", "items", "detail"}
+    assert [item.transition_id for item in sliced.transitions] == ["to-detail", "to-items"]
+    assert sliced.manifest == saved.manifest
+    monkeypatch.setattr(store, "_load_version", original)
+
+
+def test_graph_search_heads_and_required_records_are_bounded(tmp_path, monkeypatch):
+    store = UiMapStore(tmp_path)
+    saved = store.save(_graph_map())
+
+    monkeypatch.setattr(
+        store, "_load_version", lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("pointer/index path must not load full map")
+        )
+    )
+    heads = store.list_latest_heads(tcode="se16", client="100")
+    hits = store.search_graph(saved.manifest, "item-grid")
+    sliced = store.load_graph_slice(
+        saved.manifest, required_state_ids=("detail",),
+        required_transition_ids=("to-items",), max_states=1, neighborhood=0,
+    )
+
+    assert heads[0]["version"] == 1
+    assert heads[0]["content_fingerprint"] == compute_map_fingerprint(saved)
+    assert hits[0].state_id == "items"
+    assert set(sliced.states) == {"detail", "start", "items"}
+    assert [item.transition_id for item in sliced.transitions] == ["to-detail", "to-items"]
+
+
+def test_old_snapshot_is_migrated_once_to_a_graph_sidecar(tmp_path, monkeypatch):
+    store = UiMapStore(tmp_path)
+    saved = store.save(_graph_map())
+    graph_dir = next(tmp_path.rglob("graphs/v00000001"))
+    shutil.rmtree(graph_dir)
+    calls = []
+    original = store._load_version
+
+    def counted(*args, **kwargs):
+        calls.append(True)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(store, "_load_version", counted)
+    store.load_graph_slice(saved.manifest, start_state_id="start", max_depth=0)
+    store.load_graph_slice(saved.manifest, start_state_id="start", max_depth=0)
+
+    assert len(calls) == 1
+    assert graph_dir.joinpath("index.json").is_file()

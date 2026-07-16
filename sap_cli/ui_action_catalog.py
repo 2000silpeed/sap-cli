@@ -165,6 +165,18 @@ def _mcp_tool_definition(definition: UiActionDef) -> dict[str, Any]:
                 "column": {"type": "string", "description": "테이블 컬럼, 트리 컬럼, toolbar/menu item id, method 이름 등"},
                 "row": {"type": "integer", "description": "테이블 행 번호 (0-based)"},
                 "max_rows": {"type": "integer", "description": "read_table 최대 행 수", "default": 50},
+                "max_lines": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2000,
+                    "description": "GuiTextedit/GuiAbapEditor read 최대 행 수 (기본 200)",
+                },
+                "max_chars": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100000,
+                    "description": "GuiTextedit/GuiAbapEditor read 최대 문자 수 (기본 20000)",
+                },
                 "columns": {
                     "oneOf": [
                         {"type": "string"},

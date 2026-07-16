@@ -15,6 +15,7 @@ from .schema import (
     CollectionDescriptor,
     MapManifest,
     SideEffectClass,
+    SemanticLink,
     Transition,
     TraversalBudget,
     TraversalBranchRule,
@@ -36,7 +37,13 @@ from .traversal import (
     TraversalEngine,
     TraversalResult,
 )
-from .store import CorruptUiMapError, UiMapNotFoundError, UiMapStore, UiMapStoreError
+from .store import (
+    CorruptUiMapError,
+    GraphSearchHit,
+    UiMapNotFoundError,
+    UiMapStore,
+    UiMapStoreError,
+)
 
 __all__ = [
     "ApiCoverageManifest",
@@ -49,6 +56,7 @@ __all__ = [
     "ComponentPath",
     "compute_map_fingerprint",
     "CorruptUiMapError",
+    "GraphSearchHit",
     "JobStatus",
     "MapManifest",
     "MapJobRecord",
@@ -57,6 +65,7 @@ __all__ = [
     "SapTraversalAdapter",
     "SearchResult",
     "SideEffectClass",
+    "SemanticLink",
     "Transition",
     "TraversalBudget",
     "TraversalBranchRule",

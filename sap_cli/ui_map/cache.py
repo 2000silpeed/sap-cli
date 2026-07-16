@@ -41,6 +41,23 @@ class CachedUiMapStore:
     def latest_head(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         return self.store.latest_head(*args, **kwargs)
 
+    def list_latest_heads(self, **scope: Any) -> list[dict[str, Any]]:
+        """Discover graph heads without filling the full-map cache."""
+
+        return self.store.list_latest_heads(**scope)
+
+    def search_graph(self, map_id: str | MapManifest, query: str, **scope: Any):
+        """Search the persisted structural graph index without loading a map."""
+
+        return self.store.search_graph(map_id, query, **scope)
+
+    def load_graph_slice(
+        self, map_id: str | MapManifest, version: int | None = None, **scope: Any
+    ) -> UiMap:
+        """Load a bounded graph slice while keeping full snapshots out of LRU."""
+
+        return self.store.load_graph_slice(map_id, version, **scope)
+
     def latest(self, map_id: str | MapManifest, **scope: Any) -> UiMap:
         head = self.store.latest_head(map_id, **scope)
         exact_scope = self._head_scope(head)

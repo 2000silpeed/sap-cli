@@ -45,6 +45,7 @@ class UiMapScheduler:
         adapter_factory: AdapterFactory = SapTraversalAdapter,
         map_store: UiMapStore | None = None,
         coordinator: Any = None,
+        semantic_reviewer: Any = None,
     ) -> None:
         self.job_store = job_store
         self.get_wrapper = get_wrapper
@@ -52,6 +53,7 @@ class UiMapScheduler:
         self.adapter_factory = adapter_factory
         self.map_store = map_store
         self.coordinator = coordinator
+        self.semantic_reviewer = semantic_reviewer
         # Answer values are intentionally process-local and are removed before
         # the traversal attempt, including when that attempt raises.
         self._answer_vault: dict[str, dict[str, Any]] = {}
@@ -70,6 +72,7 @@ class UiMapScheduler:
         navigate_pending: bool | None = None,
         navigate: bool | None = None,
         test_client_confirmed: bool = False,
+        semantic_review: bool = False,
         job_id: str | None = None,
     ) -> MapJobRecord:
         """Persist a queued job without resolving a wrapper or touching COM."""
@@ -108,6 +111,7 @@ class UiMapScheduler:
             ],
             "navigate_pending": should_navigate,
             "test_client_confirmed": bool(test_client_confirmed),
+            "semantic_review": bool(semantic_review),
         }
         record = self.job_store.create(
             tcode=tcode,
@@ -433,6 +437,11 @@ class UiMapScheduler:
                 policy,
                 scanner=self.scanner,
                 checkpoint_callback=self.job_store.checkpoint_callback(record.job_id),
+                semantic_reviewer=(
+                    self.semantic_reviewer
+                    if bool(config.get("semantic_review", False))
+                    else None
+                ),
             )
             result = engine.run(
                 adapter,
@@ -459,7 +468,11 @@ class UiMapScheduler:
             result.stop_reason == "max_transitions"
             and len(result.ui_map.transitions) < full_budget.max_transitions
         ):
-            saved = self.job_store.save_checkpoint(record.job_id, result.checkpoint)
+            # A plan may be requested while this cooperative job is paused or
+            # waiting for another daemon tick.  Persist the graph delta before
+            # retaining the checkpoint so map lookup never sees an old route.
+            persisted = self._persist_result(result)
+            saved = self.job_store.save_checkpoint(record.job_id, persisted.checkpoint)
             if saved.status == "needs_user_input" and self.coordinator is not None:
                 self.coordinator.needs_user_input(self._coordinator_id(record.job_id))
             return saved
@@ -676,8 +689,10 @@ class UiMapScheduler:
     @staticmethod
     def _validate_mode(mode: str) -> str:
         normalized = mode.strip().lower()
-        if normalized not in {"passive", "reversible", "allowlisted"}:
-            raise ValueError("mode must be passive, reversible, or allowlisted")
+        if normalized not in {"passive", "guided", "reversible", "allowlisted"}:
+            raise ValueError(
+                "mode must be passive, guided, reversible, or allowlisted"
+            )
         return normalized
 
     @staticmethod

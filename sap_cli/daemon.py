@@ -213,6 +213,7 @@ class _DaemonServer(socketserver.TCPServer):
         from .ui_map.cache import CachedUiMapStore
         from .ui_map.runtime import set_ui_map_scheduler, set_ui_map_store
         from .ui_map.scheduler import UiMapScheduler
+        from .ui_map.semantic import MapSemanticReviewer
 
         self._ui_map_store = CachedUiMapStore(
             default_map_store(), on_head_change=self._plan_runtime.invalidate_map_scope
@@ -224,6 +225,7 @@ class _DaemonServer(socketserver.TCPServer):
             get_sap,
             map_store=self._ui_map_store,
             coordinator=self._job_coordinator,
+            semantic_reviewer=MapSemanticReviewer(),
         )
         self._ui_map_scheduler.hydrate_persisted_jobs()
         set_ui_map_scheduler(self._ui_map_scheduler)

@@ -58,9 +58,14 @@ COMPONENT_CAPABILITIES: dict[str, dict[str, Any]] = {
         "actions": ["press", "focus"],
     },
     "GuiTextedit": {
-        "read": ["Text"],
+        "read": ["LineCount", "GetLineText", "NumberOfUnprotectedTextParts", "GetUnprotectedTextPart", "Text"],
         "write": ["Text"],
         "actions": ["read", "set", "append_text", "clear_text", "focus"],
+    },
+    "GuiAbapEditor": {
+        "read": ["GetLineCount", "GetLineText", "Text"],
+        "write": ["InsertText", "ReplaceSelection"],
+        "actions": ["read", "focus"],
     },
     "GuiFrameWindow": {
         "read": ["Text"],

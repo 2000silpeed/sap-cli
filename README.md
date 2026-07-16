@@ -644,6 +644,13 @@ TCode·상태바·모달·대상 요소의 가시성만 가볍게 확인합니�
 만든 지도를 재사용하지 않으며, 지도 버전이나 fingerprint가 바뀌면 기존 계획은
 실행 전에 폐기됩니다.
 
+저장소는 지도 전체를 하나의 그래프로 관리하되, 화면 상태와 상태별 전이를 따로 주소화해
+보관합니다. `plan-preview`는 최신 지도 포인터와 작은 구조 색인에서 후보를 찾고, 시작
+화면부터 목표까지 필요한 연결 부분만 읽습니다. `plan-execute`도 계획이 참조한 상태와
+전이만 읽습니다. 전체 지도 fingerprint는 최신 포인터로 계속 검증하므로, 읽지 않은
+부분이 바뀐 경우에도 이전 계획은 실행하지 않습니다. 기존 지도는 처음 부분 조회할 때
+한 번만 그래프 저장 형식으로 보완됩니다.
+
 #### 1) daemon과 SAP 세션 준비
 
 SAP GUI에 로그인한 뒤 daemon을 한 번만 시작합니다. 이후 지도 수집과 계획 실행은
@@ -667,9 +674,33 @@ sap map-job-status <job-id>
 sap map-report mm03-readonly MM03
 ```
 
-`passive`는 현재 상태 하나를 안전하게 기록합니다. 탭 전환·트리 확장처럼 되돌릴 수
-있는 화면 이동까지 자동 수집하려면 반드시 테스트 client에서만 `reversible` 모드를
-사용하고, state 수·깊이·시간 한도를 함께 둡니다.
+`passive` 다음에는 테스트 client에서 `guided` 모드를 권장합니다. 이 모드는 안전하게
+되돌릴 수 있는 탭·트리·스크롤 후보를 목록으로 보여 주고, 사용자가 고른 하나만 실행해
+다음 화면을 지도에 추가합니다. 선택 값은 업무 데이터가 아니라 구조적 candidate ID뿐이며,
+다음 후보가 있으면 다시 멈춥니다.
+
+```powershell
+sap map-traverse-start MM03 --map-id mm03-readonly --mode guided --test-client-confirmed
+sap map-job-status <job-id>
+sap map-traverse-resume <job-id> '{"<resume-token>":{"candidate_id":"<choices의 candidate_id>"}}'
+```
+
+기본 `--semantic-review`는 외부 LLM API를 호출하지 않습니다. 화면을 새로 수집할 때
+로컬 온톨로지의 화면·필드와 값 없는 UI 구조를 비교해 `semantic_review` 질문을 만들고,
+MCP AI가 `accepted_candidate_ids`만 선택해 의미 연결을 확정합니다. AI는 후보 밖의
+자유 문장이나 업무값을 지도에 기록할 수 없습니다. 의미 검토가 끝나면 같은 화면의
+`guided_candidate_selection` 목록이 이어집니다.
+
+```json
+{
+  "<semantic-resume-token>": {
+    "accepted_candidate_ids": ["<semantic_review choices의 candidate_id>"]
+  }
+}
+```
+
+`guided` 흐름을 테스트 client에서 충분히 확인한 뒤에만, 같은 안전 후보를 연속으로
+확장하는 `reversible` 모드를 사용합니다. 이 경우에도 state 수·깊이·시간 한도를 함께 둡니다.
 
 ```powershell
 sap map-traverse-start MM03 --map-id mm03-readonly --mode reversible --test-client-confirmed --budget-json '{"max_states":100,"max_depth":5,"max_seconds":300}'
@@ -677,7 +708,11 @@ sap map-job-status <job-id>
 sap map-report mm03-readonly MM03
 ```
 
-버튼, 메뉴, 툴바/ALV 항목을 눌러 다음 화면으로 가는 분기는 자동으로 추측하지
+탭은 이미 활성 상태로 수집한 대상에 다시 전환·스캔·복원하지 않습니다. 예를 들어 세 개의
+탭이 서로 이동 후보로 보이더라도, 첫 도달 경로만 기록하고 각 탭 내부의 필드·ALV·분기는
+계속 수집합니다. 이 동작은 같은 탭 사이를 반복 왕복하는 시간을 줄입니다.
+
+버튼, 메뉴, 툴바/ALV 항목을 눌러 다음 화면으로 가는 분기는 `guided`에서도 추측하지
 않습니다. `save`, `post`, `delete`, `release`, `send`, `print` 같은 변경·외부 전송
 동작은 어떤 모드에서도 지도 수집 대상으로 허용되지 않습니다. 조회성 분기만 정확한
 source state, logical ID, SAP ID, control type, 복귀 VKey를 지정해 `allowlisted`
@@ -719,14 +754,21 @@ $preview.plan_ref
 `goal_not_found`, `needs_user_input` 같은 오류 또는 질문을 반환합니다. 이때 3단계로
 돌아가 지도를 보강한 뒤 새 계획을 만듭니다.
 
+자연어 목표가 지도 레이블보다 길면 planner는 저장된 경로에서 하나로만 확정되는 짧은
+목표 표현을 제한적으로 다시 찾습니다. 후보가 여러 개면 `goal_selection_required`
+또는 `goal_ambiguous`의 `questions` 안에 화면·요소·경로와 `use_goal_query`가 반환됩니다.
+임의로 경로를 넓히지 않고 먼저 이 선택지를 묻습니다. 사용자는 해당 값을 `--goal` 또는
+다음 AI 요청에 지정해 목적지를 확정합니다.
+
 #### 5) 승인 후 확정 계획을 한 번에 실행
 
-조회성 계획은 `plan_ref`의 ID와 hash, 새 `execution_id`만으로 실행합니다. 동일한
-`execution_id`를 다시 보내면 중복 SAP 조작 대신 이전 결과를 돌려줍니다.
+유효한 미리보기에는 `activation`이 함께 반환됩니다. AI/MCP는 사용자가 확인한 뒤
+`activation.arguments`를 `sap_plan_execute`에 그대로 넘기면 됩니다. CLI에서는 아래처럼
+`plan_ref`를 그대로 전달할 수 있습니다. `execution_id`를 생략하면 자동 발급하며, 같은
+명시적 `execution_id`를 다시 보내면 중복 SAP 조작 대신 이전 결과를 돌려줍니다.
 
 ```powershell
-$executionId = [guid]::NewGuid().ToString()
-sap plan-execute $preview.plan_ref.plan_id $preview.plan_ref.plan_hash $executionId --verify cheap
+sap plan-execute --plan-ref-json ($preview.plan_ref | ConvertTo-Json -Compress) --verify cheap
 ```
 
 변경, 저장, 전표 생성, 승인, 외부 전송이 포함된 계획은 미리보기 결과의
@@ -735,7 +777,7 @@ sap plan-execute $preview.plan_ref.plan_id $preview.plan_ref.plan_hash $executio
 
 ```powershell
 $approval = sap plan-approve $preview.plan_ref.plan_id $preview.plan_ref.plan_hash <실행-agent> '["<승인할 step-id>"]' | ConvertFrom-Json
-sap plan-execute $preview.plan_ref.plan_id $preview.plan_ref.plan_hash $executionId --verify cheap --approval-token $approval.approval_token
+sap plan-execute --plan-ref-json ($preview.plan_ref | ConvertTo-Json -Compress) --verify cheap --approval-token $approval.approval_token
 ```
 
 기본값 `--verify cheap`은 전체 화면 스캔을 하지 않는 빠른 실행 경로입니다. locator가
@@ -1163,6 +1205,15 @@ Windows의 Claude Code `settings.json`에 추가:
 
 > `~/.sap_cli/policy.yaml` 파일이 존재하면 ReBAC 권한관리가 활성화되어 에이전트별로 허용된 도구만 호출할 수 있습니다. 정책 파일이 없으면 모든 도구가 허용됩니다 (하위 호환).
 
+기본 MCP 표면은 지도 제작·온톨로지 검토·계획·실행에 필요한 도구 20개만 노출하는
+`compact`입니다. 세부 UI 액션, 매크로·레시피 관리, 이벤트, 세션 풀, 디버그 도구는 CLI에
+그대로 남아 있지만 MCP 목록에서는 숨깁니다. 기존 전문 자동화가 꼭 필요할 때만 MCP 서버
+환경 변수 `SAP_CLI_MCP_SURFACE=full`을 지정합니다.
+
+`compact` 핵심 도구는 `sap_session`, `sap_screen`, `sap_run`, `sap_ui_action`, 지도
+수집/재개/보강/보고 도구, `sap_ontology_query`, `sap_plan_preview`,
+`sap_plan_approve`, `sap_plan_execute`, `sap_job_status`입니다.
+
 
 #### 기본 SAP 조작
 
@@ -1295,6 +1346,7 @@ MCP 서버가 데몬 모드를 사용하도록 설정:
       "args": ["-m", "sap_cli.mcp_server"],
       "env": {
         "SAP_CLI_USE_DAEMON": "1",
+        "SAP_CLI_MCP_SURFACE": "compact",
         "SAP_CLI_MCP_SCREEN_SUMMARY": "0",
         "SAP_CLI_IDLE_WAIT_SECONDS": "0.3",
         "SAP_CLI_POST_BUSY_SETTLE_SECONDS": "0.02"

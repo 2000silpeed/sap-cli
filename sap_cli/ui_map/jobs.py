@@ -252,6 +252,30 @@ class MapJobStore:
             raise ValueError(f"resume answer missing required fields: {', '.join(missing)}")
         if "continue" in required_names and answer.get("continue") is not True:
             raise ValueError("resume answer continue must be true")
+        if question.get("reason") != "guided_candidate_selection":
+            if question.get("reason") != "semantic_review":
+                return
+            accepted = answer.get("accepted_candidate_ids")
+            if not isinstance(accepted, list) or not all(
+                isinstance(item, str) for item in accepted
+            ):
+                raise ValueError("semantic review requires accepted_candidate_ids as an array")
+            allowed = {
+                str(item.get("candidate_id", "")).strip()
+                for item in question.get("choices") or []
+                if isinstance(item, dict)
+            }
+            if any(item not in allowed for item in accepted):
+                raise ValueError("semantic review selects an unknown candidate")
+            return
+        candidate_id = str(answer.get("candidate_id", "")).strip()
+        allowed = {
+            str(item.get("candidate_id", "")).strip()
+            for item in question.get("choices") or []
+            if isinstance(item, dict)
+        }
+        if not candidate_id or candidate_id not in allowed:
+            raise ValueError("resume answer selects an unknown guided candidate")
 
     def request_cancel(self, job_id: str) -> MapJobRecord:
         with self._lock:

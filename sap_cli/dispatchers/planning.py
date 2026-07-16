@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
+from collections.abc import Mapping
 from typing import Any, Callable
 
 from sap_cli.auth.policy import Policy
@@ -140,6 +142,7 @@ def dispatch_planning_command(
                     )
                 )
     plan_ref = None
+    activation = None
     if result.plan is not None and validation["valid"]:
         runtime = try_get_plan_runtime()
         reference = runtime.register_plan(result.plan) if runtime is not None else None
@@ -150,10 +153,20 @@ def dispatch_planning_command(
                 "expires_in_seconds": reference.expires_in_seconds,
                 "daemon_memory_only": True,
             }
+            # Keep the hand-off deliberately small.  An agent can forward this
+            # object directly to ``sap_plan_execute`` after the user confirms
+            # the preview; it does not need to copy identifiers from the full
+            # plan payload or invent an execution ID.
+            activation = {
+                "tool": "sap_plan_execute",
+                "arguments": {"plan_ref": plan_ref, "verify_mode": "cheap"},
+                "requires_user_confirmation": True,
+            }
     payload: dict[str, Any] = {
         "validation": validation,
         "plan": result.plan.model_dump(mode="json") if result.plan else None,
         "plan_ref": plan_ref,
+        "activation": activation,
         "preflight": (
             plan_preflight.model_dump(mode="json") if plan_preflight else None
         ),
@@ -246,11 +259,12 @@ def _dispatch_plan_execute(
     if ctx is None or get_sap is None:
         raise RuntimeError("plan execution requires the persistent daemon runtime")
     runtime = get_plan_runtime()
-    plan_id = str(args.get("plan_id", "")).strip()
-    plan_hash = str(args.get("plan_hash", "")).strip()
-    execution_id = str(args.get("execution_id", "")).strip()
-    if not plan_id or not plan_hash or not execution_id:
-        raise ValueError("plan_id, plan_hash, and execution_id are required")
+    plan_id, plan_hash = _execution_plan_reference(args)
+    supplied_execution_id = str(args.get("execution_id", "")).strip()
+    # The ID remains caller-controllable for idempotent retries.  For the
+    # normal preview -> confirm -> execute flow, generate it here so an agent
+    # can activate the supplied plan_ref without manufacturing one itself.
+    execution_id = supplied_execution_id or f"plan-{uuid.uuid4().hex}"
     verification = str(args.get("verify_mode", "cheap") or "cheap").lower()
     if verification not in {"cheap", "full"}:
         raise ValueError("verify_mode must be cheap or full")
@@ -574,6 +588,36 @@ def _dispatch_plan_execute(
         "replayed": False,
         "result": completed.result,
     }
+
+
+def _execution_plan_reference(args: Mapping[str, Any]) -> tuple[str, str]:
+    """Resolve a preview ``plan_ref`` without weakening immutable-plan checks.
+
+    Preview responses intentionally nest their opaque reference under
+    ``plan_ref``.  Historically execute only accepted flattened ``plan_id`` /
+    ``plan_hash`` fields, which made the natural hand-off fail unless a caller
+    manually reshaped the response.  Accept both representations and reject a
+    conflicting mixture rather than silently choosing one.
+    """
+
+    direct_id = str(args.get("plan_id", "") or "").strip()
+    direct_hash = str(args.get("plan_hash", "") or "").strip()
+    raw_ref = args.get("plan_ref")
+    if raw_ref in (None, ""):
+        if not direct_id or not direct_hash:
+            raise ValueError("plan_ref or both plan_id and plan_hash are required")
+        return direct_id, direct_hash
+    if not isinstance(raw_ref, Mapping):
+        raise ValueError("plan_ref must be an object returned by plan_preview")
+    ref_id = str(raw_ref.get("plan_id", "") or "").strip()
+    ref_hash = str(raw_ref.get("plan_hash", "") or "").strip()
+    if not ref_id or not ref_hash:
+        raise ValueError("plan_ref requires plan_id and plan_hash")
+    if direct_id and direct_id != ref_id:
+        raise ValueError("plan_id conflicts with plan_ref")
+    if direct_hash and direct_hash != ref_hash:
+        raise ValueError("plan_hash conflicts with plan_ref")
+    return ref_id, ref_hash
 
 __all__ = [
     "PLANNING_COMMANDS",

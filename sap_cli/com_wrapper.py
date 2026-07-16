@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import platform
+import re
 import time
 from typing import Any
 
@@ -65,6 +66,9 @@ def _scope_handle_id(scope: str) -> str:
 
 
 _NO_NATIVE_ENUM_RESULT = object()
+_SENSITIVE_EDITOR_NAME = re.compile(
+    r"(?:PASSW|PASSWORD|PWD|PIN|SECRET|TOKEN|CREDENTIAL|BAPIKEY|APIKEY)", re.I
+)
 
 
 class _NativeGuiEnumAdapter:
@@ -98,6 +102,11 @@ class SapGuiWrapper:
     # 사용자가 sap run으로 실행한 트랜잭션으로 간주할 접두사 목록.
     # SAP가 내부적으로 호출하는 프로그램(SE38 등)은 제외.
     _INTERNAL_TCODES = frozenset({"SE38", "SE80", "SE37", "SAPLSMTR_NAVIGATION"})
+    _TEXT_EDITOR_TYPES = frozenset({"GuiTextedit", "GuiTextEdit", "GuiAbapEditor"})
+    _DEFAULT_TEXT_EDITOR_MAX_LINES = 200
+    _DEFAULT_TEXT_EDITOR_MAX_CHARS = 20_000
+    _MAX_TEXT_EDITOR_LINES = 2_000
+    _MAX_TEXT_EDITOR_CHARS = 100_000
 
     def __init__(self) -> None:
         self._application: Any = None
@@ -436,6 +445,8 @@ class SapGuiWrapper:
             element = self.session.FindById(element_id)
             if self._is_combo_box(element, element_id):
                 return self._get_combo_value(element)
+            if self._is_text_editor(element):
+                return str(self.read_text_editor(element_id)["text"])
             return str(element.Text)
         except Exception as e:
             raise SapGuiError(f"필드 읽기 실패 [{element_id}]: {e}") from e
@@ -445,11 +456,20 @@ class SapGuiWrapper:
         try:
             element = self.session.FindById(element_id)
             name = self._safe_attr(element, "Name", "")
+            editor_payload = (
+                self.read_text_editor(element_id) if self._is_text_editor(element) else None
+            )
             payload: dict[str, Any] = {
                 "name": name or self._extract_name(element_id),
                 "field": element_id,
-                "value": self.get_field(element_id),
+                "value": (
+                    str(editor_payload["text"])
+                    if editor_payload is not None
+                    else self.get_field(element_id)
+                ),
             }
+            if editor_payload is not None:
+                payload["text_editor"] = editor_payload
             if self._is_combo_box(element, element_id):
                 payload["key"] = self._safe_attr(element, "Key", "")
                 payload["text"] = self._safe_attr(element, "Text", "")
@@ -459,6 +479,175 @@ class SapGuiWrapper:
             return payload
         except Exception as e:
             raise SapGuiError(f"필드 읽기 실패 [{element_id}]: {e}") from e
+
+    def read_text_editor(
+        self,
+        element_id: str,
+        *,
+        max_lines: int | None = None,
+        max_chars: int | None = None,
+    ) -> dict[str, Any]:
+        """Read a GuiTextedit/GuiAbapEditor without changing the UI.
+
+        SAP's rich editors do not consistently expose the generic ``Text``
+        property.  Prefer their documented line APIs and bound every response
+        so a very large editor cannot flood a tool response or plan context.
+        """
+
+        try:
+            element = self.session.FindById(element_id)
+            component_type = str(self._safe_attr(element, "Type", ""))
+            if component_type not in self._TEXT_EDITOR_TYPES:
+                raise SapGuiError(f"텍스트 에디터가 아닙니다 [{element_id}: {component_type}]")
+
+            line_limit = self._bounded_editor_limit(
+                max_lines,
+                default=self._DEFAULT_TEXT_EDITOR_MAX_LINES,
+                maximum=self._MAX_TEXT_EDITOR_LINES,
+            )
+            char_limit = self._bounded_editor_limit(
+                max_chars,
+                default=self._DEFAULT_TEXT_EDITOR_MAX_CHARS,
+                maximum=self._MAX_TEXT_EDITOR_CHARS,
+            )
+            line_count = self._text_editor_line_count(element)
+            payload: dict[str, Any] = {
+                "element_id": element_id,
+                "type": component_type,
+                "max_lines": line_limit,
+                "max_chars": char_limit,
+                **({"line_count": line_count} if line_count is not None else {}),
+            }
+
+            if self._text_editor_is_sensitive(element, element_id):
+                return {
+                    **payload,
+                    "text": "<redacted>",
+                    "redacted": True,
+                    "truncated": bool(line_count and line_count > line_limit),
+                    "read_method": "redacted",
+                }
+
+            if line_count is not None:
+                lines = self._read_text_editor_lines(element, line_count, line_limit)
+                if lines is not None:
+                    text, char_truncated = self._truncate_editor_text("\n".join(lines), char_limit)
+                    return {
+                        **payload,
+                        "text": text,
+                        "lines_read": len(lines),
+                        "char_count": len(text),
+                        "truncated": line_count > len(lines) or char_truncated,
+                        "read_method": "line_api",
+                    }
+
+            part_count = self._text_editor_part_count(element)
+            if part_count is not None:
+                parts = self._read_unprotected_text_parts(element, part_count, line_limit)
+                if parts is not None:
+                    text, char_truncated = self._truncate_editor_text("\n".join(parts), char_limit)
+                    return {
+                        **payload,
+                        "text": text,
+                        "parts_read": len(parts),
+                        "part_count": part_count,
+                        "char_count": len(text),
+                        "truncated": part_count > len(parts) or char_truncated,
+                        "read_method": "unprotected_parts",
+                    }
+
+            text = self._safe_attr(element, "Text", None)
+            if text is not None:
+                value, char_truncated = self._truncate_editor_text(str(text), char_limit)
+                return {
+                    **payload,
+                    "text": value,
+                    "char_count": len(value),
+                    "truncated": char_truncated,
+                    "read_method": "text_property",
+                }
+            raise SapGuiError("지원되는 텍스트 읽기 API를 찾을 수 없습니다.")
+        except SapGuiError:
+            raise
+        except Exception as e:
+            raise SapGuiError(f"텍스트 에디터 읽기 실패 [{element_id}]: {e}") from e
+
+    @classmethod
+    def _bounded_editor_limit(cls, value: int | None, *, default: int, maximum: int) -> int:
+        if value is None:
+            return default
+        try:
+            return max(1, min(int(value), maximum))
+        except (TypeError, ValueError):
+            return default
+
+    @classmethod
+    def _is_text_editor(cls, element: Any) -> bool:
+        return str(cls._safe_attr(element, "Type", "")) in cls._TEXT_EDITOR_TYPES
+
+    def _text_editor_is_sensitive(self, element: Any, element_id: str) -> bool:
+        name = str(self._safe_attr(element, "Name", ""))
+        return bool(_SENSITIVE_EDITOR_NAME.search(f"{name} {element_id}"))
+
+    def _text_editor_line_count(self, element: Any) -> int | None:
+        for attr in ("LineCount", "GetLineCount"):
+            try:
+                value = getattr(element, attr)
+                value = value() if callable(value) else value
+                count = int(value)
+                return max(0, count)
+            except Exception:
+                continue
+        return None
+
+    def _read_text_editor_lines(self, element: Any, count: int, limit: int) -> list[str] | None:
+        try:
+            getter = getattr(element, "GetLineText")
+        except Exception:
+            return None
+        if not callable(getter):
+            return None
+        requested = min(count, limit)
+        if requested == 0:
+            return []
+        # GuiTextedit uses zero-based lines.  GuiAbapEditor variants in the
+        # wild use either base, so retry one-based only when zero-based fails.
+        for base in (0, 1):
+            lines: list[str] = []
+            try:
+                for offset in range(requested):
+                    lines.append(str(getter(base + offset)))
+            except Exception:
+                continue
+            return lines
+        return None
+
+    @staticmethod
+    def _text_editor_part_count(element: Any) -> int | None:
+        try:
+            return max(0, int(getattr(element, "NumberOfUnprotectedTextParts")))
+        except Exception:
+            return None
+
+    @staticmethod
+    def _read_unprotected_text_parts(element: Any, count: int, limit: int) -> list[str] | None:
+        try:
+            getter = getattr(element, "GetUnprotectedTextPart")
+        except Exception:
+            return None
+        if not callable(getter):
+            return None
+        parts: list[str] = []
+        try:
+            for index in range(min(count, limit)):
+                parts.append(str(getter(index)))
+        except Exception:
+            return None
+        return parts
+
+    @staticmethod
+    def _truncate_editor_text(value: str, max_chars: int) -> tuple[str, bool]:
+        return (value[:max_chars], len(value) > max_chars)
 
     def set_focus(self, element_id: str) -> None:
         """요소에 포커스 설정."""
@@ -599,21 +788,34 @@ class SapGuiWrapper:
             element = self.session.FindById(element_id)
             component_type = str(self._safe_attr(element, "Type", "Unknown"))
             subtype = str(self._safe_attr(element, "SubType", ""))
+            editor_payload = (
+                self.read_text_editor(element_id) if self._is_text_editor(element) else None
+            )
             payload: dict[str, Any] = {
                 "id": element_id,
                 "type": component_type,
                 **({"sub_type": subtype} if subtype else {}),
                 "name": self._safe_attr(element, "Name", self._extract_name(element_id)),
-                "text": self._safe_attr(element, "Text", ""),
+                "text": (
+                    editor_payload["text"]
+                    if editor_payload is not None
+                    else self._safe_attr(element, "Text", "")
+                ),
                 "tooltip": self._safe_attr(element, "Tooltip", ""),
                 "visible": self._safe_attr(element, "Visible", None),
                 "enabled": self._safe_attr(element, "Enabled", None),
                 "changeable": bool(self._safe_attr(element, "Changeable", False)),
                 "selected": self._safe_attr(element, "Selected", ""),
-                "value": self._element_value(element, element_id),
+                "value": (
+                    editor_payload["text"]
+                    if editor_payload is not None
+                    else self._element_value(element, element_id)
+                ),
                 "capability": component_capability(component_type, subtype),
                 "ontology_preflight": self.build_action_context(element_id, "inspect"),
             }
+            if editor_payload is not None:
+                payload["text_editor"] = editor_payload
             if self._is_combo_box(element, element_id):
                 payload["key"] = self._safe_attr(element, "Key", "")
                 payload["entries"] = self._get_combo_entries(element)
@@ -631,6 +833,8 @@ class SapGuiWrapper:
         column: str = "",
         row: int | None = None,
         max_rows: int = 50,
+        max_lines: int | None = None,
+        max_chars: int | None = None,
         columns: list[str] | None = None,
         method_args: list[Any] | None = None,
         property_name: str = "",
@@ -664,6 +868,18 @@ class SapGuiWrapper:
             return {"focused": True, **used}
 
         if normalized == "read":
+            if self._is_text_editor(element):
+                editor = self.read_text_editor(
+                    element_id,
+                    max_lines=max_lines,
+                    max_chars=max_chars,
+                )
+                return {
+                    "read": True,
+                    **used,
+                    "value": editor["text"],
+                    "text_editor": editor,
+                }
             return {"read": True, **used, "field_info": self.get_field_info(element_id)}
 
         if normalized == "read_table":

@@ -591,14 +591,20 @@ def map_augment_start(
 def map_traverse_start(
     tcode: str = typer.Argument(),
     map_id: str = typer.Option("", "--map-id"),
-    mode: str = typer.Option("passive", "--mode"),
+    mode: str = typer.Option(
+        "passive", "--mode", help="passive | guided | reversible | allowlisted"
+    ),
     budget_json: str = typer.Option("{}", "--budget-json"),
     allowed_actions: str = typer.Option("", "--allowed-actions"),
     allowed_branches_json: str = typer.Option("[]", "--allowed-branches-json"),
     navigate: bool = typer.Option(True, "--navigate/--no-navigate"),
     test_client_confirmed: bool = typer.Option(False, "--test-client-confirmed"),
+    semantic_review: bool = typer.Option(
+        True, "--semantic-review/--no-semantic-review",
+        help="guided 수집 중 MCP AI 의미 후보 검토 사용",
+    ),
 ) -> None:
-    """daemon에 cooperative 지도 순회 job을 등록하고 즉시 반환."""
+    """지도 job을 등록합니다. guided는 후보를 하나씩 물어본 뒤 확장합니다."""
     try:
         budget = json.loads(budget_json)
         allowed_branches = json.loads(allowed_branches_json)
@@ -615,6 +621,7 @@ def map_traverse_start(
             "allowed_actions": [item.strip() for item in allowed_actions.split(",") if item.strip()],
             "allowed_branches": allowed_branches,
             "navigate": navigate, "test_client_confirmed": test_client_confirmed,
+            "semantic_review": semantic_review,
         },
         allow_daemon=True,
     )
@@ -691,13 +698,25 @@ def plan_preview(
 
 @app.command("plan-execute")
 def plan_execute(
-    plan_id: str = typer.Argument(),
-    plan_hash: str = typer.Argument(),
-    execution_id: str = typer.Argument(help="중복 실행을 막는 호출자 지정 ID"),
+    plan_id: str = typer.Argument("", help="미리보기 plan_ref의 plan_id"),
+    plan_hash: str = typer.Argument("", help="미리보기 plan_ref의 plan_hash"),
+    execution_id: str = typer.Argument("", help="재시도에 사용할 ID (생략하면 자동 발급)"),
     verify_mode: str = typer.Option("cheap", "--verify"),
     approval_token: str = typer.Option("", "--approval-token"),
+    plan_ref_json: str = typer.Option(
+        "", "--plan-ref-json", help="plan-preview가 돌려준 plan_ref JSON object"
+    ),
 ) -> None:
-    """daemon 메모리에 보관된 불변 계획을 IPC 한 번으로 실행."""
+    """미리보기의 plan_ref를 사용해 daemon 메모리 계획을 한 번에 실행."""
+    plan_ref: dict[str, Any] | None = None
+    if plan_ref_json:
+        try:
+            decoded = json.loads(plan_ref_json)
+        except json.JSONDecodeError as exc:
+            raise typer.BadParameter("--plan-ref-json must be a JSON object") from exc
+        if not isinstance(decoded, dict):
+            raise typer.BadParameter("--plan-ref-json must be a JSON object")
+        plan_ref = decoded
     _run_command(
         "plan_execute",
         {
@@ -706,6 +725,7 @@ def plan_execute(
             "execution_id": execution_id,
             "verify_mode": verify_mode,
             "approval_token": approval_token,
+            "plan_ref": plan_ref,
         },
         allow_daemon=True,
     )
@@ -907,6 +927,8 @@ def ui_action(
     column: str = typer.Option("", "--column", help="트리 press_node 컬럼 또는 테이블 컬럼"),
     row: int | None = typer.Option(None, "--row", help="테이블 행 번호 (0-based)"),
     max_rows: int = typer.Option(50, "--max-rows", help="read_table 최대 행 수"),
+    max_lines: int | None = typer.Option(None, "--max-lines", help="텍스트 에디터 read 최대 행 수"),
+    max_chars: int | None = typer.Option(None, "--max-chars", help="텍스트 에디터 read 최대 문자 수"),
     columns: str = typer.Option("", "--columns", help="read_table 컬럼 목록(쉼표 구분)"),
     args_json: str = typer.Option(
         "", "--args-json", help="call_method ByVal 입력 JSON 배열(ByRef/out은 자동)"
@@ -929,6 +951,10 @@ def ui_action(
         params["row"] = row
     if max_rows != 50:
         params["max_rows"] = max_rows
+    if max_lines is not None:
+        params["max_lines"] = max_lines
+    if max_chars is not None:
+        params["max_chars"] = max_chars
     if columns:
         params["columns"] = columns
     if args_json:
@@ -948,6 +974,8 @@ def _make_generated_ui_action_command(action_command: str, action_name: str):
         column: str = typer.Option("", "--column", help="테이블 컬럼, 트리 컬럼, toolbar/menu item id, method 이름 등"),
         row: int | None = typer.Option(None, "--row", help="테이블 행 번호 (0-based)"),
         max_rows: int = typer.Option(50, "--max-rows", help="read_table 최대 행 수"),
+        max_lines: int | None = typer.Option(None, "--max-lines", help="텍스트 에디터 read 최대 행 수"),
+        max_chars: int | None = typer.Option(None, "--max-chars", help="텍스트 에디터 read 최대 문자 수"),
         columns: str = typer.Option("", "--columns", help="read_table 컬럼 목록(쉼표 구분)"),
         args_json: str = typer.Option(
             "", "--args-json", help="call_method ByVal 입력 JSON 배열(ByRef/out은 자동)"
@@ -967,6 +995,10 @@ def _make_generated_ui_action_command(action_command: str, action_name: str):
             params["row"] = row
         if max_rows != 50:
             params["max_rows"] = max_rows
+        if max_lines is not None:
+            params["max_lines"] = max_lines
+        if max_chars is not None:
+            params["max_chars"] = max_chars
         if columns:
             params["columns"] = columns
         if args_json:

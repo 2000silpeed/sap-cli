@@ -13,6 +13,7 @@ from sap_cli.ui_map.store import UiMapStore
 from sap_cli.ui_map.schema import (
     MapManifest,
     SideEffectClass,
+    SemanticLink,
     TraversalBudget,
     TraversalBranchRule,
     UiMap,
@@ -230,6 +231,150 @@ def test_each_tick_executes_at_most_one_transition(tmp_path) -> None:
     assert second is not None
     assert wrapper.session.actions == 2
     assert len(second.checkpoint.ui_map.transitions) == 2
+
+
+def test_cooperative_tick_persists_the_partial_graph_for_later_planning(tmp_path) -> None:
+    wrapper = FakeWrapper()
+    maps = UiMapStore(tmp_path / "maps")
+    runner = UiMapScheduler(
+        MapJobStore(tmp_path / "jobs"),
+        lambda _slot: wrapper,
+        scanner=FakeScanner(),
+        adapter_factory=FakeAdapter,
+        map_store=maps,
+    )
+    runner.start(
+        tcode="ZMAP",
+        map_id="map",
+        mode="reversible",
+        test_client_confirmed=True,
+        job_id="persist-between-ticks",
+    )
+
+    current = runner.tick("persist-between-ticks")
+
+    assert current is not None and current.status == "running"
+    assert len(maps.latest("map", tcode="ZMAP").transitions) == 1
+    assert current.checkpoint is not None
+    assert current.checkpoint.ui_map.manifest.map_version == 1
+
+
+def test_guided_mode_lists_one_safe_candidate_and_executes_only_the_selection(tmp_path):
+    wrapper = FakeWrapper()
+    class ChoiceAdapter(FakeAdapter):
+        def discover(self, state: UiState):
+            if state.screen_number == 100:
+                for next_screen in (200, 300):
+                    yield TraversalCandidate(
+                        action="inspect",
+                        params={"next": next_screen},
+                        side_effect=SideEffectClass.READ_ONLY,
+                        reversible=True,
+                    )
+
+    runner = UiMapScheduler(
+        MapJobStore(tmp_path),
+        lambda _slot: wrapper,
+        scanner=FakeScanner(),
+        adapter_factory=ChoiceAdapter,
+    )
+    runner.start(
+        tcode="ZMAP",
+        map_id="map",
+        mode="guided",
+        test_client_confirmed=True,
+        job_id="guided-one",
+    )
+
+    waiting = runner.tick("guided-one")
+
+    assert waiting is not None
+    assert waiting.status == "needs_user_input"
+    assert wrapper.session.actions == 0
+    question = waiting.pending_questions[0]
+    assert question["reason"] == "guided_candidate_selection"
+    assert question["required_fields"] == ["candidate_id"]
+    assert len(question["choices"]) == 2
+    choice = question["choices"][1]
+    assert choice["action"] == "inspect"
+    assert choice["reversible"] is True
+
+    with pytest.raises(ValueError, match="unknown guided candidate"):
+        runner.resume(waiting.job_id, {question["resume_token"]: {"candidate_id": "forged"}})
+
+    runner.resume(
+        waiting.job_id,
+        {question["resume_token"]: {"candidate_id": choice["candidate_id"]}},
+    )
+    expanded = runner.tick(waiting.job_id)
+
+    assert expanded is not None
+    # The selected action ran once, then the newly discovered screen offered
+    # its own list instead of continuing automatically.
+    assert expanded.status == "needs_user_input"
+    assert wrapper.session.actions == 1
+    assert expanded.checkpoint is not None
+    assert len(expanded.checkpoint.ui_map.transitions) == 1
+    assert expanded.checkpoint.traversal_scope.get("guided_selection") is None
+    next_question = expanded.pending_questions[0]
+    assert next_question["reason"] == "guided_candidate_selection"
+    assert next_question["choices"][0]["candidate_id"] != choice["candidate_id"]
+
+
+def test_guided_semantic_review_is_mcp_confirmed_before_candidate_selection(tmp_path):
+    wrapper = FakeWrapper()
+
+    class Reviewer:
+        def propose(self, state: UiState):
+            return [
+                SemanticLink(
+                    link_id="semantic-screen-100",
+                    subject_kind="state",
+                    subject_id=state.state_id,
+                    predicate="has_ui_role",
+                    object_id="ui_role:selection",
+                    confidence=0.55,
+                )
+            ]
+
+    runner = UiMapScheduler(
+        MapJobStore(tmp_path),
+        lambda _slot: wrapper,
+        scanner=FakeScanner(),
+        adapter_factory=FakeAdapter,
+        semantic_reviewer=Reviewer(),
+    )
+    runner.start(
+        tcode="ZMAP",
+        map_id="semantic-map",
+        mode="guided",
+        test_client_confirmed=True,
+        semantic_review=True,
+        job_id="semantic-guided",
+    )
+
+    review = runner.tick("semantic-guided")
+
+    assert review is not None and review.status == "needs_user_input"
+    question = review.pending_questions[0]
+    assert question["reason"] == "semantic_review"
+    assert question["required_fields"] == ["accepted_candidate_ids"]
+    candidate_id = question["choices"][0]["candidate_id"]
+    assert wrapper.session.actions == 0
+
+    runner.resume(
+        review.job_id,
+        {question["resume_token"]: {"accepted_candidate_ids": [candidate_id]}},
+    )
+    guided = runner.tick(review.job_id)
+
+    assert guided is not None and guided.status == "needs_user_input"
+    assert guided.pending_questions[0]["reason"] == "guided_candidate_selection"
+    assert guided.checkpoint is not None
+    link = guided.checkpoint.ui_map.semantic_links[0]
+    assert link.link_id == candidate_id
+    assert link.status == "confirmed"
+    assert link.provenance["reviewed_by"] == "mcp_ai"
 
 
 def test_cancelled_job_never_resolves_wrapper_or_executes(tmp_path) -> None:

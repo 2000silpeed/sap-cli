@@ -167,6 +167,9 @@ def dispatch_ui_map_command(
             slot_id=slot_id,
             navigate=bool(args.get("navigate", True)),
             test_client_confirmed=bool(args.get("test_client_confirmed", False)),
+            semantic_review=bool(
+                args.get("semantic_review", str(args.get("mode", "")).lower() == "guided")
+            ),
         )
         return {"job": _job_summary(record)}
     if command == "map_traverse_resume":
@@ -493,6 +496,7 @@ def _transition_summary(item: Any) -> dict[str, Any]:
 
 def _job_summary(record: MapJobRecord) -> dict[str, Any]:
     checkpoint = record.checkpoint
+    semantic_links = checkpoint.ui_map.semantic_links if checkpoint is not None else []
     return {
         "job_id": record.job_id,
         "tcode": record.tcode,
@@ -514,6 +518,11 @@ def _job_summary(record: MapJobRecord) -> dict[str, Any]:
         }
         if checkpoint is not None
         else {},
+        "semantic_links": {
+            "proposed": sum(item.status == "proposed" for item in semantic_links),
+            "confirmed": sum(item.status == "confirmed" for item in semantic_links),
+            "rejected": sum(item.status == "rejected" for item in semantic_links),
+        },
     }
 
 

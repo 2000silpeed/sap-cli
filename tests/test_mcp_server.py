@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sap_cli.auth.policy import AgentPolicy, Policy, Relation, RelationBinding
 from sap_cli.dispatchers.registry import COMMAND_REGISTRY
-from sap_cli.mcp_server import TOOL_DEFINITIONS, get_visible_tool_names
+from sap_cli.mcp_server import COMPACT_TOOL_NAMES, TOOL_DEFINITIONS, get_visible_tool_names
 from sap_cli.scripting_ontology import COMPONENT_CAPABILITIES
 from sap_cli.ui_action_catalog import get_ui_action_defs
 
@@ -26,6 +26,7 @@ def _make_policy(agent_name: str, relations: list[tuple[str, Relation]]) -> Poli
 
 
 def test_verifier_profile_gets_readonly_surface(monkeypatch):
+    monkeypatch.setenv("SAP_CLI_MCP_SURFACE", "full")
     policy = _make_policy(
         "verifier",
         [("tx:*", Relation.VIEWER)],
@@ -58,6 +59,22 @@ def test_mcp_tool_definitions_cover_exposed_registry():
     assert expected - defined == set()
 
 
+def test_default_mcp_surface_is_compact_and_full_is_explicit(monkeypatch):
+    monkeypatch.delenv("SAP_CLI_MCP_SURFACE", raising=False)
+
+    compact = set(get_visible_tool_names())
+
+    assert compact == COMPACT_TOOL_NAMES
+    assert "sap_ui_append_text" not in compact
+    assert "sap_recipe_history" not in compact
+
+    monkeypatch.setenv("SAP_CLI_MCP_SURFACE", "full")
+    full = set(get_visible_tool_names())
+
+    assert compact < full
+    assert {definition["name"] for definition in TOOL_DEFINITIONS} == full
+
+
 def test_generated_ui_action_tools_are_exposed():
     defined = {definition["name"] for definition in TOOL_DEFINITIONS}
     generated = {definition.tool_name for definition in get_ui_action_defs()}
@@ -81,6 +98,7 @@ def test_generated_ui_action_catalog_covers_capability_actions():
 
 
 def test_operator_profile_gets_execute_surface_without_admin(monkeypatch):
+    monkeypatch.setenv("SAP_CLI_MCP_SURFACE", "full")
     policy = _make_policy(
         "operator",
         [("tx:*", Relation.OPERATOR)],

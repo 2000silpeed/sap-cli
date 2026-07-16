@@ -187,7 +187,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "description": "지도 순회 job을 daemon에 등록하고 즉시 queued 상태로 반환합니다. active 모드는 테스트 클라이언트 확인이 필요합니다.",
         "inputSchema": {"type": "object", "properties": {
             "tcode": {"type": "string"}, "map_id": {"type": "string"},
-            "mode": {"enum": ["passive", "reversible", "allowlisted"], "default": "passive"},
+            "mode": {"enum": ["passive", "guided", "reversible", "allowlisted"], "default": "passive", "description": "guided는 안전한 후보를 하나씩 사용자에게 물어본 뒤 확장합니다."},
             "budget": {"type": "object"},
             "allowed_actions": {"type": "array", "items": {"type": "string"}},
             "allowed_branches": {
@@ -229,6 +229,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             },
             "navigate": {"type": "boolean", "default": True},
             "test_client_confirmed": {"type": "boolean", "default": False},
+            "semantic_review": {"type": "boolean", "default": True, "description": "guided 지도 작성 중 MCP AI가 로컬 온톨로지 후보를 검토하도록 합니다. 외부 LLM API 호출은 없습니다."},
             "slot_id": {"type": "string"}
         }, "required": ["tcode"]},
     },
@@ -267,14 +268,26 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_plan_execute",
-        "description": "daemon 메모리에 보관된 불변 실행 계획을 한 번의 IPC로 실행합니다. 같은 execution_id는 재실행하지 않습니다.",
+        "description": "plan_preview의 activation.arguments 또는 plan_ref를 그대로 받아 daemon 메모리의 불변 실행 계획을 한 번의 IPC로 실행합니다. execution_id를 생략하면 새 ID를 발급하고, 같은 ID를 다시 보내면 재실행하지 않습니다.",
         "inputSchema": {"type": "object", "properties": {
             "plan_id": {"type": "string"}, "plan_hash": {"type": "string"},
+            "plan_ref": {
+                "type": "object",
+                "properties": {
+                    "plan_id": {"type": "string"},
+                    "plan_hash": {"type": "string"}
+                },
+                "required": ["plan_id", "plan_hash"],
+                "additionalProperties": True
+            },
             "execution_id": {"type": "string"},
             "verify_mode": {"type": "string", "enum": ["cheap", "full"], "default": "cheap"},
             "approval_token": {"type": "string"},
             "slot_id": {"type": "string"}
-        }, "required": ["plan_id", "plan_hash", "execution_id"]},
+        }, "anyOf": [
+            {"required": ["plan_ref"]},
+            {"required": ["plan_id", "plan_hash"]}
+        ]},
     },
     {
         "name": "sap_job_status",
@@ -1668,6 +1681,43 @@ if HAS_MCP:
     TOOLS = [Tool(**definition) for definition in TOOL_DEFINITIONS]
 
 
+# The default surface is intentionally centred on map construction, ontology
+# review, plan compilation, and guarded execution.  The CLI and dispatcher
+# still retain every legacy/specialist command; an operator who is diagnosing a
+# control or maintaining recipes can opt into the full MCP surface explicitly.
+COMPACT_TOOL_NAMES = frozenset(
+    {
+        "sap_connect",
+        "sap_session",
+        "sap_screen",
+        "sap_run",
+        "sap_ui_action",
+        "sap_get_status",
+        "sap_modal",
+        "sap_map_list",
+        "sap_map_search",
+        "sap_map_report",
+        "sap_map_job_cancel",
+        "sap_map_augment_start",
+        "sap_map_traverse_start",
+        "sap_map_job_status",
+        "sap_map_traverse_resume",
+        "sap_ontology_query",
+        "sap_plan_preview",
+        "sap_plan_approve",
+        "sap_plan_execute",
+        "sap_job_status",
+    }
+)
+
+
+def _mcp_surface() -> str:
+    """Return the requested MCP discovery profile, failing closed to compact."""
+
+    value = os.getenv("SAP_CLI_MCP_SURFACE", "compact").strip().lower()
+    return value if value in {"compact", "full"} else "compact"
+
+
 def _load_checker(agent_name: str | None = None) -> tuple[PermissionChecker, str | None]:
     policy = load_policy()
     checker = PermissionChecker(policy)
@@ -1679,12 +1729,24 @@ def _load_checker(agent_name: str | None = None) -> tuple[PermissionChecker, str
 
 
 def _visible_tool_names_for_checker(checker: PermissionChecker) -> list[str]:
+    surface_names = (
+        {definition["name"] for definition in TOOL_DEFINITIONS}
+        if _mcp_surface() == "full"
+        else COMPACT_TOOL_NAMES
+    )
     if not checker.is_enforcing:
-        return [definition["name"] for definition in TOOL_DEFINITIONS]
+        return [
+            definition["name"]
+            for definition in TOOL_DEFINITIONS
+            if definition["name"] in surface_names
+        ]
     return [
         definition["name"]
         for definition in TOOL_DEFINITIONS
-        if checker.can_access_tool_surface(definition["name"])
+        if (
+            definition["name"] in surface_names
+            and checker.can_access_tool_surface(definition["name"])
+        )
     ]
 
 
@@ -1781,11 +1843,17 @@ def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         return _error_result(f"Unknown tool: {name}")
 
     if name not in visible_tool_names:
-        if effective_agent:
+        # Compact affects discovery only.  A legacy client that already knows
+        # a specialist tool may continue to call it when no policy is
+        # enforcing; authorization never becomes weaker as a result.
+        if not checker.is_enforcing and _mcp_surface() == "compact":
+            pass
+        elif effective_agent:
             return _error_result(
                 f"활성 에이전트 프로필 '{effective_agent}'에는 '{name}' 도구가 노출되지 않습니다."
             )
-        return _error_result(f"현재 MCP 구성에는 '{name}' 도구가 노출되지 않습니다.")
+        else:
+            return _error_result(f"현재 MCP 구성에는 '{name}' 도구가 노출되지 않습니다.")
 
     global _active_session_id
 

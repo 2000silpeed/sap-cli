@@ -42,6 +42,7 @@ _VALUE_TEXT_TYPES = {
     "GuiTextEdit",
     "GuiComboBox",
 }
+_TEXT_EDITOR_TYPES = {"GuiTextedit", "GuiTextEdit", "GuiAbapEditor"}
 _SENSITIVE_NAME = re.compile(
     r"(?:PASSW|PASSWORD|PWD|PIN|SECRET|TOKEN|CREDENTIAL|BAPIKEY|APIKEY)", re.I
 )
@@ -215,7 +216,14 @@ class UiMapScanner:
         subtype = self._text(self._read(obj, "SubType", "", sap_id))
         logical_id = self._unique_logical_id(sap_id)
         name = self._text(self._read(obj, "Name", "", sap_id)) or self._name_from_id(sap_id)
-        text = self._text(self._read(obj, "Text", "", sap_id))
+        # Rich editors expose their body through line APIs rather than a
+        # reliable Text property.  A UI map stores structure only, never the
+        # body, so avoid an unnecessary/error-prone COM read here.
+        text = (
+            ""
+            if component_type in _TEXT_EDITOR_TYPES
+            else self._text(self._read(obj, "Text", "", sap_id))
+        )
         tooltip = self._text(self._read(obj, "Tooltip", "", sap_id))
         icon = self._text(self._read(obj, "IconName", "", sap_id))
         sensitive = component_type in _SENSITIVE_TYPES or bool(_SENSITIVE_NAME.search(name or sap_id))
@@ -246,6 +254,14 @@ class UiMapScanner:
                     if (sensitive or value_text) and key in {"key", "value"}
                     else self._scalar(value)
                 )
+
+        if component_type in _TEXT_EDITOR_TYPES:
+            editor_meta = self._text_editor_metadata(obj, sap_id)
+            if editor_meta:
+                # Keep live document size out of structural fingerprints and
+                # persisted search text.  Content is available only through
+                # an explicit bounded read of the live editor.
+                volatile["text_editor"] = editor_meta
 
         if component_type == "GuiComboBox":
             entries = self._combo_entries(obj, sap_id, sensitive)
@@ -318,6 +334,30 @@ class UiMapScanner:
         if component_type == "GuiTab" and component.selected:
             self._active_tabs[parent or sap_id] = logical_id
         return component
+
+    def _text_editor_metadata(self, obj: Any, context: str) -> dict[str, int]:
+        """Read small, value-free editor metadata for map diagnostics."""
+
+        metadata: dict[str, int] = {}
+        for attr, key in (
+            ("LineCount", "line_count"),
+            ("NumberOfUnprotectedTextParts", "unprotected_part_count"),
+        ):
+            value = self._read(obj, attr, _MISSING, context, report_missing=False)
+            if value is _MISSING:
+                continue
+            try:
+                metadata[key] = max(0, int(value))
+            except (TypeError, ValueError):
+                continue
+        if "line_count" not in metadata:
+            value = self._query(obj, "GetLineCount", default=_MISSING, context=context)
+            if value is not _MISSING:
+                try:
+                    metadata["line_count"] = max(0, int(value))
+                except (TypeError, ValueError):
+                    pass
+        return metadata
 
     def _combo_entries(
         self, obj: Any, context: str, sensitive: bool

@@ -32,6 +32,7 @@ def test_auth_status_without_policy_reports_allow_all(tmp_path, monkeypatch):
 
 def test_auth_tools_with_viewer_policy_hides_write_tools(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("SAP_CLI_MCP_SURFACE", "full")
     policy_dir = tmp_path / ".sap_cli"
     policy_dir.mkdir()
     (policy_dir / "policy.json").write_text(
@@ -95,6 +96,7 @@ def test_auth_check_reports_permission_and_visibility(tmp_path, monkeypatch):
 def test_auth_top_level_aliases_work_without_policy(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("SAP_CLI_AGENT", raising=False)
+    monkeypatch.setenv("SAP_CLI_MCP_SURFACE", "full")
 
     status = _json_output(runner.invoke(app, ["auth-status"]))
     tools = _json_output(runner.invoke(app, ["auth-tools"]))

@@ -92,7 +92,7 @@ class MapManifest(BaseModel):
     language: str = ""
     gui_version: str = ""
     application_release: str = ""
-    capture_mode: Literal["passive", "reversible", "allowlisted"] = "passive"
+    capture_mode: Literal["passive", "guided", "reversible", "allowlisted"] = "passive"
     fixture_ids: list[str] = Field(default_factory=list)
     created_at: str = ""
     updated_at: str = ""
@@ -289,6 +289,25 @@ class UserInputRequest(BaseModel):
     provenance: dict[str, Any] = Field(default_factory=dict)
 
 
+class SemanticLink(BaseModel):
+    """A value-free semantic connection proposed or confirmed during mapping.
+
+    The link is deliberately closed-world: an MCP AI may only confirm one of
+    the candidate IDs emitted by the local ontology bridge.  It cannot write a
+    free-form business interpretation into a map.
+    """
+
+    link_id: str
+    subject_kind: Literal["state", "component", "transition"]
+    subject_id: str
+    predicate: str
+    object_id: str
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    status: Literal["proposed", "confirmed", "rejected"] = "proposed"
+    evidence: list[dict[str, Any]] = Field(default_factory=list)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+
 class UiMap(BaseModel):
     """Versioned transaction state graph."""
 
@@ -296,6 +315,7 @@ class UiMap(BaseModel):
     states: dict[str, UiState] = Field(default_factory=dict)
     transitions: list[Transition] = Field(default_factory=list)
     pending_interactions: list[UserInputRequest] = Field(default_factory=list)
+    semantic_links: list[SemanticLink] = Field(default_factory=list)
     merge_conflicts: list[dict[str, Any]] = Field(default_factory=list)
 
     def add_state(self, state: UiState) -> UiState:
@@ -408,6 +428,35 @@ class UiMap(BaseModel):
             provenance.update(interaction.provenance)
             self.pending_interactions[index] = existing.model_copy(
                 update={"status": interaction.status, "provenance": provenance}
+            )
+
+        semantic_by_id = {item.link_id: index for index, item in enumerate(self.semantic_links)}
+        status_order = {"proposed": 0, "rejected": 1, "confirmed": 2}
+        for incoming in delta.semantic_links:
+            index = semantic_by_id.get(incoming.link_id)
+            if index is None:
+                self.semantic_links.append(incoming)
+                semantic_by_id[incoming.link_id] = len(self.semantic_links) - 1
+                continue
+            existing = self.semantic_links[index]
+            if existing.model_dump(exclude={"status", "provenance"}) != incoming.model_dump(
+                exclude={"status", "provenance"}
+            ):
+                self.merge_conflicts.append(
+                    {
+                        "kind": "semantic_link",
+                        "id": incoming.link_id,
+                        "reason": "semantic link identity exists with a different payload",
+                    }
+                )
+                conflicts += 1
+                continue
+            if status_order[incoming.status] < status_order[existing.status]:
+                continue
+            provenance = dict(existing.provenance)
+            provenance.update(incoming.provenance)
+            self.semantic_links[index] = existing.model_copy(
+                update={"status": incoming.status, "provenance": provenance}
             )
 
         # Coverage gaps are append-only evidence with an explicit lifecycle.
@@ -618,9 +667,9 @@ class TraversalBranchRule(BaseModel):
 
 
 class TraversalPolicy(BaseModel):
-    """Safety policy for passive and active map discovery."""
+    """Safety policy for passive, guided, and active map discovery."""
 
-    mode: Literal["passive", "reversible", "allowlisted"] = "passive"
+    mode: Literal["passive", "guided", "reversible", "allowlisted"] = "passive"
     budget: TraversalBudget = Field(default_factory=TraversalBudget)
     allowed_side_effects: set[SideEffectClass] = Field(
         default_factory=lambda: {SideEffectClass.READ_ONLY}

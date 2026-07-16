@@ -96,6 +96,10 @@ class UiMapSearch:
         self._build_index()
 
     def _build_index(self) -> None:
+        semantic_by_subject: dict[str, list[str]] = defaultdict(list)
+        for link in self.ui_map.semantic_links:
+            if link.status == "confirmed":
+                semantic_by_subject[link.subject_id].append(link.object_id)
         for state_id in sorted(self.ui_map.states):
             state = self.ui_map.states[state_id]
             self._entries.append(
@@ -109,6 +113,7 @@ class UiMapSearch:
                         ("program", state.program, 10),
                         ("screen_number", str(state.screen_number), 10),
                         ("title", state.title, 8),
+                        ("semantic", " ".join(semantic_by_subject[state_id]), 8),
                     ),
                 )
             )
@@ -128,6 +133,15 @@ class UiMapSearch:
                     ("role", component.role, 7),
                     ("type", component.type, 7),
                     ("sub_type", component.sub_type, 6),
+                    (
+                        "semantic",
+                        " ".join(
+                            semantic_by_subject[
+                                f"{state_id}:{component.logical_id}"
+                            ]
+                        ),
+                        8,
+                    ),
                 )
                 self._entries.append(
                     (

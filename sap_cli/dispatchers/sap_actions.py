@@ -283,6 +283,8 @@ def dispatch_ui_action(
         column=str(args.get("column", "")),
         row=None if args.get("row") is None else int(args["row"]),
         max_rows=int(args.get("max_rows", 50)),
+        max_lines=None if args.get("max_lines") is None else int(args["max_lines"]),
+        max_chars=None if args.get("max_chars") is None else int(args["max_chars"]),
         columns=_normalize_columns(args.get("columns")),
         method_args=_normalize_method_args(args.get("method_args") or args.get("args_json")),
         property_name=str(args.get("property_name", "")),

@@ -130,11 +130,13 @@ class TraversalEngine:
         scanner: UiMapScanner | None = None,
         clock: Callable[[], float] = time.monotonic,
         checkpoint_callback: Callable[[TraversalCheckpoint], None] | None = None,
+        semantic_reviewer: Any | None = None,
     ) -> None:
         self.policy = policy
         self.scanner = scanner or UiMapScanner()
         self.clock = clock
         self.checkpoint_callback = checkpoint_callback
+        self.semantic_reviewer = semantic_reviewer
 
     def run(
         self,
@@ -171,7 +173,14 @@ class TraversalEngine:
         started = self.clock()
         answers = answers or {}
         pending = self._apply_answers(
-            adapter, graph, frontier, pending, answers, resolved, depths
+            adapter,
+            graph,
+            frontier,
+            pending,
+            answers,
+            resolved,
+            depths,
+            traversal_scope,
         )
         if pending:
             return self._result(
@@ -231,7 +240,24 @@ class TraversalEngine:
                 processed.add(state_id)
                 continue
 
+            if self._queue_semantic_review(graph, baseline, pending):
+                frontier.insert(0, state_id)
+                return self._result(
+                    graph,
+                    frontier,
+                    processed,
+                    elapsed_before + self._elapsed(started),
+                    pages,
+                    nodes,
+                    pending,
+                    resolved,
+                    depths,
+                    "needs_user_input",
+                    traversal_scope,
+                )
+
             blocked_here = False
+            candidates: list[TraversalCandidate] = []
             for candidate in adapter.discover(baseline):
                 if candidate.needs_user_input is not None:
                     item = candidate.needs_user_input.model_copy(
@@ -247,9 +273,49 @@ class TraversalEngine:
                     continue
                 if not self._permitted(candidate, baseline):
                     continue
+                # Selecting a tab only changes the active member of an
+                # already-known tab strip.  Once that target tab has been
+                # scanned as active, executing another sibling -> target
+                # switch adds a dense reverse/cross-tab edge but no new UI
+                # structure.  It is particularly expensive in SAP because
+                # every such switch also requires a target scan and a
+                # baseline restore.  Retain the first observed route to each
+                # concrete tab and let the alternate tab state be explored
+                # for its own collections/branches instead.
+                if self._tab_target_is_already_mapped(graph, candidate):
+                    continue
+                if self._automatic_candidate_already_attempted(
+                    traversal_scope, state_id, candidate
+                ):
+                    continue
                 transition_id = self._transition_id(state_id, candidate)
                 if any(item.transition_id == transition_id for item in graph.transitions):
                     continue
+                candidates.append(candidate)
+
+            # Guided mapping is the deliberately small, inspectable primitive
+            # for later automatic traversal: discover the exact same safe
+            # candidates, but execute only the one the user selected.
+            guided_revisit = False
+            if self.policy.mode == "guided" and not blocked_here:
+                selected = self._guided_selected_candidate(
+                    traversal_scope, state_id, candidates
+                )
+                if selected is None:
+                    if candidates:
+                        self._add_pending_interaction(
+                            graph,
+                            pending,
+                            self._guided_candidate_request(baseline, candidates),
+                        )
+                        blocked_here = True
+                    candidates = []
+                else:
+                    candidates = [selected]
+                    guided_revisit = True
+
+            for candidate in candidates:
+                transition_id = self._transition_id(state_id, candidate)
                 # Stop before touching SAP when no new state can be retained.
                 # This keeps the candidate replayable after a larger budget is
                 # supplied instead of persisting an edge to a discarded state.
@@ -268,6 +334,10 @@ class TraversalEngine:
                 if elapsed_before + self._elapsed(started) >= self.policy.budget.max_seconds:
                     stop_reason = "max_seconds"
                     break
+
+                self._remember_automatic_candidate(
+                    traversal_scope, state_id, candidate
+                )
 
                 try:
                     self._emit_checkpoint(
@@ -335,7 +405,13 @@ class TraversalEngine:
                 frontier.insert(0, state_id)
                 stop_reason = "needs_user_input"
                 break
-            processed.add(state_id)
+            if guided_revisit:
+                # The selected branch is now recorded, but sibling candidates
+                # must remain available for the next user choice.
+                if state_id not in frontier:
+                    frontier.append(state_id)
+            else:
+                processed.add(state_id)
 
         elapsed_total = elapsed_before + self._elapsed(started)
         return self._result(
@@ -464,7 +540,7 @@ class TraversalEngine:
             SideEffectClass.NAVIGATION,
         }:
             return False
-        if self.policy.mode == "reversible" and not candidate.reversible:
+        if self.policy.mode in {"guided", "reversible"} and not candidate.reversible:
             return False
         marker_payload = json.dumps(
             {
@@ -523,6 +599,250 @@ class TraversalEngine:
                 return False
         return self.policy.permits(candidate.action, candidate.side_effect)
 
+    @staticmethod
+    def _tab_target_is_already_mapped(
+        graph: UiMap, candidate: TraversalCandidate
+    ) -> bool:
+        """Return whether a concrete tab has already been scanned active.
+
+        The check deliberately requires both the stable logical id and SAP id.
+        Candidates without either identifier (including generic test adapters)
+        retain the old per-transition behaviour because their destination is
+        not safely knowable before executing SAP GUI scripting.
+        """
+
+        action = candidate.action.strip().lower().replace("-", "_")
+        logical_id = candidate.target_logical_id.strip()
+        sap_id = str(candidate.target_locator.get("sap_id", "")).strip()
+        if action != "select_tab" or not logical_id or not sap_id:
+            return False
+        for state in graph.states.values():
+            if logical_id not in state.active_tabs.values():
+                continue
+            component = next(
+                (
+                    item
+                    for item in state.components
+                    if item.logical_id == logical_id and item.sap_id == sap_id
+                ),
+                None,
+            )
+            if component is not None and component.type == "GuiTab":
+                return True
+        return False
+
+    def _automatic_candidate_already_attempted(
+        self,
+        traversal_scope: dict[str, Any],
+        state_id: str,
+        candidate: TraversalCandidate,
+    ) -> bool:
+        """Avoid volatile tab/scroll candidates creating an endless graph.
+
+        SAP controls can emit a fresh scroll position or tab candidate after
+        every scan.  Those values change the transition id even when they do
+        not reveal another UI structure.  Keep one structural attempt per
+        control across an automatic run; guided mode deliberately remains
+        user-directed and is not deduplicated here.
+        """
+
+        if self.policy.mode != "reversible":
+            return False
+        key = self._automatic_candidate_key(state_id, candidate)
+        if not key:
+            return False
+        attempted = traversal_scope.get("automatic_candidate_keys", [])
+        return isinstance(attempted, list) and key in attempted
+
+    def _remember_automatic_candidate(
+        self,
+        traversal_scope: dict[str, Any],
+        state_id: str,
+        candidate: TraversalCandidate,
+    ) -> None:
+        if self.policy.mode != "reversible":
+            return
+        key = self._automatic_candidate_key(state_id, candidate)
+        if not key:
+            return
+        attempted = traversal_scope.setdefault("automatic_candidate_keys", [])
+        if isinstance(attempted, list) and key not in attempted:
+            attempted.append(key)
+
+    @staticmethod
+    def _automatic_candidate_key(
+        state_id: str, candidate: TraversalCandidate
+    ) -> str:
+        action = candidate.action.strip().lower().replace("-", "_")
+        if action not in {"select_tab", "scroll_to"}:
+            return ""
+        locator = dict(candidate.target_locator)
+        # Position and viewport fields are observations, not distinct UI
+        # destinations.  Including them was the source of repeated scans.
+        for field in ("position", "offset", "row", "column", "page", "index"):
+            locator.pop(field, None)
+        payload: dict[str, Any] = {
+            "action": action,
+            "target_logical_id": candidate.target_logical_id,
+            "target_locator": locator,
+        }
+        if action == "select_tab":
+            # A tab destination is global to a tab strip.  When the adapter
+            # cannot expose a stable target id, keep source state in the key
+            # so unrelated generic candidates are not collapsed together.
+            if not candidate.target_logical_id and not locator:
+                payload["state_id"] = state_id
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()[:24]
+
+    def _guided_candidate_request(
+        self, state: UiState, candidates: list[TraversalCandidate]
+    ) -> UserInputRequest:
+        """Create a value-free one-action selection checkpoint."""
+
+        choices = [
+            self._guided_choice(state, candidate)
+            for candidate in candidates
+        ]
+        identity = json.dumps(
+            {"state_id": state.state_id, "candidate_ids": [item["candidate_id"] for item in choices]},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return UserInputRequest(
+            question="이 화면에서 지도에 추가할 안전한 확장 후보를 하나 선택해 주세요.",
+            reason="guided_candidate_selection",
+            current_state_id=state.state_id,
+            required_fields=["candidate_id"],
+            choices=choices,
+            risk="low",
+            resume_token="guided-" + hashlib.sha256(identity.encode()).hexdigest()[:24],
+            provenance={
+                "source": "guided_candidate_selection",
+                "answer_value_stored": False,
+            },
+        )
+
+    def _queue_semantic_review(
+        self, graph: UiMap, state: UiState, pending: list[UserInputRequest]
+    ) -> bool:
+        """Pause for a closed-set MCP-AI semantic review once per state."""
+
+        if self.semantic_reviewer is None:
+            return False
+        subject_prefixes = (state.state_id, f"{state.state_id}:")
+        if any(
+            item.subject_id == subject_prefixes[0]
+            or item.subject_id.startswith(subject_prefixes[1])
+            for item in graph.semantic_links
+        ):
+            return False
+        propose = getattr(self.semantic_reviewer, "propose", None)
+        if not callable(propose):
+            raise TypeError("semantic reviewer does not expose propose(state)")
+        candidates = list(propose(state))
+        if not candidates:
+            return False
+        existing = {item.link_id for item in graph.semantic_links}
+        candidates = [item for item in candidates if item.link_id not in existing]
+        if not candidates:
+            return False
+        graph.semantic_links.extend(candidates)
+        choices = [
+            {
+                "candidate_id": item.link_id,
+                "subject_kind": item.subject_kind,
+                "predicate": item.predicate,
+                "object_id": item.object_id,
+                "confidence": item.confidence,
+            }
+            for item in candidates[:12]
+        ]
+        token_source = json.dumps(
+            [state.state_id, [item["candidate_id"] for item in choices]],
+            separators=(",", ":"),
+        )
+        self._add_pending_interaction(
+            graph,
+            pending,
+            UserInputRequest(
+                question=(
+                    "MCP AI가 로컬 온톨로지와 화면 구조를 비교했습니다. "
+                    "확정할 의미 연결 candidate_id 목록을 선택해 주세요."
+                ),
+                reason="semantic_review",
+                current_state_id=state.state_id,
+                required_fields=["accepted_candidate_ids"],
+                choices=choices,
+                risk="low",
+                resume_token="semantic-"
+                + hashlib.sha256(token_source.encode()).hexdigest()[:24],
+                provenance={
+                    "source": "mcp_ai_semantic_review",
+                    "answer_value_stored": False,
+                    "closed_candidate_set": True,
+                },
+            ),
+        )
+        return True
+
+    def _guided_selected_candidate(
+        self,
+        traversal_scope: dict[str, Any],
+        state_id: str,
+        candidates: list[TraversalCandidate],
+    ) -> TraversalCandidate | None:
+        selections = traversal_scope.get("guided_selection")
+        if not isinstance(selections, dict):
+            return None
+        candidate_id = str(selections.pop(state_id, "")).strip()
+        if not selections:
+            traversal_scope.pop("guided_selection", None)
+        if not candidate_id:
+            return None
+        return next(
+            (
+                candidate
+                for candidate in candidates
+                if self._transition_id(state_id, candidate) == candidate_id
+            ),
+            None,
+        )
+
+    def _guided_choice(
+        self, state: UiState, candidate: TraversalCandidate
+    ) -> dict[str, Any]:
+        candidate_id = self._transition_id(state.state_id, candidate)
+        component = next(
+            (
+                item
+                for item in state.components
+                if item.logical_id == candidate.target_logical_id
+            ),
+            None,
+        )
+        target = (
+            ""
+            if component is not None and component.sensitive
+            else (
+                (component.text or component.name or component.tooltip)
+                if component is not None
+                else ""
+            )
+        ) or candidate.target_logical_id or str(
+            candidate.target_locator.get("sap_id", "")
+        )
+        return {
+            "candidate_id": candidate_id,
+            "action": candidate.action,
+            "target_logical_id": candidate.target_logical_id,
+            "label": f"{candidate.action}: {target or '구조 탐색'}",
+            "side_effect": candidate.side_effect.value,
+            "reversible": candidate.reversible,
+        }
+
     def _apply_answers(
         self,
         adapter: TraversalAdapter,
@@ -532,11 +852,48 @@ class TraversalEngine:
         answers: dict[str, Any],
         resolved: set[str],
         depths: dict[str, int],
+        traversal_scope: dict[str, Any],
     ) -> list[UserInputRequest]:
         remaining: list[UserInputRequest] = []
         for item in pending:
             if item.resume_token not in answers:
                 remaining.append(item)
+                continue
+            if item.provenance.get("source") == "guided_candidate_selection":
+                answer = answers[item.resume_token]
+                candidate_id = str(answer.get("candidate_id", "")).strip()
+                selections = traversal_scope.setdefault("guided_selection", {})
+                if not isinstance(selections, dict):
+                    raise ValueError("guided selection checkpoint is malformed")
+                selections[item.current_state_id] = candidate_id
+                resolved.add(item.resume_token)
+                self._mark_interaction_resolved(graph, item, answer)
+                continue
+            if item.provenance.get("source") == "mcp_ai_semantic_review":
+                answer = answers[item.resume_token]
+                accepted = {
+                    str(value)
+                    for value in answer.get("accepted_candidate_ids", [])
+                }
+                offered = {
+                    str(choice.get("candidate_id", ""))
+                    for choice in item.choices
+                    if isinstance(choice, dict)
+                }
+                for index, link in enumerate(graph.semantic_links):
+                    if link.link_id not in offered:
+                        continue
+                    graph.semantic_links[index] = link.model_copy(
+                        update={
+                            "status": "confirmed" if link.link_id in accepted else "rejected",
+                            "provenance": {
+                                **link.provenance,
+                                "reviewed_by": "mcp_ai",
+                            },
+                        }
+                    )
+                resolved.add(item.resume_token)
+                self._mark_interaction_resolved(graph, item, answer)
                 continue
             if adapter.apply_user_input(item, answers[item.resume_token]):
                 captured = self._capture_user_guided_state(

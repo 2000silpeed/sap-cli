@@ -11,7 +11,9 @@ from sap_cli.ui_map.schema import (
     TraversalBudget,
     TraversalBranchRule,
     TraversalPolicy,
+    UiComponent,
     UiMap,
+    UiState,
 )
 from sap_cli.ui_map.traversal import (
     NeedsUserInput,
@@ -207,6 +209,85 @@ def test_reversible_traversal_restores_each_action_and_avoids_fingerprint_loops(
     assert len(result.ui_map.transitions) == 2
     assert adapter.restore_attempts == 2
     assert adapter.executed == ["select_tab", "select_tab"]
+
+
+def test_tab_targets_are_scanned_once_without_cross_tab_backtracking() -> None:
+    """A tab strip produces a spanning route, not every directed tab pair."""
+
+    class TabStateScanner:
+        _tabs = ("A", "B", "C")
+
+        def scan(self, session, *, tcode=""):
+            active = session.ActiveWindow.Text
+            components = [
+                UiComponent(
+                    logical_id=f"tab-{name.lower()}",
+                    sap_id=f"wnd[0]/usr/tabsMAIN/tabp{name}",
+                    type="GuiTab",
+                    parent_logical_id="main-tabs",
+                    visible=True,
+                    enabled=True,
+                    selected=name == active,
+                )
+                for name in self._tabs
+            ]
+            return UiState(
+                tcode=tcode or "ZMAP",
+                program="ZPROGRAM",
+                screen_number=100,
+                title=active,
+                active_tabs={"main-tabs": f"tab-{active.lower()}"},
+                components=components,
+            )
+
+    def tab_candidate(target: str) -> TraversalCandidate:
+        return TraversalCandidate(
+            action="select_tab",
+            target_logical_id=f"tab-{target.lower()}",
+            target_locator={
+                "sap_id": f"wnd[0]/usr/tabsMAIN/tabp{target}",
+                "component_type": "GuiTab",
+            },
+            params={"to": target},
+            side_effect=SideEffectClass.REVERSIBLE,
+        )
+
+    adapter = Adapter(
+        {
+            "A": [tab_candidate("B"), tab_candidate("C")],
+            "B": [tab_candidate("A"), tab_candidate("C")],
+            "C": [tab_candidate("A"), tab_candidate("B")],
+        }
+    )
+    result = TraversalEngine(policy(), scanner=TabStateScanner()).run(
+        adapter, manifest=manifest()
+    )
+
+    assert {state.title for state in result.ui_map.states.values()} == {"A", "B", "C"}
+    assert [(item.from_state_id, item.target_logical_id) for item in result.ui_map.transitions] == [
+        (next(state_id for state_id, state in result.ui_map.states.items() if state.title == "A"), "tab-b"),
+        (next(state_id for state_id, state in result.ui_map.states.items() if state.title == "A"), "tab-c"),
+    ]
+    assert adapter.executed == ["select_tab", "select_tab"]
+
+
+def test_automatic_scroll_candidates_are_deduplicated_across_viewport_states() -> None:
+    """A changing ALV viewport must not turn one control into an endless map."""
+
+    scroll = lambda target: TraversalCandidate(
+        action="scroll_to",
+        target_logical_id="alv-results",
+        target_locator={"sap_id": "wnd[0]/usr/cntlALV/shellcont/shell"},
+        params={"to": target, "position": target},
+        side_effect=SideEffectClass.REVERSIBLE,
+    )
+    adapter = Adapter({"A": [scroll("B")], "B": [scroll("C")]})
+
+    result = TraversalEngine(policy()).run(adapter, manifest=manifest())
+
+    assert result.stop_reason == "complete"
+    assert [state.title for state in result.ui_map.states.values()] == ["A", "B"]
+    assert adapter.executed == ["scroll_to"]
 
 
 def test_forbidden_side_effects_execute_zero_times_even_when_adapter_proposes_them():
