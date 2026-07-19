@@ -181,7 +181,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "name": "sap_map_augment_start",
         "description": (
             "완료된 기존 지도에서 기준 state와 사용자가 추가할 누락 화면/분기를 지정해 "
-            "durable needs_user_input job을 만듭니다. SAP 화면은 조작하지 않습니다."
+            "durable needs_user_input job을 만듭니다. SAP 화면은 조작하지 않습니다. "
+            "출발 화면에 재실행 가능한 버튼·메뉴·탭이 있으면, 재개 답변에서 실제 사용한 "
+            "transition 선택을 반드시 포함해야 이후 plan이 그 경로를 실행할 수 있습니다."
         ),
         "inputSchema": {"type": "object", "properties": {
             "map_id": {"type": "string"}, "tcode": {"type": "string"},
@@ -196,7 +198,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "description": "지도 순회 job을 daemon에 등록하고 즉시 queued 상태로 반환합니다. active 모드는 테스트 클라이언트 확인이 필요합니다.",
         "inputSchema": {"type": "object", "properties": {
             "tcode": {"type": "string"}, "map_id": {"type": "string"},
-            "mode": {"enum": ["passive", "guided", "reversible", "allowlisted"], "default": "passive", "description": "guided는 안전한 후보를 하나씩 사용자에게 물어본 뒤 확장합니다."},
+            "mode": {"enum": ["passive", "guided", "reversible", "allowlisted"], "default": "guided", "description": "기본 guided는 안전한 후보를 하나씩 사용자에게 물어본 뒤 확장합니다. active 모드는 test_client_confirmed=true가 필요합니다."},
             "budget": {"type": "object"},
             "allowed_actions": {"type": "array", "items": {"type": "string"}},
             "allowed_branches": {

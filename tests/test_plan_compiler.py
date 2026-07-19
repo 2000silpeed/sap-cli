@@ -673,6 +673,38 @@ def test_planning_refuses_a_map_that_is_waiting_for_mapping_input(tmp_path):
     assert result.validation.errors == ["map_build_incomplete"]
 
 
+def test_missing_goal_with_known_collection_gap_requests_map_augmentation(tmp_path):
+    store, saved = saved_map(tmp_path)
+    partial = saved.model_copy(deep=True)
+    partial.states["start"] = partial.states["start"].model_copy(
+        update={
+            "collections": [
+                CollectionDescriptor(
+                    component_logical_id="material-grid",
+                    kind="alv",
+                    coverage={"context_menu_actions": "not_observed_until_opened"},
+                )
+            ]
+        }
+    )
+    store.save(partial)
+
+    result = PlanCompiler(store).compile(
+        "tcode MM03 누락 화면 조회", goal_query="없는 화면"
+    )
+
+    assert result.plan is None
+    assert result.validation.errors == ["map_coverage_incomplete"]
+    assert result.validation.questions[0]["from_state_id"] == "start"
+    assert result.validation.questions[0]["choices"] == [
+        {
+            "kind": "collection",
+            "state_id": "start",
+            "reason": "material-grid:context_menu_actions:not_observed_until_opened",
+        }
+    ]
+
+
 def test_ambiguous_operation_is_hitl_and_explicit_success_criteria_are_kept(tmp_path):
     store, _ = saved_map(tmp_path)
     ambiguous = PlanCompiler(store).compile("tcode MM03 기본 데이터")

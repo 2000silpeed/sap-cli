@@ -859,6 +859,20 @@ class TraversalEngine:
             if item.resume_token not in answers:
                 remaining.append(item)
                 continue
+            if (
+                item.provenance.get("source") == "user_augmentation_request"
+                and isinstance(item.scope, dict)
+                and item.scope.get("replayable_transition_required") is True
+            ):
+                baseline = graph.states.get(item.current_state_id)
+                if baseline is None or self._taught_transition(
+                    baseline, item, answers[item.resume_token]
+                ) is None:
+                    # Do not convert a user-confirmed structural route into a
+                    # non-executable ``user_guided_navigation`` edge merely
+                    # because the MCP client omitted the selected choice.
+                    remaining.append(item)
+                    continue
             if item.provenance.get("source") == "guided_candidate_selection":
                 answer = answers[item.resume_token]
                 candidate_id = str(answer.get("candidate_id", "")).strip()

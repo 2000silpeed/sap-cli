@@ -813,6 +813,49 @@ def test_user_taught_structural_route_is_saved_and_compiles_from_latest_map(tmp_
     assert [step.command for step in result.plan.steps] == ["run", "ui_press"]
 
 
+def test_augmentation_requires_a_replayable_choice_when_source_has_one(tmp_path):
+    wrapper = FakeWrapper()
+    source = FakeScanner().scan(wrapper.session, tcode="ZMAP").model_copy(
+        update={
+            "components": [
+                UiComponent(
+                    logical_id="open-detail",
+                    sap_id="wnd[0]/usr/btnDETAIL",
+                    type="GuiButton",
+                    visible=True,
+                    enabled=True,
+                    supported_actions=["press"],
+                )
+            ]
+        }
+    )
+    maps = UiMapStore(tmp_path / "maps")
+    original = maps.save(
+        UiMap(
+            manifest=MapManifest(map_id="existing", tcode="ZMAP"),
+            states={source.state_id: source},
+        )
+    )
+    runner = UiMapScheduler(
+        MapJobStore(tmp_path / "jobs"),
+        lambda _slot: wrapper,
+        scanner=FakeScanner(),
+        adapter_factory=SapTraversalAdapter,
+        map_store=maps,
+    )
+    paused = runner.augment_start(
+        ui_map=original,
+        from_state_id=source.state_id,
+        request="상세 화면",
+        job_id="require-replayable-choice",
+    )
+    question = paused.pending_questions[0]
+
+    assert question["required_fields"] == ["continue", "transition"]
+    with pytest.raises(ValueError, match="resume answer missing required fields: transition"):
+        runner.resume(paused.job_id, {question["resume_token"]: {"continue": True}})
+
+
 @pytest.mark.parametrize(
     "session_update",
     [

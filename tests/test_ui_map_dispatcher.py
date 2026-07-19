@@ -234,6 +234,33 @@ def test_start_and_resume_delegate_without_echoing_answer(stores):
     assert "SECRET" not in str(resumed)
 
 
+def test_mcp_map_start_defaults_to_guided_with_semantic_review(stores):
+    calls = []
+
+    class Scheduler:
+        def start(self, **kwargs):
+            calls.append(kwargs)
+            return stores[1].create(
+                tcode=kwargs["tcode"],
+                map_id="guided-map",
+                job_id="mcp-guided-default",
+                owner_agent=kwargs["owner_agent"],
+                slot_id=kwargs["slot_id"],
+            )
+
+    dispatch_ui_map_command(
+        "map_traverse_start",
+        {"tcode": "ZMAP", "test_client_confirmed": True},
+        SimpleNamespace(agent_name="agent-a", source="mcp", slot_id="ses0"),
+        get_map_store=lambda: stores[0],
+        get_job_store=lambda: stores[1],
+        get_scheduler=lambda: Scheduler(),
+    )
+
+    assert calls[0]["mode"] == "guided"
+    assert calls[0]["semantic_review"] is True
+
+
 def test_augment_start_loads_existing_map_and_creates_user_checkpoint(stores):
     _, jobs = stores
 

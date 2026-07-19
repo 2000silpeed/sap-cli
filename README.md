@@ -687,6 +687,10 @@ MCP에서는 `sap_map_view`를 호출하면 같은 구조를 받습니다. 응�
 대화형 AI 화면에서 그대로 그래프로 렌더링할 수 있고, `outline`은 화면별 다음 경로를
 텍스트로 확인할 때 사용합니다.
 
+자연어 MCP 요청에서 `sap_map_traverse_start`의 mode를 생략하면 기본값은 `guided`입니다.
+AI는 테스트 client 확인을 먼저 받고 안전 후보를 하나씩 물어야 하며, 단순 `passive`
+한 화면 수집으로 지도 작업을 끝내면 안 됩니다.
+
 `passive` 다음에는 테스트 client에서 `guided` 모드를 권장합니다. 이 모드는 안전하게
 되돌릴 수 있는 탭·트리·스크롤 후보를 목록으로 보여 주고, 사용자가 고른 하나만 실행해
 다음 화면을 지도에 추가합니다. 선택 값은 업무 데이터가 아니라 구조적 candidate ID뿐이며,
@@ -744,6 +748,10 @@ sap map-job-status <job-id>
 sap map-traverse-resume <job-id> '{"<resume-token>":{"continue":true,"transition":{"action":"press","target_logical_id":"<choice의 logical id>"}}}'
 sap map-report mm03-readonly MM03
 ```
+
+출발 화면에 버튼·메뉴·탭처럼 재실행 가능한 선택지가 있으면 `transition` 선택은
+필수입니다. `continue`만 보내면 화면은 기록할 수 있어도 이후 계획이 재사용할 수 없는
+수동 경로가 되므로, 이제 job이 그 답변을 받아들이지 않습니다.
 
 이 과정을 반복하면 지도의 `states`, `transitions`, 미해결 화면(`unreachable`),
 사용자 확인 대기 항목을 `map-report`에서 확인할 수 있습니다. 모든 화면을 무작정

@@ -17,9 +17,9 @@
 | 목표 | 판정 | 확인된 증거 | 완료를 막는 항목 |
 |---|---|---|---|
 | SAP GUI Scripting API 전수 반영 | PARTIAL | PL08 strict 그래프 76 objects, 466 methods, 403 properties, 17 events, 10 enums, 438 enum values와 1,410 coverage 행 재현. adapter/policy 누락 0, 객체 handle과 ByRef/out 계약 구현. Windows canary의 daemon-only `api_live_probes`는 low-risk read member만 실행하고 성공 증거를 값 없는 durable 원장과 coverage report에 반영 | Windows SAP GUI `live_tested` 0. event 및 승인된 안전 probe batch의 실기 증거 필요 |
-| TCode 전체 화면·요소 지도 | PARTIAL | lossless scanner, 탭·가로/세로 스크롤·트리·collection 순회, modal 업무값 비종속 fingerprint, immutable delta, partial/unobserved/restoration coverage gate. Table·ALV/Grid·ApoGrid viewport 셀은 값 없이 button/link/F4/edit affordance를 저장하며, Calendar는 날짜값 없이 구조 상태로 저장한다. 입력·status 본문은 영속하지 않음. 실제 session TCode가 caller hint보다 우선하며, 다른 TCode로 넘어간 전이는 원 지도에 병합하지 않음 | 위험하거나 되돌릴 수 없는 동작은 hard deny. 특수 control과 대형 collection의 Windows 실기 coverage 미확인 |
-| 사용자 요청형 누락 화면 보강 | PARTIAL | `map-augment-start`/`sap_map_augment_start`, durable `needs_user_input`, 수동 이동 후 같은 지도 delta 병합, 반복 보강, daemon 재시작 hydration, budget pause/resume, resolved gap 이력. 자동 순회 중 생긴 manual branch도 사용자가 값 없이 action+logical ID를 확인하면 replayable 전이로 저장하고, 다음 preview는 그 전이를 우선 사용함 | 실제 Windows SAP에서 반복 보강·route teaching 흐름 미검증 |
-| 자연어→지도 기반 전체 계획 | PARTIAL | deterministic parser, 모든 경로 상태의 입력 배치, ambiguous/missing 필드 질문, immutable plan hash, preview/preflight. 목표 버튼의 저장된 후속 action을 포함하고, 짧은 수동 경로보다 긴 실행 가능 경로를 우선 | 지도에 최종 업무 action 전이가 없으면 계획기가 보수적으로 중단함. Windows 업무 fixture 미검증 |
+| TCode 전체 화면·요소 지도 | PARTIAL | lossless scanner, 탭·가로/세로 스크롤·트리·collection 순회, modal 업무값 비종속 fingerprint, immutable delta, partial/unobserved/restoration coverage gate. Table·ALV/Grid·ApoGrid viewport 셀은 값 없이 button/link/F4/edit affordance를 저장하며, Calendar는 날짜값 없이 구조 상태로 저장한다. 입력·status 본문은 영속하지 않음. 실제 session TCode가 caller hint보다 우선하며, 다른 TCode로 넘어간 전이는 원 지도에 병합하지 않음. MCP에서 mode를 생략한 지도 요청은 guided로 시작해 화면 하나만 passive로 저장하고 끝나는 것을 막음 | 위험하거나 되돌릴 수 없는 동작은 hard deny. 특수 control과 대형 collection의 Windows 실기 coverage 미확인 |
+| 사용자 요청형 누락 화면 보강 | PARTIAL | `map-augment-start`/`sap_map_augment_start`, durable `needs_user_input`, 수동 이동 후 같은 지도 delta 병합, 반복 보강, daemon 재시작 hydration, budget pause/resume, resolved gap 이력. 출발 화면에 버튼·메뉴·탭 선택지가 있으면 실제 사용한 구조적 전이를 반드시 확인받아 replayable 간선으로 저장하므로, `continue`만 보내서 실행 불가 수동 간선이 생기지 않음 | 실제 Windows SAP에서 반복 보강·route teaching 흐름 미검증 |
+| 자연어→지도 기반 전체 계획 | PARTIAL | deterministic parser, 모든 경로 상태의 입력 배치, ambiguous/missing 필드 질문, immutable plan hash, preview/preflight. 목표 버튼의 저장된 후속 action을 포함하고, 짧은 수동 경로보다 긴 실행 가능 경로를 우선. 목표를 찾지 못했으며 관측되지 않은 collection/전이 coverage가 있으면 `map_coverage_incomplete`로 보강할 state와 reason을 질문함 | 지도에 최종 업무 action 전이가 없으면 계획기가 보수적으로 중단함. Windows 업무 fixture 미검증 |
 | 계획 1회 전달·무재스캔 실행 | PARTIAL | preview·순회 job·보강 job은 daemon 전용, 실행은 daemon 단일 IPC, live scope/program/dynpro/tab/subscreen/modal cheap 검증. 기본 `fast` 계획은 drift 시 full scan을 금지하고 fail-closed 재preview로 전환하며, canary는 각 실행의 full screen scan 0회를 강제 | Windows에서 fast path·drift·20회 성능 미검증 |
 | 권한·승인·복구 | PARTIAL | daemon 발급 일회성 승인 토큰, caller grant 거부, IPC HMAC·nonce·timestamp, owner/slot 결합, outcome 사전검증·분리 상태 코드 | localhost TCP의 같은 OS 사용자 위협은 완전 격리되지 않음. Windows DACL과 장애 복구 실기 미검증 |
 | Windows 실기·성능 | PENDING | 안전 canary runner와 JSONL/JSON/Markdown report | 실제 ALV/Table/Tree/Modal 및 20회 p50/p95/drift 결과 없음 |
@@ -48,7 +48,7 @@
 
 ## 2026-07-15 코드 재감사 결과
 
-- 전체 자동 테스트: `1157 passed`
+- 전체 자동 테스트: `1187 passed` (2026-07-19 기준)
 - 집중 반례: run 직후 오화면, modal 부재, 숨은 subscreen, 빈 지도 coverage,
   복원 증거 누락, 사용자 보강 뒤 unresolved gap, modal 업무 식별자 변형, exact
   allowlisted branch, user-taught route의 계획 컴파일, 지도 scope 불일치,

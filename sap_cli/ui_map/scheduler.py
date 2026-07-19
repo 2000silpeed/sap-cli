@@ -157,11 +157,28 @@ class UiMapScheduler:
         requested_scope = dict(scope or {})
         token = f"augment-{uuid.uuid4().hex}"
         replay_choices = self._augmentation_transition_choices(ui_map.states[source_id])
+        # A user may still document a route that cannot be replayed.  But when
+        # the source screen exposes a safe, stable structural control, the
+        # normal augmentation path must capture that control.  Otherwise a
+        # seemingly successful map extension becomes a user-guided edge that
+        # the planner correctly cannot execute later.
+        replay_required = bool(replay_choices)
+        requested_scope["replayable_transition_required"] = replay_required
         interaction = UserInputRequest(
-            question=question,
+            question=(
+                question
+                + (
+                    " 자동 실행 계획에도 사용할 경로이므로, 이동에 사용한 버튼·메뉴·탭을 "
+                    "목록에서 반드시 선택해 주세요."
+                    if replay_required
+                    else ""
+                )
+            ),
             reason="user_requested_missing_screen",
             current_state_id=source_id,
-            required_fields=["continue"],
+            required_fields=(
+                ["continue", "transition"] if replay_required else ["continue"]
+            ),
             choices=[{"continue": True}, *replay_choices],
             risk="medium",
             resume_token=token,
@@ -169,6 +186,7 @@ class UiMapScheduler:
             provenance={
                 "source": "user_augmentation_request",
                 "replay_annotation_optional": bool(replay_choices),
+                "replayable_transition_required": replay_required,
                 "answer_value_stored": False,
             },
         )

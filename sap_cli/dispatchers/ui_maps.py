@@ -161,10 +161,19 @@ def dispatch_ui_map_command(
                 raise PermissionError("transaction authorization denied")
             if bool(getattr(decision, "approval_required", False)):
                 raise PermissionError("transaction approval is required before traversal")
+        # MCP is normally driven by a natural-language request such as
+        # "MM03 지도를 만들어줘".  A passive one-screen capture is a poor
+        # implicit interpretation of that request.  Keep the CLI's explicit
+        # passive default intact, but let MCP begin the inspectable guided
+        # workflow unless its caller deliberately chose another mode.
+        requested_mode = str(args.get("mode", "")).strip()
+        resolved_mode = requested_mode or (
+            "guided" if str(ctx.source).lower() == "mcp" else "passive"
+        )
         record = scheduler.start(
             tcode=tcode,
             map_id=str(args.get("map_id", "")),
-            mode=str(args.get("mode", "passive")),
+            mode=resolved_mode,
             budget=dict(args.get("budget") or {}),
             allowed_actions=list(args.get("allowed_actions") or []),
             allowed_branches=list(args.get("allowed_branches") or []),
@@ -173,7 +182,7 @@ def dispatch_ui_map_command(
             navigate=bool(args.get("navigate", True)),
             test_client_confirmed=bool(args.get("test_client_confirmed", False)),
             semantic_review=bool(
-                args.get("semantic_review", str(args.get("mode", "")).lower() == "guided")
+                args.get("semantic_review", resolved_mode.lower() == "guided")
             ),
         )
         return {"job": _job_summary(record)}

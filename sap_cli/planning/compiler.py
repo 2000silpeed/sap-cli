@@ -246,6 +246,15 @@ class PlanCompiler:
                         _goal_error,
                     ) = alternative
         if goal_state is None:
+            coverage_question = self._coverage_guidance_question(ui_map, start)
+            if coverage_question is not None:
+                return self._needs(
+                    "map_coverage_incomplete",
+                    "저장된 지도에 아직 관측하지 않은 화면 분기가 있어 목표를 확정할 수 없습니다. "
+                    "누락 화면으로 이동해 지도를 보강해 주세요.",
+                    intent,
+                    question=coverage_question,
+                )
             return self._needs(
                 "goal_ambiguous",
                 "목표 화면이나 UI 요소를 더 구체적으로 알려 주세요.",
@@ -609,6 +618,76 @@ class PlanCompiler:
                 # remain compatible with the original slice API.
                 pass
         return any(item.status == "pending" for item in ui_map.pending_interactions)
+
+    @staticmethod
+    def _coverage_guidance_question(
+        ui_map: UiMap, start: UiState
+    ) -> dict[str, Any] | None:
+        """Turn known missing map structure into an actionable HITL request.
+
+        This is deliberately used only after the goal could not be resolved.
+        A partial collection elsewhere in a large transaction must not block a
+        fully known, unrelated execution route.
+        """
+
+        incomplete_markers = {
+            "partial",
+            "metadata_only",
+            "not_observed",
+            "unobserved",
+            "unknown",
+            "not_sampled",
+        }
+        gaps: list[dict[str, str]] = []
+        for gap in ui_map.manifest.unreachable:
+            if gap.get("resolved") is True:
+                continue
+            state_id = str(gap.get("state_id", ""))
+            if state_id and state_id not in ui_map.states:
+                continue
+            gaps.append(
+                {
+                    "kind": "transition",
+                    "state_id": state_id or start.state_id,
+                    "reason": str(gap.get("reason", "unobserved_transition")),
+                }
+            )
+        for state in ui_map.states.values():
+            for collection in state.collections:
+                for area, status in collection.coverage.items():
+                    normalized = str(status).casefold()
+                    if not any(marker in normalized for marker in incomplete_markers):
+                        continue
+                    gaps.append(
+                        {
+                            "kind": "collection",
+                            "state_id": state.state_id,
+                            "reason": (
+                                f"{collection.component_logical_id}:{area}:{status}"
+                            ),
+                        }
+                    )
+        if not gaps:
+            return None
+        # Keep prompts bounded and value-free.  The MCP client can use a
+        # returned state_id directly with sap_map_augment_start.
+        choices = sorted(
+            {
+                (item["kind"], item["state_id"], item["reason"])
+                for item in gaps
+            }
+        )[:12]
+        return {
+            "code": "map_coverage_incomplete",
+            "question": "누락된 화면 또는 UI 분기를 선택해 지도 보강을 시작해 주세요.",
+            "map_id": ui_map.manifest.map_id,
+            "tcode": ui_map.manifest.tcode,
+            "from_state_id": start.state_id,
+            "choices": [
+                {"kind": kind, "state_id": state_id, "reason": reason}
+                for kind, state_id, reason in choices
+            ],
+        }
 
     @staticmethod
     def _resolved_intent(
