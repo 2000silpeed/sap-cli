@@ -37,6 +37,66 @@ type), 확인된 전이만 남는다. 자재번호·고객번호·금액 같은 
 5. **`passive` 한 번으로 끝내지 않는다.** 계획에 쓸 수 있는 지도는 최소한
    `guided`로 대상 화면까지 연결되어 있어야 한다.
 
+## 운영 루프 (이 순서를 벗어나지 않는다)
+
+지도 수집은 **비동기 job**이다. `map-traverse-start`는 즉시 job을 하나 만들고
+돌려줄 뿐, 수집은 daemon이 백그라운드에서 진행한다. 에이전트는 아래 루프를 돌며
+**관찰하고(폴링) → 막히면 사용자에게 묻고 → 답을 넣어 재개**한다. 화면을 직접
+조작하지 않는다.
+
+```
+1. START   sap map-traverse-start ...
+           → 응답 {"job": {"job_id": "...", "status": "..."}} 에서 job_id 를 꺼낸다
+2. POLL    sap map-job-status <job_id>          # status 가 바뀔 때까지 1~2초 간격 반복
+3. status 로 분기:
+     running / queued        → 아직 진행 중. 계속 POLL (2로)
+     needs_user_input        → job.pending_questions 를 읽어 사용자에게 묻고,
+                                받은 답으로 RESUME → 다시 POLL (2로)
+     paused                  → budget 소진. --budget-json 으로 RESUME → POLL
+     completed               → 끝. map-report 로 검증
+     failed / interrupted    → 아래 "job 상태와 대응" 표
+```
+
+핵심 규칙:
+
+- **job_id 는 START 응답에서 나온다.** 지어내지 않는다. 잃어버리면 인자 없는
+  `sap map-job-status` 로 본인 job 목록을 다시 찾는다.
+- **폴링은 job을 진행시키지 않는다** — 그냥 관찰이다. daemon이 알아서 다음
+  전이를 진행하므로, `running` 이면 잠깐 기다렸다 다시 POLL 한다.
+- **guided 는 화면마다 질문을 새로 낸다.** 한 번 RESUME 했다고 끝이 아니다.
+  `status` 가 `completed` 가 될 때까지 (needs_user_input → resume → poll) 를
+  반복한다.
+- **답은 반드시 살아있는 job의 `pending_questions` 에서 읽어온다.**
+  `resume_token`·`candidate_id` 를 기억이나 추측으로 만들지 않는다. 매 RESUME
+  전에 최신 `map-job-status` 로 현재 질문을 다시 확인한다.
+
+### 언제 사용자에게 멈춰 묻는가
+
+`needs_user_input` 의 `reason` 이 판단 기준이다.
+
+| reason | 누가 고르나 | 행동 |
+|---|---|---|
+| `guided_candidate_selection` | **사용자** | choices의 `label`/`action`을 사람이 읽을 형태로 보여주고 **하나** 고르게 한다. 절대 임의 선택 금지 (절대 규칙 4) |
+| `map_coverage_incomplete` | **사용자** | 어떤 화면이 빠졌는지 보여주고, 직접 이동 후 보강할지 확인 |
+| `semantic_review` | 에이전트 | 구조적 의미 연결 후보다. 값이 없으므로 에이전트가 `accepted_candidate_ids`로 확정 가능. 애매하면 비우고 넘어간다 |
+
+사용자에게 물을 때는 **멈추고 답을 기다린다.** 답을 받기 전에 다음 RESUME 를
+보내지 않는다.
+
+### 언제 "지도가 충분한가" (끝 판단)
+
+100% 커버리지를 쫓지 않는다. **이번에 세울 계획이 지나갈 화면·필드가 지도에
+들어왔고 도달 가능하면** 그 지도는 충분하다.
+
+- 1차 종료 신호: `map-report` 의 `coverage_gate.complete == true`
+- 그게 아니어도, 목표 화면이 `map-path` 로 시작 상태에서 도달되면 계획을 세울 수
+  있다. 나머지 미수집 분기는 나중에 `map-augment-start` 로 채운다.
+- 반대로 `coverage_gate.complete` 가 `true` 여도, 사용자가 원하는 목표 화면이
+  아직 없으면 끝이 아니다. guided 로 그 화면까지 확장한다.
+
+즉 끝은 **coverage 숫자가 아니라 "그 계획에 필요한 화면이 도달 가능한가"** 로
+판단한다. 무한 확장하지 말고, 목표에 닿으면 멈춘다.
+
 ## 0단계 — daemon과 SAP 세션 준비
 
 ```powershell
@@ -129,6 +189,52 @@ sap map-traverse-resume <job-id> '{"<resume-token>":{"candidate_id":"<candidate_
 `side_effect`, `reversible`를 담고 있다. 사용자에게는 `label`과 `action`을
 사람이 읽을 형태로 보여 주고, 업무적으로 맞는 경로 하나를 고르게 한다. 여러 개를
 한꺼번에 고르게 하지 않는다 — guided는 한 번에 하나만 실행한다.
+
+### guided 한 판 전체 예시 (이대로 따라 돈다)
+
+응답 JSON은 예시다. 실제 값은 매번 `map-job-status`로 다시 읽는다.
+
+```powershell
+# START — job_id 를 꺼낸다
+sap map-traverse-start MM03 --map-id mm03-readonly --mode guided --test-client-confirmed
+# → {"job": {"job_id": "map-9f3a...", "status": "running", "pending_questions": []}}
+
+# POLL — status 가 바뀔 때까지 반복
+sap map-job-status map-9f3a...
+# → {"job": {"status": "running", ...}}          # 아직 → 잠깐 기다렸다 다시 POLL
+sap map-job-status map-9f3a...
+# → {"job": {"status": "needs_user_input",
+#            "pending_questions": [
+#              {"resume_token": "guided-1a2b...",
+#               "reason": "guided_candidate_selection",
+#               "required_fields": ["candidate_id"],
+#               "choices": [
+#                 {"candidate_id": "c1", "action": "select_tab",
+#                  "label": "기본 데이터", "reversible": true},
+#                 {"candidate_id": "c2", "action": "select_tab",
+#                  "label": "구매", "reversible": true}]}]}}
+```
+
+여기서 **멈추고 사용자에게 묻는다**: "기본 데이터 / 구매 중 어느 탭을 지도에
+넣을까요?" 사용자가 "기본 데이터"라고 하면 그 `candidate_id`(`c1`)로 RESUME 한다.
+
+```powershell
+# RESUME — resume_token 을 키로, 고른 candidate_id 를 넣는다
+sap map-traverse-resume map-9f3a... '{"guided-1a2b...":{"candidate_id":"c1"}}'
+# → {"job": {"status": "running", ...}}
+
+# 다시 POLL — guided 는 새 화면에서 다음 질문을 낸다
+sap map-job-status map-9f3a...
+# → needs_user_input (다음 후보) → 다시 사용자에게 묻고 RESUME …
+#    이 (poll → 묻기 → resume) 를 status 가 completed 가 될 때까지 반복한다.
+
+# completed 되면 검증
+sap map-report mm03-readonly MM03
+```
+
+핵심: RESUME 한 번으로 끝나지 않는다. `completed` 전까지 루프를 계속 돈다. 목표
+화면(예: 조회하려는 데이터 탭)이 지도에 들어오면 거기서 멈춰도 된다 — "끝 판단"
+참고.
 
 ## 3단계 — 누락 화면 보강 (map-augment-start)
 

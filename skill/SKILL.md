@@ -173,6 +173,25 @@ sap session-excel "업로드 대상 범위 확인" --action check --workbook inp
 `저장`, `전기`, `삭제`, `릴리스`, `릴리즈`, `승인`, `전송`, `발송`, `인쇄`,
 `출력`이 라벨·ID에 있으면 후보에서 제외된다.
 
+**지도 수집은 비동기 job이다.** `sap_map_traverse_start`는 job을 만들고 즉시
+돌려줄 뿐이며, 수집은 daemon이 백그라운드로 진행한다. 아래 루프를 벗어나지 않는다.
+
+1. `sap_map_traverse_start` 응답의 `job.job_id`를 잡는다.
+2. `sap_map_job_status(job_id)`로 `status`가 바뀔 때까지 폴링한다 (폴링은 job을
+   진행시키지 않고 관찰만 한다).
+3. `status`로 분기: `running`/`queued`면 계속 폴링 · `needs_user_input`이면
+   `job.pending_questions`를 읽어 답을 만들고 `sap_map_traverse_resume` 후 다시
+   폴링 · `paused`면 budget으로 재개 · `completed`면 종료.
+4. **guided는 화면마다 질문을 새로 낸다.** RESUME 한 번으로 끝이 아니라
+   `completed`까지 (폴링 → 답변 → resume)를 반복한다.
+
+`resume_token`·`candidate_id`는 **반드시 살아있는 job의 `pending_questions`에서
+읽어온다.** 기억·추측으로 만들면 `unknown resume token`으로 거부된다.
+`guided_candidate_selection`은 임의로 고르지 말고 사용자에게 `label`을 보여주고
+하나 받는다. 끝 판단은 커버리지 100%가 아니라 **목표 화면이 지도에 들어와 도달
+가능한가**로 한다 (`sap_map_report`의 `coverage_gate` 또는 `sap_map_path`로 확인).
+CLI 전용 상세 절차는 `sap-map-build` 스킬에 있다.
+
 `sap_map_traverse_resume`의 `answers`는 **resume_token을 키로 하는 객체**이고,
 질문의 `reason`에 따라 값 모양이 다르다.
 
