@@ -23,9 +23,12 @@ type), 확인된 전이만 남는다. 자재번호·고객번호·금액 같은 
 
 1. **의사코드 금지.** `sap map-traverse-start(...)` 같은 표기 대신 실제 명령을
    실행한다.
-2. **저장·변경 동작은 어떤 모드에서도 수집 대상이 아니다.** `save`, `post`,
-   `delete`, `release`, `send`, `print` 계열 분기는 지도에 넣지 않는다. 런타임이
-   `commit`/`destructive`/`external` side effect를 차단한다.
+2. **저장·변경 동작은 어떤 모드에서도 수집 대상이 아니다.** 런타임이
+   `commit`/`destructive`/`external` side effect를 차단하며, 라벨·ID에 다음
+   표현이 있으면 후보에서 제외한다.
+   - 영문: `save`, `post`, `delete`, `release`, `send`, `print`
+   - 한글: `저장`, `전기`, `삭제`, `릴리스`, `릴리즈`, `승인`, `전송`, `발송`,
+     `인쇄`, `출력`
 3. **`passive` 외 모든 모드는 테스트 client에서만.** `--test-client-confirmed`
    없이는 실행 자체가 거부된다. 사용자에게 "지금 접속한 client가 테스트
    client인지" 먼저 확인받는다.
@@ -81,6 +84,16 @@ job이 `needs_user_input`으로 멈추면 `pending_questions[]`를 읽는다. �
 | `semantic_review` | `accepted_candidate_ids` | `{"semantic-…":{"accepted_candidate_ids":["<candidate_id>"]}}` |
 | `user_requested_missing_screen` | `continue` (+ 대개 `transition`) | `{"augment-…":{"continue":true,"transition":{"action":"press","target_logical_id":"<logical id>"}}}` |
 
+툴바 버튼이나 컨텍스트 메뉴 항목으로 이동했다면 `item_id`가 필요하다.
+
+```json
+{"augment-…": {"continue": true, "transition": {
+  "action": "press_toolbar_button",
+  "target_logical_id": "<collection component logical id>",
+  "item_id": "<toolbar_actions의 항목 id>"
+}}}
+```
+
 ```powershell
 sap map-traverse-resume <job-id> '{"<resume-token>":{"candidate_id":"<candidate_id>"}}'
 ```
@@ -91,8 +104,18 @@ sap map-traverse-resume <job-id> '{"<resume-token>":{"candidate_id":"<candidate_
   `unknown resume token` 오류가 난다.
 - `candidate_id`는 반드시 그 질문의 `choices`에 있는 값이어야 한다. 지어내지
   않는다.
-- `transition` 객체는 정확히 `{"action", "target_logical_id"}` 두 키만 가진다.
-  `action`은 `press`(GuiButton) / `select_menu`(GuiMenu) / `select_tab`(GuiTab).
+- `transition` 객체는 키 구성이 정확히 맞아야 한다. 하나라도 더하거나 빠지면
+  거부된다. 대상 컨트롤 종류에 따라 두 가지다.
+
+  | 분기 종류 | 키 | `action` | 대상 타입 |
+  |---|---|---|---|
+  | 일반 컨트롤 | `action`, `target_logical_id` | `press` / `select_menu` / `select_tab` | GuiButton / GuiMenu / GuiTab |
+  | 컬렉션 항목 | `action`, `target_logical_id`, `item_id` | `press_toolbar_button` / `select_context_menu_item` | GuiToolbar / GuiShell / GuiGridView / GuiTableControl |
+
+  컬렉션 분기의 `item_id`는 해당 collection의 `toolbar_actions`
+  (`press_toolbar_button`) 또는 `context_menu_actions`
+  (`select_context_menu_item`)에 실제로 있고, `enabled`/`visible`이 `false`가
+  아닌 항목이어야 한다. 지어내면 거부된다.
 - 답변 **값은 디스크에 저장되지 않는다.** 어떤 필드에 답했는지만
   `resume_provenance`로 남는다.
 
@@ -180,6 +203,11 @@ budget만 보내도 거부된다.
 12=F12)다. `source_state_id` 또는 `source_fingerprint` 중 하나는 있어야 한다.
 매칭 시 `action`, `target_logical_id`, `target_sap_id`, `item_id`,
 `restore_vkey`가 모두 일치해야 후보가 통과한다.
+
+`component_type`은 `GuiButton`, `GuiMenu`, `GuiToolbar`, `GuiShell`,
+`GuiGridView`, `GuiTableControl` 중 하나다. 컬렉션 분기
+(`press_toolbar_button`, `select_context_menu_item`)는 `GuiToolbar`,
+`GuiShell`, `GuiGridView`, `GuiTableControl`만 허용하며 `item_id`가 필수다.
 
 ## 5단계 — 점검
 

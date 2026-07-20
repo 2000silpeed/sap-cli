@@ -168,8 +168,10 @@ sap session-excel "업로드 대상 범위 확인" --action check --workbook inp
 
 `mode`는 `passive` / `guided` / `reversible` / `allowlisted`. MCP에서 mode를
 생략하면 기본값은 `guided`이며, `passive` 외 모든 모드는
-`test_client_confirmed=true`가 필요하다. `save`, `post`, `delete`, `release`,
-`send`, `print` 계열 분기는 어떤 모드에서도 수집되지 않는다.
+`test_client_confirmed=true`가 필요하다. 변경성 분기는 어떤 모드에서도 수집되지
+않는다 — 영문 `save`, `post`, `delete`, `release`, `send`, `print`와 한글
+`저장`, `전기`, `삭제`, `릴리스`, `릴리즈`, `승인`, `전송`, `발송`, `인쇄`,
+`출력`이 라벨·ID에 있으면 후보에서 제외된다.
 
 `sap_map_traverse_resume`의 `answers`는 **resume_token을 키로 하는 객체**이고,
 질문의 `reason`에 따라 값 모양이 다르다.
@@ -179,6 +181,13 @@ sap session-excel "업로드 대상 범위 확인" --action check --workbook inp
 | `guided_candidate_selection` | `{"candidate_id": "<choices의 candidate_id>"}` |
 | `semantic_review` | `{"accepted_candidate_ids": ["<candidate_id>"]}` |
 | `user_requested_missing_screen` | `{"continue": true, "transition": {"action": "press", "target_logical_id": "<logical id>"}}` |
+
+`transition`은 키 구성이 정확해야 한다. 일반 컨트롤은
+`{action, target_logical_id}`이고 `action`은 `press`(GuiButton) /
+`select_menu`(GuiMenu) / `select_tab`(GuiTab)이다. 툴바·컨텍스트 메뉴 항목은
+`{action, target_logical_id, item_id}`이며 `action`은 `press_toolbar_button` /
+`select_context_menu_item`, 대상은 GuiToolbar / GuiShell / GuiGridView /
+GuiTableControl이다.
 
 ### 지도 기반 계획·실행
 
