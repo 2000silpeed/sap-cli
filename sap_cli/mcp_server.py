@@ -220,7 +220,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                         "target_logical_id": {"type": "string"},
                         "target_sap_id": {"type": "string"},
                         "component_type": {"enum": [
-                            "GuiButton", "GuiMenu", "GuiToolbar", "GuiShell"
+                            "GuiButton", "GuiMenu", "GuiToolbar", "GuiShell",
+                            "GuiGridView", "GuiTableControl"
                         ]},
                         "item_id": {"type": "string"},
                         "restore_vkey": {"enum": [3, 12]},
@@ -1701,6 +1702,10 @@ COMPACT_TOOL_NAMES = frozenset(
         "sap_connect",
         "sap_session",
         "sap_screen",
+        # One read-only discovery entry point keeps the compact surface small
+        # while still letting an MCP agent look up the documented API for an
+        # uncommon SAP control before it chooses a generic ui_action.
+        "sap_scripting_query",
         "sap_run",
         "sap_ui_action",
         "sap_get_status",

@@ -24,6 +24,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TextIO
 
+from sap_cli.ui_map.schema import TraversalBranchRule
+
 
 Transport = Callable[..., dict[str, Any] | None]
 _TCODE = re.compile(r"^[A-Z0-9_/.-]{2,20}$")
@@ -52,6 +54,7 @@ class CanaryConfig:
     mode: str
     budget: dict[str, Any]
     allowed_actions: tuple[str, ...]
+    allowed_branches: tuple[dict[str, Any], ...]
     navigate: bool
     read_only_acknowledged: bool
     non_production_acknowledged: bool
@@ -75,7 +78,7 @@ class CanaryConfig:
         if not isinstance(mapping, Mapping):
             raise CanaryError("mapping_not_object")
         mode = str(mapping.get("mode", "passive")).strip().lower()
-        if mode not in {"passive", "reversible"}:
+        if mode not in {"passive", "reversible", "allowlisted"}:
             raise CanaryError("unsafe_mapping_mode")
         map_id = str(mapping.get("map_id", f"canary-{tcode.lower()}")).strip()
         if not _SAFE_TOKEN.fullmatch(map_id):
@@ -94,6 +97,24 @@ class CanaryConfig:
         action_values = tuple(str(item).strip() for item in allowed_actions)
         if any(not item for item in action_values):
             raise CanaryError("empty_allowed_action")
+        branches_raw = mapping.get("allowed_branches", [])
+        if not isinstance(branches_raw, Sequence) or isinstance(
+            branches_raw, (str, bytes)
+        ):
+            raise CanaryError("allowed_branches_not_array")
+        allowed_branches: list[dict[str, Any]] = []
+        for raw_branch in branches_raw:
+            if not isinstance(raw_branch, Mapping):
+                raise CanaryError("allowed_branch_not_object")
+            try:
+                branch = TraversalBranchRule.model_validate(raw_branch)
+            except Exception as exc:
+                raise CanaryError("invalid_allowed_branch") from exc
+            allowed_branches.append(branch.model_dump(mode="json"))
+        if mode == "allowlisted" and not allowed_branches:
+            raise CanaryError("allowlisted_branches_required")
+        if mode != "allowlisted" and allowed_branches:
+            raise CanaryError("allowed_branches_require_allowlisted_mode")
 
         acknowledgements = raw.get("acknowledgements", {})
         if not isinstance(acknowledgements, Mapping):
@@ -105,7 +126,9 @@ class CanaryConfig:
         )
         if not read_only:
             raise CanaryError("read_only_acknowledgement_required")
-        if mode == "reversible" and not (non_production and reversible_only):
+        if mode in {"reversible", "allowlisted"} and not (
+            non_production and reversible_only
+        ):
             raise CanaryError("reversible_acknowledgements_required")
 
         polling = raw.get("polling", {})
@@ -176,6 +199,7 @@ class CanaryConfig:
 
         candidate = {
             "allowed_actions": action_values,
+            "allowed_branches": allowed_branches,
             "plan_request": plan["request"] if plan else "",
         }
         if _contains_unsafe_action(candidate):
@@ -187,6 +211,7 @@ class CanaryConfig:
             mode=mode,
             budget=dict(budget),
             allowed_actions=action_values,
+            allowed_branches=tuple(allowed_branches),
             navigate=bool(mapping.get("navigate", True)),
             read_only_acknowledged=read_only,
             non_production_acknowledged=non_production,
@@ -266,8 +291,11 @@ class WindowsCanaryRunner:
                     "mode": self.config.mode,
                     "budget": self.config.budget,
                     "allowed_actions": list(self.config.allowed_actions),
+                    "allowed_branches": list(self.config.allowed_branches),
                     "navigate": self.config.navigate,
-                    "test_client_confirmed": self.config.mode == "reversible",
+                    "test_client_confirmed": self.config.mode in {
+                        "reversible", "allowlisted"
+                    },
                 },
             )
             job = _required_mapping(map_started, "job", "map_start_shape_invalid")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
+import re
 import time
 from typing import Any, Literal
 
@@ -37,6 +38,23 @@ _NO_ROUNDTRIP = {
     "ui_inspect",
     "ui_get_property",
 }
+# A cheap execution probe deliberately does not rebuild a UiState.  These
+# controls nevertheless make useful structural anchors: looking up one known
+# object verifies that the saved screen shell has not silently changed, while
+# avoiding recursive Children enumeration (and therefore a screen scan).
+_STRUCTURAL_ANCHOR_TYPES = {
+    "GuiMainWindow",
+    "GuiModalWindow",
+    "GuiToolbar",
+    "GuiStatusbar",
+    "GuiTabStrip",
+    "GuiSimpleContainer",
+    "GuiCustomControl",
+    "GuiShell",
+    "GuiTableControl",
+}
+_MAX_STRUCTURAL_ANCHORS = 3
+_STRUCTURAL_FINGERPRINT = re.compile(r"^[0-9a-f]{64}$")
 
 
 class StepTrace(BaseModel):
@@ -234,7 +252,11 @@ class PlanExecutor:
             first = plan.steps[0] if plan.steps else None
             if first is None or first.command != "run":
                 initial_error = self._targeted_state_error(
-                    sap, ui_map.states.get(plan.start_state_id)
+                    sap,
+                    ui_map.states.get(plan.start_state_id),
+                    expected_fingerprint=(
+                        first.expected_from_fingerprint if first is not None else ""
+                    ),
                 )
         if initial_error:
             return self._failed(
@@ -401,7 +423,11 @@ class PlanExecutor:
                         observed, expected_state, "TCode start"
                     )
                 if not error and expected_state is not None:
-                    error = self._targeted_state_error(sap, expected_state)
+                    error = self._targeted_state_error(
+                        sap,
+                        expected_state,
+                        expected_fingerprint=_expected_fingerprint(final_step),
+                    )
                 if (
                     error == "expected SAP screen transition did not occur"
                     and plan.scan_policy != "fast"
@@ -433,7 +459,9 @@ class PlanExecutor:
         final_error = _final_probe_error(final_probe, plan, ui_map)
         if not final_error:
             final_error = self._targeted_state_error(
-                sap, ui_map.states.get(plan.goal_state_id)
+                sap,
+                ui_map.states.get(plan.goal_state_id),
+                expected_fingerprint=_goal_expected_fingerprint(plan),
             )
         if not final_error:
             final_error = self._goal_component_error(
@@ -605,6 +633,50 @@ class PlanExecutor:
                 errors.append(f"step {step.step_id}: map version mismatch")
             if step.map_fingerprint and step.map_fingerprint != plan.map_fingerprint:
                 errors.append(f"step {step.step_id}: map fingerprint mismatch")
+            if step.command == "run":
+                start = ui_map.states.get(plan.start_state_id)
+                if (
+                    start is None
+                    or (
+                        _is_structural_fingerprint(step.expected_to_fingerprint)
+                        and step.expected_to_fingerprint != start.compute_fingerprint()
+                    )
+                ):
+                    errors.append(
+                        f"step {step.step_id}: expected start state fingerprint does not match UI map"
+                    )
+            if not step.map_transition_id:
+                continue
+            transition = next(
+                (
+                    item
+                    for item in ui_map.transitions
+                    if item.transition_id == step.map_transition_id
+                ),
+                None,
+            )
+            if transition is None:
+                errors.append(f"step {step.step_id}: map transition is missing")
+                continue
+            source = ui_map.states.get(transition.from_state_id)
+            target = ui_map.states.get(transition.to_state_id)
+            if source is None or target is None:
+                errors.append(f"step {step.step_id}: map transition state is missing")
+                continue
+            if (
+                _is_structural_fingerprint(step.expected_from_fingerprint)
+                and step.expected_from_fingerprint != source.compute_fingerprint()
+            ):
+                errors.append(
+                    f"step {step.step_id}: expected source state fingerprint does not match UI map"
+                )
+            if (
+                _is_structural_fingerprint(step.expected_to_fingerprint)
+                and step.expected_to_fingerprint != target.compute_fingerprint()
+            ):
+                errors.append(
+                    f"step {step.step_id}: expected target state fingerprint does not match UI map"
+                )
         return errors
 
     def _safe_probe(self, sap: Any, *, full: bool) -> dict[str, Any]:
@@ -615,11 +687,27 @@ class PlanExecutor:
             return {"probe_error": True}
 
     @staticmethod
-    def _targeted_state_error(sap: Any, state: Any) -> str:
-        """Verify saved tabs/subscreens with targeted reads, never a full scan."""
+    def _targeted_state_error(
+        sap: Any, state: Any, *, expected_fingerprint: str = ""
+    ) -> str:
+        """Verify the cheap, high-signal subset of a saved UI-state fingerprint.
+
+        A complete structural fingerprint needs a recursive component scan and
+        is intentionally unavailable to a fast plan.  We instead verify the
+        state contract with direct, bounded reads: selected tabs, visible
+        subscreens, and up to three stable shell/collection anchors.  The
+        immutable plan's expected fingerprint is checked against this exact
+        map state before any live reads, so a stale/tampered transition cannot
+        be mistaken for a live GUI drift.
+        """
 
         if state is None:
             return "expected UI map state is missing"
+        if (
+            _is_structural_fingerprint(expected_fingerprint)
+            and expected_fingerprint != state.compute_fingerprint()
+        ):
+            return "expected SAP state fingerprint does not match plan UI map"
         components = {item.logical_id: item for item in state.components}
         getter = getattr(sap, "get_component_property", None)
         for logical_id in state.active_tabs.values():
@@ -650,6 +738,9 @@ class PlanExecutor:
                 return "active SAP subscreen does not match plan UI map"
             if not isinstance(observed, Mapping) or observed.get("visible") is not True:
                 return "active SAP subscreen does not match plan UI map"
+        structural_error = _structural_anchor_error(sap, state)
+        if structural_error:
+            return structural_error
         return ""
 
     @staticmethod
@@ -968,6 +1059,84 @@ def _target_state(ui_map: UiMap, step: PlanStep) -> Any:
     return ui_map.states.get(transition.to_state_id) if transition else None
 
 
+def _is_structural_fingerprint(value: str) -> bool:
+    """Accept only current SHA-256 state fingerprints, not legacy labels."""
+
+    return bool(_STRUCTURAL_FINGERPRINT.fullmatch(str(value or "")))
+
+
+def _expected_fingerprint(step: PlanStep) -> str:
+    """Return the post-step fingerprint when known, else its stable source."""
+
+    return step.expected_to_fingerprint or step.expected_from_fingerprint
+
+
+def _goal_expected_fingerprint(plan: ExecutionPlan) -> str:
+    """Use the last plan contract that describes the goal state.
+
+    Read-only terminal operations deliberately only carry an ``expected_from``
+    contract because they do not change the dynpro.  A navigation terminal
+    step carries ``expected_to`` instead.
+    """
+
+    if not plan.steps:
+        return ""
+    return _expected_fingerprint(plan.steps[-1])
+
+
+def _structural_anchor_error(sap: Any, state: Any) -> str:
+    """Compare a bounded structural signature through direct element reads.
+
+    ``inspect_element`` resolves one stored SAP id and never enumerates child
+    controls.  It is therefore safe for ``scan_policy=fast``.  The scanner may
+    not have captured every kind of shell control, so absence of anchors is
+    valid; whenever it did capture one, disagreement fails closed.
+    """
+
+    inspect = getattr(sap, "inspect_element", None)
+    anchors = []
+    active_ids = set(state.active_tabs.values()) | set(state.active_subscreens)
+    for component in state.components:
+        if (
+            component.logical_id in active_ids
+            or component.type not in _STRUCTURAL_ANCHOR_TYPES
+            or not component.sap_id
+        ):
+            continue
+        anchors.append(component)
+    anchors.sort(key=lambda item: (item.sap_id, item.logical_id))
+    if not anchors:
+        return ""
+    if not callable(inspect):
+        return "expected SAP structural state could not be verified"
+    for component in anchors[:_MAX_STRUCTURAL_ANCHORS]:
+        try:
+            observed = inspect(component.sap_id)
+        except Exception:
+            return "expected SAP structural state does not match plan UI map"
+        if not isinstance(observed, Mapping):
+            return "expected SAP structural state could not be verified"
+        observed_id = str(observed.get("id") or observed.get("sap_id") or "")
+        if observed_id and observed_id != component.sap_id:
+            return "expected SAP structural state does not match plan UI map"
+        observed_type = str(observed.get("type") or "")
+        if observed_type and observed_type != component.type:
+            return "expected SAP structural state does not match plan UI map"
+        observed_sub_type = str(observed.get("sub_type") or "")
+        if (
+            component.sub_type
+            and observed_sub_type
+            and observed_sub_type != component.sub_type
+        ):
+            return "expected SAP structural state does not match plan UI map"
+        for property_name in ("visible", "enabled"):
+            expected = getattr(component, property_name)
+            actual = observed.get(property_name)
+            if expected is not None and isinstance(actual, bool) and actual != expected:
+                return "expected SAP structural state does not match plan UI map"
+    return ""
+
+
 def _observed_state_error(
     observed: Mapping[str, Any], state: Any, label: str
 ) -> str:
@@ -991,6 +1160,10 @@ def _observed_state_error(
     expected_screen = str(state.screen_number).lstrip("0")
     if expected_screen and actual_screen != expected_screen:
         return f"{label} SAP screen does not match UI map"
+    if state.modal_signature:
+        modal = observed.get("modal") or observed.get("sap_modal") or {}
+        if str(modal.get("signature") or "") != state.modal_signature:
+            return f"{label} SAP modal state does not match UI map"
     return ""
 
 

@@ -10,6 +10,7 @@ from sap_cli.ui_map.fingerprint import compute_map_fingerprint
 from sap_cli.ui_map.schema import (
     MapManifest,
     SideEffectClass,
+    Transition,
     UiComponent,
     UiMap,
     UiState,
@@ -365,6 +366,154 @@ def test_targeted_active_tab_signature_blocks_same_program_and_dynpro_variant():
     assert result.status == "failed"
     assert result.errors == ["active SAP tab does not match plan UI map"]
     assert actions == []
+
+
+def _same_dynpro_tab_transition_map() -> UiMap:
+    """Two logical states intentionally share a dynpro but select different tabs."""
+
+    ui_map = _map()
+    source = ui_map.states["s1"]
+    source.components.extend(
+        [
+            UiComponent(
+                logical_id="tab-basic",
+                sap_id="wnd[0]/usr/tabsMAIN/tabpBASIC",
+                type="GuiTab",
+                selected=True,
+            ),
+            UiComponent(
+                logical_id="open-details",
+                sap_id="wnd[0]/usr/btnDETAILS",
+                type="GuiButton",
+            ),
+        ]
+    )
+    source.active_tabs = {"wnd[0]/usr/tabsMAIN": "tab-basic"}
+    target = UiState(
+        state_id="s2",
+        tcode="VA01",
+        program="SAPMV45A",
+        screen_number=101,
+        components=[
+            UiComponent(
+                logical_id="tab-details",
+                sap_id="wnd[0]/usr/tabsMAIN/tabpDETAILS",
+                type="GuiTab",
+                selected=True,
+            ),
+        ],
+        active_tabs={"wnd[0]/usr/tabsMAIN": "tab-details"},
+    )
+    ui_map.states[target.state_id] = target
+    ui_map.transitions.append(
+        Transition(
+            transition_id="to-details",
+            from_state_id=source.state_id,
+            to_state_id=target.state_id,
+            action="press",
+            target_logical_id="open-details",
+            target_locator={"sap_id": "wnd[0]/usr/btnDETAILS"},
+            side_effect=SideEffectClass.NAVIGATION,
+        )
+    )
+    return ui_map
+
+
+def test_fast_transition_verifies_target_tab_state_without_screen_scan():
+    """A dynpro-identical wrong tab must not be accepted as a map transition."""
+
+    ui_map = _same_dynpro_tab_transition_map()
+    source = ui_map.states["s1"]
+    target = ui_map.states["s2"]
+    step = _step(
+        command="ui_press",
+        tool="sap_ui_press",
+        target_logical_id="open-details",
+        target_locator={"sap_id": "wnd[0]/usr/btnDETAILS", "type": "GuiButton"},
+        params={"element_id": "wnd[0]/usr/btnDETAILS"},
+        map_transition_id="to-details",
+        expected_from_fingerprint=source.compute_fingerprint(),
+        expected_to_fingerprint=target.compute_fingerprint(),
+    )
+    plan = _plan(ui_map, steps=[step])
+    sap = _Sap()
+    sap.get_component_property = lambda element_id, _property: {
+        "value": element_id.endswith("tabpBASIC")
+    }
+    actions = []
+
+    result = _executor(
+        ui_map,
+        sap,
+        action=lambda *_args: actions.append("press") or {"ok": True},
+    ).execute(plan)
+
+    assert result.status == "failed"
+    assert result.errors == ["active SAP tab does not match plan UI map"]
+    assert actions == ["press"]
+    assert sap.get_screen_calls == 0
+    assert result.get_screen_count == 0
+
+
+def test_fast_structural_anchor_mismatch_blocks_before_action_without_screen_scan():
+    """A saved shell type is a bounded structural fingerprint anchor."""
+
+    ui_map = _map()
+    ui_map.states["s1"].components.append(
+        UiComponent(
+            logical_id="main-toolbar",
+            sap_id="wnd[0]/tbar[1]",
+            type="GuiToolbar",
+            visible=True,
+        )
+    )
+    sap = _Sap()
+    sap.inspect_element = lambda element_id: {
+        "id": element_id,
+        "type": "GuiStatusbar",
+        "visible": True,
+    }
+    actions = []
+
+    result = _executor(
+        ui_map,
+        sap,
+        action=lambda *_args: actions.append("action") or {"ok": True},
+    ).execute(_plan(ui_map))
+
+    assert result.status == "failed"
+    assert result.errors == ["expected SAP structural state does not match plan UI map"]
+    assert actions == []
+    assert sap.get_screen_calls == 0
+    assert result.get_screen_count == 0
+
+
+def test_transition_expected_fingerprint_mismatch_blocks_before_sap_access():
+    """The graph edge contract must agree with the immutable state records."""
+
+    ui_map = _same_dynpro_tab_transition_map()
+    source = ui_map.states["s1"]
+    step = _step(
+        command="ui_press",
+        tool="sap_ui_press",
+        target_logical_id="open-details",
+        target_locator={"sap_id": "wnd[0]/usr/btnDETAILS", "type": "GuiButton"},
+        params={"element_id": "wnd[0]/usr/btnDETAILS"},
+        map_transition_id="to-details",
+        expected_from_fingerprint=source.compute_fingerprint(),
+        expected_to_fingerprint="0" * 64,
+    )
+    accesses = []
+
+    result = _executor(
+        ui_map, _Sap(), get_sap_calls=accesses
+    ).execute(_plan(ui_map, steps=[step]))
+
+    assert result.status == "blocked"
+    assert result.errors == [
+        "step step-1: expected target state fingerprint does not match UI map"
+    ]
+    assert accesses == []
 
 
 def test_final_goal_component_must_remain_visible_without_full_rescan():

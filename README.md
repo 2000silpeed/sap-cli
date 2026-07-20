@@ -751,9 +751,11 @@ sap map-traverse-resume <job-id> '{"<resume-token>":{"continue":true,"transition
 sap map-report mm03-readonly MM03
 ```
 
-출발 화면에 버튼·메뉴·탭처럼 재실행 가능한 선택지가 있으면 `transition` 선택은
-필수입니다. `continue`만 보내면 화면은 기록할 수 있어도 이후 계획이 재사용할 수 없는
-수동 경로가 되므로, 이제 job이 그 답변을 받아들이지 않습니다.
+출발 화면에 버튼·메뉴·탭 또는 스캔된 ALV 툴바/컨텍스트 메뉴처럼 재실행 가능한 선택지가
+있으면 `transition` 선택은 필수입니다. ALV 선택지는 `action`, `target_logical_id`,
+`item_id`를 그대로 보냅니다. `continue`만 보내면 화면은 기록할 수 있어도 이후 계획이
+재사용할 수 없는 수동 경로가 되므로, 이제 job이 그 답변을 받아들이지 않습니다. 저장·전기·
+삭제·승인·전송·인쇄 표식의 경로는 선택 및 allowlist 대상에서 차단됩니다.
 
 이 과정을 반복하면 지도의 `states`, `transitions`, 미해결 화면(`unreachable`),
 사용자 확인 대기 항목을 `map-report`에서 확인할 수 있습니다. 모든 화면을 무작정
@@ -1228,12 +1230,12 @@ Windows의 Claude Code `settings.json`에 추가:
 
 > `~/.sap_cli/policy.yaml` 파일이 존재하면 ReBAC 권한관리가 활성화되어 에이전트별로 허용된 도구만 호출할 수 있습니다. 정책 파일이 없으면 모든 도구가 허용됩니다 (하위 호환).
 
-기본 MCP 표면은 지도 제작·온톨로지 검토·계획·실행에 필요한 도구 20개만 노출하는
+기본 MCP 표면은 지도 제작·온톨로지 검토·계획·실행에 필요한 도구 22개만 노출하는
 `compact`입니다. 세부 UI 액션, 매크로·레시피 관리, 이벤트, 세션 풀, 디버그 도구는 CLI에
 그대로 남아 있지만 MCP 목록에서는 숨깁니다. 기존 전문 자동화가 꼭 필요할 때만 MCP 서버
 환경 변수 `SAP_CLI_MCP_SURFACE=full`을 지정합니다.
 
-`compact` 핵심 도구는 `sap_session`, `sap_screen`, `sap_run`, `sap_ui_action`, 지도
+`compact` 핵심 도구는 `sap_session`, `sap_screen`, `sap_scripting_query`, `sap_run`, `sap_ui_action`, 지도
 수집/재개/보강/보고 도구, `sap_ontology_query`, `sap_plan_preview`,
 `sap_plan_approve`, `sap_plan_execute`, `sap_job_status`입니다.
 

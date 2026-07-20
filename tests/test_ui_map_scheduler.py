@@ -11,6 +11,7 @@ from sap_cli.ui_map.scheduler import UiMapScheduler
 from sap_cli.ui_map.sap_traversal import SapTraversalAdapter
 from sap_cli.ui_map.store import UiMapStore
 from sap_cli.ui_map.schema import (
+    CollectionDescriptor,
     MapManifest,
     SideEffectClass,
     SemanticLink,
@@ -811,6 +812,173 @@ def test_user_taught_structural_route_is_saved_and_compiles_from_latest_map(tmp_
     )
     assert result.validation.valid
     assert [step.command for step in result.plan.steps] == ["run", "ui_press"]
+
+
+@pytest.mark.parametrize(
+    ("action", "attribute", "item_id", "expected_command"),
+    [
+        (
+            "press_toolbar_button",
+            "toolbar_actions",
+            "DISPLAY_DETAIL",
+            "ui_press_toolbar_button",
+        ),
+        (
+            "select_context_menu_item",
+            "context_menu_actions",
+            "OPEN_DETAIL",
+            "ui_select_context_menu_item",
+        ),
+    ],
+)
+def test_user_taught_alv_structural_route_is_saved_and_compiles(
+    tmp_path, action, attribute, item_id, expected_command
+):
+    """A user-confirmed ALV action must become an executable graph edge.
+
+    The map never guesses these actions: the descriptor has to have been
+    scanned and the augmentation answer must select its exact stable ID.
+    """
+
+    wrapper = FakeWrapper()
+    jobs = MapJobStore(tmp_path / "jobs")
+    maps = UiMapStore(tmp_path / "maps")
+    grid = UiComponent(
+        logical_id="result-grid",
+        sap_id="wnd[0]/usr/cntlALV/shell",
+        type="GuiGridView",
+        visible=True,
+        enabled=True,
+        supported_actions=["press_toolbar_button", "select_context_menu_item"],
+    )
+    collection_kwargs = {attribute: [{"id": item_id, "enabled": True, "visible": True}]}
+    source = FakeScanner().scan(wrapper.session, tcode="ZMAP").model_copy(
+        update={
+            "components": [grid],
+            "collections": [
+                CollectionDescriptor(
+                    component_logical_id=grid.logical_id,
+                    kind="alv",
+                    **collection_kwargs,
+                )
+            ],
+        }
+    )
+    original = maps.save(
+        UiMap(
+            manifest=MapManifest(map_id="existing", tcode="ZMAP"),
+            states={source.state_id: source},
+        )
+    )
+    runner = UiMapScheduler(
+        jobs,
+        lambda _slot: wrapper,
+        scanner=FakeScanner(),
+        adapter_factory=SapTraversalAdapter,
+        map_store=maps,
+    )
+    paused = runner.augment_start(
+        ui_map=original,
+        from_state_id=source.state_id,
+        request="상세 화면",
+        job_id=f"teach-{action}",
+    )
+    token = paused.pending_questions[0]["resume_token"]
+    transition = {
+        "action": action,
+        "target_logical_id": grid.logical_id,
+        "item_id": item_id,
+    }
+    assert {"transition": transition} in paused.pending_questions[0]["choices"]
+
+    wrapper.session.screen = 200
+    runner.resume(
+        paused.job_id,
+        {token: {"continue": True, "transition": transition}},
+    )
+    assert runner.tick(paused.job_id).status == "completed"
+
+    saved = maps.latest("existing", tcode="ZMAP")
+    taught = next(item for item in saved.transitions if item.action == action)
+    assert taught.target_locator == {
+        "sap_id": grid.sap_id,
+        "component_type": "GuiGridView",
+        "item_id": item_id,
+    }
+    assert taught.observed_params == {"item_id": item_id}
+    result = PlanCompiler(maps).compile(
+        "tcode ZMAP screen 조회", goal_query="screen-200"
+    )
+    assert result.validation.valid
+    assert [step.command for step in result.plan.steps] == ["run", expected_command]
+    assert result.plan.steps[-1].params["value"] == item_id
+
+
+def test_augmentation_never_offers_or_accepts_dangerous_structural_routes(tmp_path):
+    wrapper = FakeWrapper()
+    grid = UiComponent(
+        logical_id="result-grid",
+        sap_id="wnd[0]/usr/cntlALV/shell",
+        type="GuiGridView",
+        visible=True,
+        enabled=True,
+        supported_actions=["press_toolbar_button"],
+    )
+    source = FakeScanner().scan(wrapper.session, tcode="ZMAP").model_copy(
+        update={
+            "components": [
+                grid,
+                UiComponent(
+                    logical_id="저장", sap_id="wnd[0]/tbar/btnSAVE", type="GuiButton",
+                    visible=True, enabled=True, supported_actions=["press"],
+                ),
+            ],
+            "collections": [
+                CollectionDescriptor(
+                    component_logical_id=grid.logical_id,
+                    kind="alv",
+                    toolbar_actions=[{"id": "저장", "enabled": True, "visible": True}],
+                )
+            ],
+        }
+    )
+    maps = UiMapStore(tmp_path / "maps")
+    original = maps.save(
+        UiMap(
+            manifest=MapManifest(map_id="existing", tcode="ZMAP"),
+            states={source.state_id: source},
+        )
+    )
+    runner = UiMapScheduler(
+        MapJobStore(tmp_path / "jobs"),
+        lambda _slot: wrapper,
+        scanner=FakeScanner(),
+        adapter_factory=SapTraversalAdapter,
+        map_store=maps,
+    )
+    paused = runner.augment_start(
+        ui_map=original, from_state_id=source.state_id, request="상세 화면"
+    )
+    question = paused.pending_questions[0]
+    assert question["choices"] == [{"continue": True}]
+    assert runner._dangerous_structural_marker("SAVE")
+    assert runner._dangerous_structural_marker("저장")
+
+    wrapper.session.screen = 200
+    runner.resume(
+        paused.job_id,
+        {
+            question["resume_token"]: {
+                "continue": True,
+                "transition": {
+                    "action": "press_toolbar_button",
+                    "target_logical_id": grid.logical_id,
+                    "item_id": "저장",
+                },
+            }
+        },
+    )
+    assert runner.tick(paused.job_id).status == "needs_user_input"
 
 
 def test_augmentation_requires_a_replayable_choice_when_source_has_one(tmp_path):

@@ -609,7 +609,14 @@ class TraversalBranchRule(BaseModel):
     source_fingerprint: str = ""
     target_logical_id: str
     target_sap_id: str
-    component_type: Literal["GuiButton", "GuiMenu", "GuiToolbar", "GuiShell"]
+    component_type: Literal[
+        "GuiButton",
+        "GuiMenu",
+        "GuiToolbar",
+        "GuiShell",
+        "GuiGridView",
+        "GuiTableControl",
+    ]
     item_id: str = ""
     restore_vkey: Literal[3, 12]
     expected_program: str = ""
@@ -635,8 +642,13 @@ class TraversalBranchRule(BaseModel):
         if self.action == "select_menu" and self.component_type != "GuiMenu":
             raise ValueError("select_menu branch requires GuiMenu")
         if self.action in {"press_toolbar_button", "select_context_menu_item"}:
-            if self.component_type not in {"GuiToolbar", "GuiShell"} or not self.item_id:
-                raise ValueError("collection branch requires GuiToolbar/GuiShell and item_id")
+            if self.component_type not in {
+                "GuiToolbar",
+                "GuiShell",
+                "GuiGridView",
+                "GuiTableControl",
+            } or not self.item_id:
+                raise ValueError("collection branch requires a typed collection control and item_id")
         marker = json.dumps(
             {
                 "action": self.action,
@@ -654,7 +666,8 @@ class TraversalBranchRule(BaseModel):
             sort_keys=True,
         )
         if re.search(
-            r"(?<![a-z])(save|post|delete|release|send|print)(?![a-z])",
+            r"(?<![a-z])(save|post|delete|release|send|print)(?![a-z])"
+            r"|저장|전기|삭제|릴리스|릴리즈|승인|전송|발송|인쇄|출력",
             marker,
             flags=re.I,
         ):

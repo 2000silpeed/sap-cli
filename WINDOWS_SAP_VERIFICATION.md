@@ -98,6 +98,15 @@ python scripts\windows_canary.py --config canary.local.json --output artifacts\s
 Copy-Item examples\windows_canary.api-probes.example.json canary.local.json
 ```
 
+조회 전용 버튼·메뉴·ALV 툴바/컨텍스트 분기까지 실제로 검증하려면 exact allowlist
+예제를 복사한다. 각 `REPLACE_WITH_*` 값은 먼저 passive/guided 지도에서 확인한 구조 ID로
+교체한다. 이 모드는 non-production client와 reversible-action 확인 없이는 시작하지 않는다.
+
+```powershell
+Copy-Item examples\windows_canary.allowlisted.example.json canary.local.json
+python scripts\windows_canary.py --config canary.local.json --output artifacts\sap-canary.jsonl
+```
+
 실행기는 다음 조건을 강제로 확인한다.
 
 - Windows와 persistent daemon에서만 실제 canary를 수행한다.
@@ -152,6 +161,10 @@ $branches = @'
 '@
 sap map-traverse-start <TCode> --map-id <map-id> --mode allowlisted --test-client-confirmed --allowed-branches-json $branches
 ```
+
+같은 exact rules는 canary 설정의 `mapping.allowed_branches`로도 전달할 수 있다. canary는
+비어 있거나 형식이 맞지 않는 allowlist를 daemon 호출 전에 거절하고, `allowlisted` 모드가
+아닌 설정에 rules를 섞는 것도 거절한다.
 
 이미 만들어진 지도에 사용자가 누락 화면을 붙일 때는 `map-augment-start`를 사용한다.
 job 조회 결과의 `choices`에 안전한 `transition` 후보가 있으면, 사용자는 화면을

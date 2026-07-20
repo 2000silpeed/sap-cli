@@ -1,0 +1,42 @@
+{
+  "tcode": "MM03",
+  "slot_id": "ses0",
+  "mapping": {
+    "map_id": "canary-mm03-detail",
+    "mode": "allowlisted",
+    "navigate": true,
+    "budget": {
+      "max_states": 20,
+      "max_transitions": 20,
+      "max_seconds": 300
+    },
+    "allowed_actions": [],
+    "allowed_branches": [
+      {
+        "action": "press",
+        "source_state_id": "REPLACE_WITH_MAP_STATE_ID",
+        "target_logical_id": "REPLACE_WITH_BUTTON_LOGICAL_ID",
+        "target_sap_id": "REPLACE_WITH_SAP_ID",
+        "component_type": "GuiButton",
+        "restore_vkey": 3,
+        "expected_program": "",
+        "expected_screen_number": null
+      }
+    ]
+  },
+  "acknowledgements": {
+    "read_only_tcode": true,
+    "non_production_client": true,
+    "reversible_actions_only": true
+  },
+  "polling": {
+    "interval_seconds": 0.5,
+    "timeout_seconds": 300
+  },
+  "api_live_probes": [],
+  "plan": {
+    "enabled": false,
+    "request": "",
+    "values": {}
+  }
+}

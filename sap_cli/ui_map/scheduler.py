@@ -10,6 +10,7 @@ from collections.abc import Callable
 from copy import deepcopy
 import hashlib
 import json
+import re
 import uuid
 from typing import Any
 
@@ -31,6 +32,21 @@ from .store import UiMapStore
 
 WrapperFactory = Callable[[str], Any]
 AdapterFactory = Callable[[Any], Any]
+
+
+# Route teaching deliberately records only structural selectors.  These
+# markers close the same high-risk verbs that are rejected for automatic
+# allowlisted branches, so an augmentation answer cannot smuggle a Save/Post
+# route into a later plan merely by selecting it from a scanned screen.
+_DANGEROUS_BRANCH_MARKER = re.compile(
+    r"(?<![a-z])(save|post|delete|release|send|print)(?![a-z])"
+    r"|저장|전기|삭제|릴리스|릴리즈|승인|전송|발송|인쇄|출력",
+    re.I,
+)
+_COLLECTION_BRANCH_ACTIONS = {
+    "press_toolbar_button": "toolbar_actions",
+    "select_context_menu_item": "context_menu_actions",
+}
 
 
 class UiMapScheduler:
@@ -252,6 +268,9 @@ class UiMapScheduler:
                 or not component.sap_id
                 or component.visible is False
                 or component.enabled is False
+                or UiMapScheduler._dangerous_structural_marker(
+                    action, component.logical_id, component.sap_id
+                )
             ):
                 continue
             supported = {
@@ -269,13 +288,63 @@ class UiMapScheduler:
                     }
                 }
             )
+        components = {component.logical_id: component for component in state.components}
+        for collection in state.collections:
+            component = components.get(collection.component_logical_id)
+            if (
+                component is None
+                or not component.logical_id
+                or not component.sap_id
+                or component.visible is False
+                or component.enabled is False
+            ):
+                continue
+            for action, attribute in _COLLECTION_BRANCH_ACTIONS.items():
+                for position, item in enumerate(getattr(collection, attribute, ())):
+                    if not isinstance(item, dict) or (
+                        item.get("enabled") is False or item.get("visible") is False
+                    ):
+                        continue
+                    item_id = UiMapScheduler._collection_item_id(item, position)
+                    if not item_id or UiMapScheduler._dangerous_structural_marker(
+                        action, component.logical_id, component.sap_id, item_id
+                    ):
+                        continue
+                    supported = {
+                        value.strip().lower().replace("-", "_")
+                        for value in component.supported_actions
+                    }
+                    if supported and action not in supported:
+                        continue
+                    choices.append(
+                        {
+                            "transition": {
+                                "action": action,
+                                "target_logical_id": component.logical_id,
+                                "item_id": item_id,
+                            }
+                        }
+                    )
         return sorted(
             choices,
             key=lambda item: (
                 item["transition"]["action"],
                 item["transition"]["target_logical_id"],
+                item["transition"].get("item_id", ""),
             ),
         )
+
+    @staticmethod
+    def _collection_item_id(item: dict[str, Any], position: int) -> str:
+        for key in ("id", "key", "position"):
+            value = item.get(key)
+            if value is not None and str(value):
+                return str(value)
+        return str(position)
+
+    @staticmethod
+    def _dangerous_structural_marker(*values: str) -> bool:
+        return bool(_DANGEROUS_BRANCH_MARKER.search(" ".join(values)))
 
     def hydrate_persisted_jobs(self) -> dict[str, int]:
         """Rebuild value-free coordinator state after a daemon restart."""
