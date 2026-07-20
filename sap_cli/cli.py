@@ -215,6 +215,27 @@ def _dispatch_local(cmd: str, args: dict, slot_id: str = "ses0") -> dict:
     raise typer.Exit(1)
 
 
+def _json_arg(raw: str, *, label: str = "JSON") -> str:
+    """`@경로`/`@-` 참조를 실제 JSON 텍스트로 바꾼다.
+
+    LLM이 PowerShell에서 CLI를 호출할 때, 큰따옴표가 든 JSON 리터럴을 명령줄에
+    직접 박으면 셸의 네이티브 인자 인용 규칙에 걸려 깨진다. JSON을 파일에 써 두고
+    (셸이 아닌 파일 도구로 작성) `@경로`로 넘기면 어느 셸에서도 인용 문제가
+    사라진다. `@-`는 표준입력에서 읽는다. JSON 값은 `@`로 시작할 수 없으므로
+    (항상 `{`,`[`,`"`,숫자 등) 이 접두사는 모호하지 않다.
+    """
+    if not isinstance(raw, str) or not raw.startswith("@"):
+        return raw
+    ref = raw[1:]
+    if ref == "-":
+        return sys.stdin.read()
+    try:
+        with open(os.path.expanduser(ref), encoding="utf-8") as fh:
+            return fh.read()
+    except OSError as exc:
+        raise typer.BadParameter(f"{label} 파일을 읽을 수 없습니다: {ref} ({exc})") from exc
+
+
 def _run_command(cmd: str, args: dict, *, allow_daemon: bool = False, slot_id: str | None = None) -> None:
     effective_slot = slot_id or _global_slot_id
     if allow_daemon and _use_daemon_default() and _try_daemon(cmd, args, slot_id=effective_slot):
@@ -584,7 +605,7 @@ def map_augment_start(
 ) -> None:
     """완료된 기존 지도에 사용자 안내형 누락 화면 보강 job을 생성."""
     try:
-        scope = json.loads(scope_json)
+        scope = json.loads(_json_arg(scope_json, label="--scope-json"))
     except json.JSONDecodeError as exc:
         raise typer.BadParameter("--scope-json must be a JSON object") from exc
     if not isinstance(scope, dict):
@@ -625,8 +646,10 @@ def map_traverse_start(
 ) -> None:
     """지도 job을 등록합니다. guided는 후보를 하나씩 물어본 뒤 확장합니다."""
     try:
-        budget = json.loads(budget_json)
-        allowed_branches = json.loads(allowed_branches_json)
+        budget = json.loads(_json_arg(budget_json, label="--budget-json"))
+        allowed_branches = json.loads(
+            _json_arg(allowed_branches_json, label="--allowed-branches-json")
+        )
     except json.JSONDecodeError as exc:
         raise typer.BadParameter(
             "--budget-json and --allowed-branches-json must be valid JSON"
@@ -649,16 +672,20 @@ def map_traverse_start(
 @app.command("map-traverse-resume")
 def map_traverse_resume(
     job_id: str = typer.Argument(),
-    answers_json: str = typer.Argument("{}", help="resume_token별 답변 JSON object"),
-    budget_json: str = typer.Option("{}", "--budget-json", help="paused job의 확장 budget"),
+    answers_json: str = typer.Argument(
+        "{}", help="resume_token별 답변 JSON object. @경로/@- 로 파일·stdin에서 읽음"
+    ),
+    budget_json: str = typer.Option(
+        "{}", "--budget-json", help="paused job의 확장 budget. @경로/@- 지원"
+    ),
 ) -> None:
     """사용자 답변 또는 더 큰 budget으로 지도 순회를 재개."""
     try:
-        answers = json.loads(answers_json)
+        answers = json.loads(_json_arg(answers_json, label="answers_json"))
     except json.JSONDecodeError as exc:
         raise typer.BadParameter("answers_json must be a JSON object") from exc
     try:
-        budget = json.loads(budget_json)
+        budget = json.loads(_json_arg(budget_json, label="--budget-json"))
     except json.JSONDecodeError as exc:
         raise typer.BadParameter("--budget-json must be a JSON object") from exc
     if not isinstance(answers, dict) or not isinstance(budget, dict):
@@ -690,11 +717,13 @@ def plan_preview(
 ) -> None:
     """자연어 요청을 저장 지도 기반의 실행 전 전체 계획으로 컴파일."""
     try:
-        values = json.loads(values_json)
+        values = json.loads(_json_arg(values_json, label="--values-json"))
     except json.JSONDecodeError as exc:
         raise typer.BadParameter("--values-json must be a JSON object") from exc
     try:
-        success_criteria = json.loads(success_criteria_json)
+        success_criteria = json.loads(
+            _json_arg(success_criteria_json, label="--success-criteria-json")
+        )
     except json.JSONDecodeError as exc:
         raise typer.BadParameter("--success-criteria-json must be a JSON array") from exc
     if not isinstance(success_criteria, list) or not all(
@@ -723,14 +752,14 @@ def plan_execute(
     verify_mode: str = typer.Option("cheap", "--verify"),
     approval_token: str = typer.Option("", "--approval-token"),
     plan_ref_json: str = typer.Option(
-        "", "--plan-ref-json", help="plan-preview가 돌려준 plan_ref JSON object"
+        "", "--plan-ref-json", help="plan-preview가 돌려준 plan_ref JSON object. @경로/@- 지원"
     ),
 ) -> None:
     """미리보기의 plan_ref를 사용해 daemon 메모리 계획을 한 번에 실행."""
     plan_ref: dict[str, Any] | None = None
     if plan_ref_json:
         try:
-            decoded = json.loads(plan_ref_json)
+            decoded = json.loads(_json_arg(plan_ref_json, label="--plan-ref-json"))
         except json.JSONDecodeError as exc:
             raise typer.BadParameter("--plan-ref-json must be a JSON object") from exc
         if not isinstance(decoded, dict):
@@ -755,12 +784,14 @@ def plan_approve(
     plan_id: str = typer.Argument(),
     plan_hash: str = typer.Argument(),
     subject_agent: str = typer.Argument(help="승인 대상 실행 에이전트"),
-    step_ids_json: str = typer.Argument(help="승인할 step_id JSON array"),
+    step_ids_json: str = typer.Argument(
+        help="승인할 step_id JSON array. @경로/@- 로 파일·stdin에서 읽음"
+    ),
     expires_in_seconds: float = typer.Option(300.0, "--expires-in"),
 ) -> None:
     """관리자가 daemon 메모리에 일회용 계획 승인 토큰을 발급."""
     try:
-        step_ids = json.loads(step_ids_json)
+        step_ids = json.loads(_json_arg(step_ids_json, label="step_ids_json"))
     except json.JSONDecodeError as exc:
         raise typer.BadParameter("step_ids_json must be a JSON array") from exc
     if not isinstance(step_ids, list):
@@ -1476,7 +1507,9 @@ def session_approve_cmd(
 
     params: dict[str, Any] = {"session_id": session_id, "approved_by": approved_by}
     if success_criteria_json:
-        params["replay_success_criteria"] = _json.loads(success_criteria_json)
+        params["replay_success_criteria"] = _json.loads(
+            _json_arg(success_criteria_json, label="--success-criteria-json")
+        )
     _run_command("session_approve", params)
 
 
@@ -1509,7 +1542,9 @@ def recipe_save(
     if context is not None:
         params["context"] = context
     if replay_success_criteria_json is not None:
-        params["replay_success_criteria"] = _json.loads(replay_success_criteria_json)
+        params["replay_success_criteria"] = _json.loads(
+            _json_arg(replay_success_criteria_json, label="--replay-success-criteria-json")
+        )
     _run_command("recipe_save", params)
 
 

@@ -26,14 +26,28 @@ description: >-
 계획이 오래됐거나 지도가 바뀌었을 가능성이 있으면 실행 대신 **재미리보기**를
 요청한다.
 
+## PowerShell 인자 전달 — JSON은 `@파일`로
+
+PowerShell에서 큰따옴표가 든 JSON을 명령줄에 직접 넘기면(또는 `ConvertTo-Json`
+결과를 native `sap`에 바로 파이프하면) 셸의 인자 인용 규칙에 걸려 깨진다. LLM이
+CLI를 호출할 때는 JSON을 파일에 써서 `@경로`로 넘긴다. `--plan-ref-json`,
+`--values-json`, approve의 `step_ids` 등 모든 JSON 인자가 `@경로`·`@-`(stdin)를
+받는다.
+
+```powershell
+$preview.plan_ref | ConvertTo-Json -Compress | Set-Content plan_ref.json
+sap plan-execute --plan-ref-json '@plan_ref.json' --verify cheap
+```
+
 ## 1) 승인이 필요한 경우
 
 `validation.requires_approval`이 `true`면 `required_approvals`의 step만 승인한다.
 토큰은 특정 plan hash · 승인 step · 실행 agent에 묶인 **일회용** 값이다.
 
 ```powershell
+Set-Content step_ids.json -Value '["<승인할 step-id>"]'
 $approval = sap plan-approve $preview.plan_ref.plan_id $preview.plan_ref.plan_hash `
-  <실행-agent> '["<승인할 step-id>"]' --expires-in 300 | ConvertFrom-Json
+  <실행-agent> '@step_ids.json' --expires-in 300 | ConvertFrom-Json
 ```
 
 - `step_ids`는 계획 안의 step id이거나 `"authorize-tcode"`여야 한다. 계획 밖의
@@ -46,13 +60,14 @@ $approval = sap plan-approve $preview.plan_ref.plan_id $preview.plan_ref.plan_ha
 ## 2) 실행
 
 ```powershell
-sap plan-execute --plan-ref-json ($preview.plan_ref | ConvertTo-Json -Compress) --verify cheap
+$preview.plan_ref | ConvertTo-Json -Compress | Set-Content plan_ref.json
+sap plan-execute --plan-ref-json '@plan_ref.json' --verify cheap
 ```
 
 승인이 필요한 계획이면 토큰을 함께 넘긴다.
 
 ```powershell
-sap plan-execute --plan-ref-json ($preview.plan_ref | ConvertTo-Json -Compress) `
+sap plan-execute --plan-ref-json '@plan_ref.json' `
   --verify cheap --approval-token $approval.approval_token
 ```
 

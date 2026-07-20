@@ -37,6 +37,27 @@ type), 확인된 전이만 남는다. 자재번호·고객번호·금액 같은 
 5. **`passive` 한 번으로 끝내지 않는다.** 계획에 쓸 수 있는 지도는 최소한
    `guided`로 대상 화면까지 연결되어 있어야 한다.
 
+## PowerShell 인자 전달 — JSON은 `@파일`로 넘긴다
+
+**중요.** PowerShell에서 큰따옴표가 든 JSON을 명령줄에 직접 박으면 셸의 네이티브
+인자 인용 규칙에 걸려 깨진다(버전마다 이스케이프가 달라 신뢰할 수 없다). LLM이
+CLI를 호출할 때는 JSON을 **파일에 써서 `@경로`로 넘긴다.** 파일은 셸이 아니라
+파일 쓰기 도구로 만들어 따옴표 문제를 원천 차단한다.
+
+`--budget-json`, `--allowed-branches-json`, `--values-json`, `--scope-json`,
+`--plan-ref-json`, resume의 `answers`, approve의 `step_ids` 등 모든 JSON 인자가
+`@경로`(파일) 와 `@-`(stdin) 를 받는다.
+
+```powershell
+# JSON을 파일로 저장(파일 도구 사용) 후 경로만 넘긴다 — 어느 셸에서도 안전
+Set-Content -Path answer.json -Value '{"guided-1a2b":{"candidate_id":"c1"}}'
+sap map-traverse-resume <job-id> '@answer.json'
+```
+
+인라인으로 꼭 써야 하면 값 없이 짧은 것만(예: `'{}'`)에 한한다. 답변·budget처럼
+중첩 따옴표가 있는 JSON은 반드시 `@파일`을 쓴다. 아래 예시의
+`'{"...":...}'` 표기는 개념 설명이며, 실제 실행은 `@파일`로 바꾼다.
+
 ## 운영 루프 (이 순서를 벗어나지 않는다)
 
 지도 수집은 **비동기 job**이다. `map-traverse-start`는 즉시 job을 하나 만들고

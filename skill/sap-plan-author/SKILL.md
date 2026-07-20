@@ -36,6 +36,15 @@ sap plan-preview "MM03에서 자재 기본 데이터를 조회해줘" `
   --values-json '{"material":"TEST_MATNR"}'
 ```
 
+**PowerShell 주의.** 큰따옴표가 여럿 든 `--values-json`을 명령줄에 직접 박으면
+셸 인용 규칙에 걸려 깨진다. LLM이 CLI를 호출할 때는 값 객체를 파일에 써서
+`@경로`로 넘긴다(`@-`는 stdin). 값이 하나뿐인 짧은 경우만 인라인을 쓴다.
+
+```powershell
+Set-Content values.json -Value '{"material":"TEST_MATNR","plant":"1000"}'
+sap plan-preview "..." --tcode MM03 --map-id mm03-readonly --values-json '@values.json'
+```
+
 주요 옵션:
 
 | 옵션 | 용도 |
