@@ -21,23 +21,23 @@ def test_cli_can_disable_daemon_with_env(monkeypatch):
     assert cli._use_daemon_default() is False
 
 
-def test_try_daemon_autostarts_when_not_running(monkeypatch, capsys):
+def test_try_daemon_ensures_liveness_before_sending(monkeypatch, capsys):
+    """A live daemon is confirmed (ping) before the real command is sent, and
+    the command is sent exactly once — never resent, which could double-apply."""
     from sap_cli import cli
 
     calls = []
 
     class FakeDaemon:
         @staticmethod
-        def send_command(cmd, args, context=None):
-            calls.append(("send", cmd, args, context))
-            if len(calls) == 1:
-                return None
-            return {"ok": True, "data": {"via": "daemon"}}
+        def ensure_daemon(autostart=True):
+            calls.append(("ensure", autostart))
+            return True
 
         @staticmethod
-        def start_daemon():
-            calls.append(("start",))
-            return True
+        def send_command(cmd, args, context=None):
+            calls.append(("send", cmd, args, context))
+            return {"ok": True, "data": {"via": "daemon"}}
 
     import sap_cli
 
@@ -45,10 +45,36 @@ def test_try_daemon_autostarts_when_not_running(monkeypatch, capsys):
     monkeypatch.setattr(sap_cli, "daemon", FakeDaemon, raising=False)
 
     assert cli._try_daemon("session", {}, slot_id="ses0") is True
-    assert calls[0][0] == "send"
-    assert calls[1] == ("start",)
-    assert calls[2][0] == "send"
+    assert calls[0][0] == "ensure"
+    assert calls[1][0] == "send"
+    assert sum(1 for c in calls if c[0] == "send") == 1
     assert '"via": "daemon"' in capsys.readouterr().out
+
+
+def test_try_daemon_gives_up_when_daemon_unavailable(monkeypatch):
+    """If liveness cannot be established (wedged/dead port, or autostart off),
+    _try_daemon returns False without sending the command."""
+    from sap_cli import cli
+
+    sent = []
+
+    class FakeDaemon:
+        @staticmethod
+        def ensure_daemon(autostart=True):
+            return False
+
+        @staticmethod
+        def send_command(cmd, args, context=None):
+            sent.append(cmd)
+            return {"ok": True, "data": {}}
+
+    import sap_cli
+
+    monkeypatch.setitem(__import__("sys").modules, "sap_cli.daemon", FakeDaemon)
+    monkeypatch.setattr(sap_cli, "daemon", FakeDaemon, raising=False)
+
+    assert cli._try_daemon("session", {}, slot_id="ses0") is False
+    assert sent == []
 
 
 def test_cli_screen_preserves_fields_only_args(monkeypatch):

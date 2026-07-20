@@ -255,10 +255,16 @@ def _try_daemon(cmd: str, args: dict, slot_id: str = "ses0") -> bool:
     send_kwargs = {"context": _daemon_context(slot_id)}
     if cmd == "plan_execute":
         send_kwargs["timeout"] = timeout_for(cmd)
+    # Confirm a live daemon with a cheap ping before sending the real command.
+    # This avoids blocking on the command timeout when the port is held but
+    # unresponsive (mid-init or wedged), and the ping — unlike a real command —
+    # is side-effect free, so abandoning it can never double-apply anything.
+    autostart = os.getenv("SAP_CLI_DAEMON_AUTOSTART", "1").strip().lower() not in {
+        "0", "false", "no", "off"
+    }
+    if not daemon.ensure_daemon(autostart=autostart):
+        return False
     result = daemon.send_command(cmd, args, **send_kwargs)
-    if result is None and os.getenv("SAP_CLI_DAEMON_AUTOSTART", "1").strip().lower() not in {"0", "false", "no", "off"}:
-        if daemon.start_daemon():
-            result = daemon.send_command(cmd, args, **send_kwargs)
     if result is None:
         return False
     if result["ok"]:

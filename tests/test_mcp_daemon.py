@@ -433,26 +433,35 @@ class TestDispatchViaDaemon:
 
     def test_auto_starts_daemon(self, monkeypatch):
         monkeypatch.setenv("SAP_CLI_MCP_SCREEN_SUMMARY", "1")
-        started = []
-        responses = [None, {"ok": True, "data": {}}]
+        sends = []
 
-        with patch("sap_cli.daemon.start_daemon", side_effect=lambda: started.append(1) or True):
-            with patch("sap_cli.daemon.send_command", side_effect=lambda *_, **__: responses.pop(0)):
+        with patch("sap_cli.daemon.ensure_daemon", return_value=True):
+            with patch(
+                "sap_cli.daemon.send_command",
+                side_effect=lambda *a, **k: sends.append(1) or {"ok": True, "data": {}},
+            ):
                 from sap_cli.mcp_server import _dispatch_via_daemon
                 result = _dispatch_via_daemon("status", {}, "sap_status", None)
 
-        assert len(started) == 1
+        # Command sent exactly once, only after liveness was ensured.
+        assert len(sends) == 1
         assert result is not None
 
-    def test_returns_none_when_daemon_start_fails(self, monkeypatch):
+    def test_returns_none_when_daemon_unavailable(self, monkeypatch):
         monkeypatch.setenv("SAP_CLI_MCP_SCREEN_SUMMARY", "0")
+        sends = []
 
-        with patch("sap_cli.daemon.send_command", return_value=None):
-            with patch("sap_cli.daemon.start_daemon", return_value=False):
+        with patch("sap_cli.daemon.ensure_daemon", return_value=False):
+            with patch(
+                "sap_cli.daemon.send_command",
+                side_effect=lambda *a, **k: sends.append(1) or None,
+            ):
                 from sap_cli.mcp_server import _dispatch_via_daemon
                 result = _dispatch_via_daemon("status", {}, "sap_status", None)
 
+        # A dead/wedged daemon must not receive the real command at all.
         assert result is None
+        assert sends == []
 
     def test_passes_context_to_daemon(self, monkeypatch):
         monkeypatch.setenv("SAP_CLI_MCP_SCREEN_SUMMARY", "1")
@@ -462,14 +471,15 @@ class TestDispatchViaDaemon:
             captured.append((cmd, args, context))
             return {"ok": True, "data": {}}
 
-        with patch("sap_cli.daemon.send_command", mock_send):
-            from sap_cli.mcp_server import _dispatch_via_daemon
-            _dispatch_via_daemon(
-                "screen",
-                {"fields_only": True, "actions_only": False},
-                "sap_screen",
-                "operator",
-            )
+        with patch("sap_cli.daemon.ensure_daemon", return_value=True):
+            with patch("sap_cli.daemon.send_command", mock_send):
+                from sap_cli.mcp_server import _dispatch_via_daemon
+                _dispatch_via_daemon(
+                    "screen",
+                    {"fields_only": True, "actions_only": False},
+                    "sap_screen",
+                    "operator",
+                )
 
         cmd, args, ctx = captured[0]
         assert cmd == "screen"
@@ -488,9 +498,10 @@ class TestDispatchViaDaemon:
             captured.append(context)
             return {"ok": True, "data": {"connected": True}}
 
-        with patch("sap_cli.daemon.send_command", mock_send):
-            from sap_cli.mcp_server import _dispatch_via_daemon
-            result = _dispatch_via_daemon("connect", {}, "sap_connect", "operator")
+        with patch("sap_cli.daemon.ensure_daemon", return_value=True):
+            with patch("sap_cli.daemon.send_command", mock_send):
+                from sap_cli.mcp_server import _dispatch_via_daemon
+                result = _dispatch_via_daemon("connect", {}, "sap_connect", "operator")
 
         assert result == {"ok": True, "data": {"connected": True}}
         ctx = captured[0]
@@ -508,8 +519,9 @@ class TestDispatchViaDaemon:
             captured.append(context)
             return {"ok": True, "data": {}}
 
-        with patch("sap_cli.daemon.send_command", mock_send):
-            from sap_cli.mcp_server import _dispatch_via_daemon
-            _dispatch_via_daemon("status", {}, "sap_status", None)
+        with patch("sap_cli.daemon.ensure_daemon", return_value=True):
+            with patch("sap_cli.daemon.send_command", mock_send):
+                from sap_cli.mcp_server import _dispatch_via_daemon
+                _dispatch_via_daemon("status", {}, "sap_status", None)
 
         assert captured[0]["include_screen_summary"] is False

@@ -1829,13 +1829,11 @@ def _dispatch_via_daemon(
     if session_id:
         ctx["session_id"] = session_id
 
-    result = daemon.send_command(
-        command, args, timeout=daemon.command_timeout(command), context=ctx
-    )
-    if result is not None:
-        return result
-
-    if not daemon.start_daemon():
+    # Probe liveness (side-effect-free ping) before sending the real command so
+    # a bound-but-unresponsive daemon (mid-init or wedged on a blocking call)
+    # fails fast to local dispatch instead of blocking on the command timeout —
+    # which for plan_execute can be hours.
+    if not daemon.ensure_daemon():
         return None
     return daemon.send_command(
         command, args, timeout=daemon.command_timeout(command), context=ctx

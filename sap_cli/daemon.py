@@ -37,6 +37,11 @@ PORT = 18471
 PID_FILE = os.path.join(tempfile.gettempdir(), "sap_cli_daemon.pid")
 DEFAULT_COMMAND_TIMEOUT = 60.0
 DEFAULT_PLAN_EXECUTE_TIMEOUT = 3600.0
+# Side-effect-free liveness probe. A healthy local daemon answers a ping in
+# milliseconds, so this only bites when the port is held by a process that is
+# not responding (dead-but-bound, or wedged on a blocking COM call). Keeping it
+# short bounds how long a first contact waits before giving up.
+DAEMON_PROBE_TIMEOUT = 2.0
 
 
 def command_timeout(cmd: str) -> float:
@@ -88,17 +93,51 @@ def send_command(
         return None
 
 
+def probe_daemon(timeout: float | None = None) -> str:
+    """Classify the daemon port without running any real command.
+
+    Returns one of:
+      "refused"      – nothing is listening (instant; safe to launch one).
+      "alive"        – a ping was answered.
+      "unresponsive" – the port is held but no reply arrived within `timeout`
+                       (a foreign process, or a wedged daemon). A second daemon
+                       cannot bind the port, so callers must not keep waiting.
+    """
+    if timeout is None:
+        timeout = DAEMON_PROBE_TIMEOUT
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    try:
+        sock.connect(("127.0.0.1", PORT))
+    except (ConnectionRefusedError, OSError):
+        sock.close()
+        return "refused"
+    try:
+        signer = IpcAuthenticator(load_or_create_secret())
+        request = signer.sign_request("ping", {}, None)
+        sock.sendall(json.dumps(request).encode("utf-8") + b"\n")
+        sock.shutdown(socket.SHUT_WR)
+        chunks = []
+        while True:
+            chunk = sock.recv(65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        result = json.loads(b"".join(chunks).decode("utf-8"))
+        return "alive" if isinstance(result, dict) and result.get("ok") else "unresponsive"
+    except (TimeoutError, OSError, json.JSONDecodeError):
+        return "unresponsive"
+    finally:
+        sock.close()
+
+
 def is_running() -> bool:
     """데몬 실행 중인지 확인 (ping으로 실제 응답 확인)."""
-    result = send_command("ping", timeout=2)
-    return result is not None and result.get("ok", False)
+    return probe_daemon() == "alive"
 
 
-def start_daemon() -> bool:
-    """데몬 백그라운드 시작. 성공 시 True."""
-    if is_running():
-        return True
-
+def _spawn_and_wait() -> bool:
+    """데몬 프로세스를 띄우고 응답 가능해질 때까지 대기."""
     python = sys.executable
     cmd = [python, "-m", "sap_cli.daemon"]
 
@@ -116,9 +155,40 @@ def start_daemon() -> bool:
 
     for _ in range(30):
         time.sleep(0.2)
-        if is_running():
+        status = probe_daemon()
+        if status == "alive":
             return True
+        if status == "unresponsive":
+            # The port was grabbed by a process that will not answer; our
+            # spawned daemon could not bind it. Stop waiting instead of
+            # pinging a wedged port for the whole readiness window.
+            return False
     return False
+
+
+def start_daemon() -> bool:
+    """데몬 백그라운드 시작. 성공 시 True."""
+    status = probe_daemon()
+    if status == "alive":
+        return True
+    if status == "unresponsive":
+        # Port held by an unresponsive process — launching another cannot help.
+        return False
+    return _spawn_and_wait()
+
+
+def ensure_daemon(autostart: bool = True) -> bool:
+    """살아있는 데몬이 있으면 True. 없으면 (autostart 시) 띄운다.
+
+    포트가 잡혀 있으나 응답하지 않으면(죽었거나 wedged) 실제 명령을 보내지 않고
+    즉시 False를 돌려주어, 호출자가 command 타임아웃까지 매달리지 않게 한다.
+    """
+    status = probe_daemon()
+    if status == "alive":
+        return True
+    if status == "unresponsive":
+        return False
+    return bool(autostart) and _spawn_and_wait()
 
 
 def stop_daemon() -> bool:
