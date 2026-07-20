@@ -167,7 +167,14 @@ class _DaemonServer(socketserver.TCPServer):
     allow_reuse_address = True
 
     def __init__(self, *, authenticator: IpcAuthenticator | None = None):
-        super().__init__(("127.0.0.1", PORT), _Handler)
+        # Defer the bind until all runtime state below is ready. TCPServer binds
+        # at the top of __init__ by default, which leaves the port accepting
+        # connections into the backlog while the heavy setup that follows (COM,
+        # Win32 events, ledger recovery, map hydration) is still running. A
+        # client connecting during that window blocks on recv until its command
+        # timeout instead of getting a fast connection-refused — the "daemon
+        # hangs until timeout on first launch" symptom.
+        super().__init__(("127.0.0.1", PORT), _Handler, bind_and_activate=False)
         self._ipc_authenticator = authenticator or IpcAuthenticator(
             load_or_create_secret()
         )
@@ -235,6 +242,16 @@ class _DaemonServer(socketserver.TCPServer):
 
             self._event_manager = EventSubscriptionManager(Win32EventBackend())
             set_event_manager(self._event_manager)
+
+        # Runtime state is ready — now expose the port. Until this point a
+        # connect() is refused instantly, so is_running()/first-contact probes
+        # fail fast and the autostart loop simply retries until we are ready.
+        try:
+            self.server_bind()
+            self.server_activate()
+        except BaseException:
+            self.server_close()
+            raise
 
     def authenticate(self, request: dict) -> None:
         self._ipc_authenticator.verify_request(request)
