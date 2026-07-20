@@ -89,6 +89,7 @@ class UiMapScanner:
         self._logical_ids: set[str] = set()
         self._object_ids: set[int] = set()
         self._active_tabs: dict[str, str] = {}
+        self._selected_tab_sap_ids: set[str] = set()
 
     def scan(self, session: Any, *, tcode: str = "") -> UiState:
         """Return a complete passive snapshot of ``session``.
@@ -104,6 +105,7 @@ class UiMapScanner:
         self._logical_ids = set()
         self._object_ids = set()
         self._active_tabs = {}
+        self._selected_tab_sap_ids = set()
 
         info = self._read(session, "Info", None, "session")
         # A caller hint only fills an unavailable session field.  Treating it
@@ -289,6 +291,14 @@ class UiMapScanner:
             if value is not _MISSING:
                 bounds[key] = self._integer(value, 0)
 
+        if component_type == "GuiTab":
+            # GuiTab exposes no Selected property; its active state comes from
+            # the parent GuiTabStrip.SelectedTab, recorded when the strip was
+            # visited just above in the tree walk.
+            selected_flag: bool | None = sap_id in self._selected_tab_sap_ids
+        else:
+            selected_flag = self._optional_bool(obj, "Selected", sap_id)
+
         capability = component_capability(component_type, subtype)
         actions = sorted({str(item) for item in capability.get("actions", [])})
         component = UiComponent(
@@ -309,7 +319,7 @@ class UiMapScanner:
             enabled=self._optional_bool(obj, "Enabled", sap_id),
             changeable=self._optional_bool(obj, "Changeable", sap_id),
             required=self._optional_bool(obj, "Required", sap_id),
-            selected=self._optional_bool(obj, "Selected", sap_id),
+            selected=selected_flag,
             bounds=bounds,
             static_properties=static,
             volatile_properties=volatile,
@@ -318,6 +328,11 @@ class UiMapScanner:
             provenance={"source": "sap_gui_scripting", "path": path, "read_only": True},
         )
         self._components.append(component)
+
+        if component_type == "GuiTabStrip":
+            # Must run before the child GuiTabs are visited so each tab can be
+            # scanned with the correct selected state.
+            self._record_selected_tab(obj, sap_id)
 
         descriptor = self._collection_descriptor(obj, component)
         if descriptor is not None:
@@ -334,6 +349,21 @@ class UiMapScanner:
         if component_type == "GuiTab" and component.selected:
             self._active_tabs[parent or sap_id] = logical_id
         return component
+
+    def _record_selected_tab(self, strip: Any, context: str) -> None:
+        """Note which GuiTab is the active one for this GuiTabStrip.
+
+        GuiTab has no Selected property, so the only reliable signal is the
+        strip's SelectedTab. Without it the active tab is unknown, so guided
+        traversal finds no reversible sibling to restore to and offers no tab
+        candidate — the strip's tabs never get mapped and the job ends early.
+        """
+        selected = self._read(strip, "SelectedTab", None, context, report_missing=False)
+        if not selected or selected is _MISSING:
+            return
+        selected_id = self._text(self._read(selected, "Id", "", context))
+        if selected_id:
+            self._selected_tab_sap_ids.add(selected_id)
 
     def _text_editor_metadata(self, obj: Any, context: str) -> dict[str, int]:
         """Read small, value-free editor metadata for map diagnostics."""

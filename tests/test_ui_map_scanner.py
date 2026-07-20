@@ -272,8 +272,10 @@ def test_scans_lossless_hierarchy_all_columns_toolbars_and_menus():
     toolbar_a = element("wnd[0]/tbar[0]", "GuiToolbar", children=(button_a,))
     toolbar_b = element("wnd[0]/tbar[1]", "GuiToolbar", children=(button_b,))
     alv = grid("wnd[0]/usr/cntlALV/shell", 27, (("EXPORT", "Export"), ("LAYOUT", "Layout")))
-    tab = element("wnd[0]/usr/tabs/tabpMAIN", "GuiTab", Text="Main", Selected=True)
-    tabs = element("wnd[0]/usr/tabs", "GuiTabStrip", children=(tab, alv))
+    tab = element("wnd[0]/usr/tabs/tabpMAIN", "GuiTab", Text="Main")
+    tabs = element(
+        "wnd[0]/usr/tabs", "GuiTabStrip", children=(tab, alv), SelectedTab=tab
+    )
     window = element(
         "wnd[0]", "GuiMainWindow", Text="Data Browser", children=(mbar, toolbar_a, toolbar_b, tabs)
     )
@@ -502,3 +504,58 @@ def test_wrapper_exposes_lossless_scan_for_dispatcher_runtime():
     assert result["state"]["tcode"] == "SE16"
     assert result["state"]["components"][0]["sap_id"] == "wnd[0]"
     assert result["metrics"]["components"] == 1
+
+
+def test_active_tab_comes_from_tabstrip_selectedtab_not_gui_tab_selected():
+    # GuiTab has no Selected property in the SAP GUI Scripting API; the active
+    # tab is the parent GuiTabStrip.SelectedTab. If the scanner can't tell which
+    # tab is active, guided traversal finds no reversible sibling to restore to
+    # and offers no tab candidate — the strip's tabs never get mapped and the
+    # job ends early. Regression for that.
+    tab1 = element("wnd[0]/usr/tabsSTRIP/tabpTAB1", "GuiTab")
+    tab2 = element("wnd[0]/usr/tabsSTRIP/tabpTAB2", "GuiTab")
+    strip = element(
+        "wnd[0]/usr/tabsSTRIP",
+        "GuiTabStrip",
+        children=(tab1, tab2),
+        SelectedTab=tab1,
+    )
+    main = element("wnd[0]", "GuiMainWindow", children=(strip,))
+
+    state = UiMapScanner().scan(session(main))
+
+    by_id = {component.sap_id: component for component in state.components}
+    assert by_id["wnd[0]/usr/tabsSTRIP/tabpTAB1"].selected is True
+    assert by_id["wnd[0]/usr/tabsSTRIP/tabpTAB2"].selected is False
+
+    strip_lid = by_id["wnd[0]/usr/tabsSTRIP"].logical_id
+    active_lid = by_id["wnd[0]/usr/tabsSTRIP/tabpTAB1"].logical_id
+    assert state.active_tabs.get(strip_lid) == active_lid
+
+
+def test_scanned_tab_strip_yields_a_select_tab_candidate():
+    # End-to-end: the scanned state must let the traversal adapter offer a
+    # select_tab candidate for the inactive sibling — the exact thing guided
+    # traversal needs and that was missing before the SelectedTab fix.
+    from sap_cli.ui_map.sap_traversal import SapTraversalAdapter
+
+    tab1 = element("wnd[0]/usr/tabsSTRIP/tabpTAB1", "GuiTab")
+    tab2 = element("wnd[0]/usr/tabsSTRIP/tabpTAB2", "GuiTab")
+    strip = element(
+        "wnd[0]/usr/tabsSTRIP",
+        "GuiTabStrip",
+        children=(tab1, tab2),
+        SelectedTab=tab1,
+    )
+    main = element("wnd[0]", "GuiMainWindow", children=(strip,))
+    state = UiMapScanner().scan(session(main))
+
+    candidates = list(SapTraversalAdapter(SimpleNamespace()).discover(state))
+    tab_targets = {
+        c.target_locator.get("sap_id")
+        for c in candidates
+        if c.action == "select_tab"
+    }
+    # The inactive tab is offered; the active one is not.
+    assert "wnd[0]/usr/tabsSTRIP/tabpTAB2" in tab_targets
+    assert "wnd[0]/usr/tabsSTRIP/tabpTAB1" not in tab_targets
