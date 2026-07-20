@@ -1107,3 +1107,28 @@ SAP ADT(ABAP Development Tools) REST API를 활용하여 온톨로지에 **코�
 | 외부 디렉토리 연동 | LDAP/SCIM 으로 정책 파일 자동 동기화 (사용자 100명+ 시) | 검토 |
 | 감사 로그 로테이션 | 일별 분리 + 90일 후 압축, S3/내부 스토리지 외부화 | 검토 |
 | Phase 24 후보: 읽기 전용 툴 캐시 | `sap_screen/table_read/tree_read/recipe_list` 한정 Python 내장 TTL 캐시 + session.last_mutation_ts 무효화 + 사용자별 키. token-optimizer-mcp 아이디어 차용(직접 적용은 보안·스테일 리스크로 비권장) | 검토 |
+
+---
+
+## 2026-07-20: AI 스킬 분리 + 지도 기반 에이전트
+
+기존 `skill/SKILL.md` 하나에 뭉쳐 있던 MCP 중심 스킬을, MCP 없이 `sap` CLI만으로
+동작하는 지도·계획·실행 3종으로 분리하고 자연어 요청을 처리하는 에이전트를 추가했다.
+코드 변경 없음(문서·스킬 정의만).
+
+| # | 작업 | 내용 | 상태 |
+|---|------|------|------|
+| 1 | 지도 제작 스킬 | `skill/sap-map-build/SKILL.md` — `map-traverse-start/resume`, `map-augment-start`, 모드·budget·resume answers 스키마, job 상태별 대응 | 완료 |
+| 2 | 계획 작성 스킬 | `skill/sap-plan-author/SKILL.md` — `plan-preview` 응답 구조, error/question 코드별 대응, `use_goal_query` 재컴파일 | 완료 |
+| 3 | 계획 실행 스킬 | `skill/sap-plan-run/SKILL.md` — `plan-approve`/`plan-execute`, status·error_code 판정, `outcome_unknown` → `job-reconcile` | 완료 |
+| 4 | Claude 서브에이전트 | `skill/agents/claude/sap-map-planner.md` — 자연어 → 지도 확인 → 계획 → 사용자 확인 → 실행 → 보고 | 완료 |
+| 5 | Codex 에이전트 스킬 | `skill/agents/codex/sap-map-planner/SKILL.md` — Codex CLI에 서브에이전트 레지스트리가 없어 동일 역할을 스킬로 제공 | 완료 |
+| 6 | 루트 스킬 갱신 | `skill/SKILL.md` — 지도/계획/실행 MCP 도구표, 이벤트·슬롯·레시피·프로세스 도구 추가, 패턴 9 신설, 중복 패턴 번호 정리 | 완료 |
+| 7 | 설치 문서 | `README.md` 12장 — Claude/Codex 설치(bash·PowerShell·심볼릭 링크), 첫 실행 예시, 업데이트·제거 | 완료 |
+
+### 남은 검증
+
+| 항목 | 내용 | 상태 |
+|------|------|------|
+| 실기 검증 | Windows SAP 환경에서 스킬 절차대로 지도 수집 → 계획 → 실행이 실제로 동작하는지 확인 (문서의 응답 키는 코드 기준으로만 검증됨) | 대기 |
+| 에이전트 동작 확인 | `sap-map-planner`가 사용자 확인 전 실행을 시도하지 않는지, `outcome_unknown`에서 멈추는지 | 대기 |

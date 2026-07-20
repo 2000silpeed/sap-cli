@@ -1,11 +1,15 @@
 ---
 name: sap
-description: SAP GUI 자동화 - MCP 도구로 SAP 트랜잭션 실행, 매크로 녹화/재생, 온톨로지 학습
+description: SAP GUI 자동화 - MCP 도구로 SAP 트랜잭션 실행, UI 지도 기반 계획·실행, 매크로 녹화/재생, 온톨로지 학습
 triggers:
   - sap
   - SAP
   - 트랜잭션
   - tcode
+  - 지도
+  - UI map
+  - 실행 계획
+  - plan-preview
   - 자재
   - 수주
   - 구매오더
@@ -30,6 +34,20 @@ triggers:
 # SAP GUI 자동화 Skill
 
 SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 탐색하며, 반복 작업을 매크로로 자동화하는 가이드.
+
+## 관련 스킬 (MCP 없이 CLI만 쓸 때)
+
+MCP를 쓰지 않고 `sap` CLI만으로 지도·계획·실행을 다룰 때는 아래 전용 스킬을 쓴다.
+이 문서는 MCP 도구 표면과 SAP 도메인 지식을 담당한다.
+
+| 스킬 | 범위 |
+|------|------|
+| `sap-map-build` | UI 지도 수집·보강·점검 (`sap map-*`) |
+| `sap-plan-author` | 자연어 요청 → 실행 계획 컴파일 (`sap plan-preview`) |
+| `sap-plan-run` | 승인·실행·결과 판정 (`sap plan-approve`, `sap plan-execute`) |
+| `sap-map-planner` | 위 셋을 자연어 요청 하나로 묶어 수행하는 에이전트 |
+| `sap-cli-usage` | 개별 화면 조작 CLI 사용법 |
+| `sap-ontology-qa` | SAP 연결 없이 온톨로지 Q&A |
 
 ## 핵심 원칙
 
@@ -131,6 +149,63 @@ sap session-excel "업로드 대상 범위 확인" --action check --workbook inp
 | `sap_macro_list` | 매크로 목록 조회 | `tcode` (필터) |
 | `sap_macro_show` | 매크로 상세 조회 | `macro_id` |
 | `sap_macro_delete` | 매크로 삭제 | `macro_id` |
+
+### UI 지도 (화면 그래프)
+
+| 도구 | 용도 | 핵심 파라미터 |
+|------|------|--------------|
+| `sap_map_traverse_start` | 지도 수집 job 등록 | `tcode`, `map_id`, `mode`, `budget`, `test_client_confirmed` |
+| `sap_map_traverse_resume` | 질문 답변 또는 budget으로 재개 | `job_id`, `answers`, `budget` |
+| `sap_map_augment_start` | 완료된 지도에 누락 화면 보강 job 생성 | `map_id`, `tcode`, `from_state_id`, `request` |
+| `sap_map_job_status` | 지도 job과 대기 질문 조회 | `job_id`, `status`, `limit` |
+| `sap_map_job_cancel` | 지도 job 취소 | `job_id` |
+| `sap_map_list` | 저장된 최신 지도 목록 | `tcode`, `system_id`, `client`, `language` |
+| `sap_map_search` | 지도에서 상태·요소·전이 검색 | `map_id`, `tcode`, `query`, `kinds` |
+| `sap_map_path` | 시작 상태 → 목표까지 최단 경로 | `map_id`, `tcode`, `from_state_id`, `target`, `target_type` |
+| `sap_map_report` | 지도 coverage·복구 계측 | `map_id`, `tcode` |
+| `sap_map_view` | 화면 연결 outline + mermaid 그래프 | `map_id`, `tcode` |
+| `sap_map_scan` | 현재 화면 1장을 UiState로 스캔 | - |
+
+`mode`는 `passive` / `guided` / `reversible` / `allowlisted`. MCP에서 mode를
+생략하면 기본값은 `guided`이며, `passive` 외 모든 모드는
+`test_client_confirmed=true`가 필요하다. `save`, `post`, `delete`, `release`,
+`send`, `print` 계열 분기는 어떤 모드에서도 수집되지 않는다.
+
+`sap_map_traverse_resume`의 `answers`는 **resume_token을 키로 하는 객체**이고,
+질문의 `reason`에 따라 값 모양이 다르다.
+
+| reason | 값 |
+|--------|-----|
+| `guided_candidate_selection` | `{"candidate_id": "<choices의 candidate_id>"}` |
+| `semantic_review` | `{"accepted_candidate_ids": ["<candidate_id>"]}` |
+| `user_requested_missing_screen` | `{"continue": true, "transition": {"action": "press", "target_logical_id": "<logical id>"}}` |
+
+### 지도 기반 계획·실행
+
+| 도구 | 용도 | 핵심 파라미터 |
+|------|------|--------------|
+| `sap_plan_preview` | 자연어 요청을 실행 전 전체 계획으로 컴파일 | `request`, `tcode`, `map_id`, `goal_query`, `values` |
+| `sap_plan_approve` | 위험 step에 일회용 승인 토큰 발급 | `plan_id`, `plan_hash`, `subject_agent`, `step_ids` |
+| `sap_plan_execute` | 확정 계획을 한 번에 실행 | `plan_ref`, `verify_mode`, `approval_token`, `execution_id` |
+| `sap_job_status` | 계획 실행·지도 순회 공통 작업 상태 | `job_id` |
+| `sap_job_reconcile` | 결과 불명 작업을 수동 확인 결과로 정리 | `job_id`, `resolution` |
+
+`sap_plan_preview` / `sap_plan_approve` / `sap_plan_execute`와 지도 job 계열은
+**persistent daemon 전용**이다. 조회 계열(`sap_map_list`, `sap_map_search`,
+`sap_map_path`, `sap_map_report`, `sap_map_view`, `sap_map_job_status`)은 daemon
+없이도 동작한다.
+
+### 기타
+
+| 도구 | 용도 |
+|------|------|
+| `sap_api_object_action` | SAP GUI Scripting 객체 계층의 공식 member 직접 호출 |
+| `sap_event_subscribe` / `sap_event_poll` / `sap_event_unsubscribe` / `sap_event_list` | SAP GUI 이벤트 구독·폴링 |
+| `sap_session_start` / `sap_session_mark` / `sap_session_excel` / `sap_session_end` | AI 실행 세션 기록 |
+| `sap_session_pool` / `sap_session_allocate` / `sap_session_release` | 서브에이전트용 슬롯 관리 |
+| `sap_recipe_query` / `sap_recipe_replay_plan` / `sap_recipe_replay_execute` | 레시피 검색·재생 |
+| `sap_process_start` / `sap_process_step` / `sap_process_status` | 업무 프로세스 실행 |
+| `sap_ontology_ask` / `sap_ontology_rebuild` / `sap_ontology_relationships` | 온톨로지 Q&A·재구축 |
 
 ---
 
@@ -311,6 +386,12 @@ overlay가 로드된 것이다. `false`면 `graph.generated.json`이 없거나 �
 권장 사용처:
 - verifier agent가 operator의 작업을 사후 검토할 때
 - 에러/경고 이후 같은 단계를 반복 실행하기 전에
+- 왜 특정 승인 요청이 발생했는지 설명해야 할 때
+
+이 패턴은 온톨로지를 대체하지 않는다.
+- 온톨로지: 원래 이 트랜잭션이 어떤 구조인지 설명
+- transcript: 방금 실제로 어떤 화면에서 실패/성공했는지 설명
+- planner: 두 정보를 바탕으로 다음 액션을 보수적으로 정리하고, 다시 볼 ontology 힌트까지 준다
 
 ### 패턴 7: 스크린샷 기반 설명서 제작
 
@@ -326,14 +407,8 @@ overlay가 로드된 것이다. `false`면 `graph.generated.json`이 없거나 �
 
 저장 위치: `~/.sap_cli/screenshots/{tcode}/`
 파일명: `{tcode}_{step}_screen{num}_{label}.png`
-- 왜 특정 승인 요청이 발생했는지 설명해야 할 때
 
-이 패턴은 온톨로지를 대체하지 않는다.
-- 온톨로지: 원래 이 트랜잭션이 어떤 구조인지 설명
-- transcript: 방금 실제로 어떤 화면에서 실패/성공했는지 설명
-- planner: 두 정보를 바탕으로 다음 액션을 보수적으로 정리하고, 다시 볼 ontology 힌트까지 준다
-
-### 패턴 7: F4 검색 도움말
+### 패턴 8: F4 검색 도움말
 
 필드에서 가능한 값을 검색할 때:
 
@@ -346,6 +421,43 @@ overlay가 로드된 것이다. `false`면 `graph.generated.json`이 없거나 �
 4. (검색 조건 입력 → F8 실행)
 5. 결과에서 값 선택
 ```
+
+### 패턴 9: 지도 기반 계획 실행
+
+화면을 매번 다시 훑지 않고, 한 번 수집한 UI 지도로 계획을 먼저 확정한 뒤 한 번에
+실행하는 흐름이다. 반복 업무와 여러 화면을 거치는 업무에 적합하다.
+
+```
+1. sap_map_list(tcode="MM03")
+   → 쓸 수 있는 지도가 없으면 sap_map_traverse_start로 먼저 수집
+2. sap_plan_preview(request="자재 기본 데이터를 조회해줘",
+                    tcode="MM03", map_id="mm03-readonly",
+                    goal_query="기본 데이터", values={"material": "TEST_MATNR"})
+   → validation.valid, validation.questions, plan.steps, plan_ref, activation 확인
+3. 사용자에게 계획(TCode, 화면 이동, 입력값, 성공 조건, 위험 단계)을 보여주고 확인받기
+4. (위험 단계가 있으면) sap_plan_approve(plan_id, plan_hash, subject_agent, step_ids)
+5. sap_plan_execute(activation.arguments 그대로, 필요 시 approval_token 추가)
+6. 결과 status 판정
+```
+
+핵심 규칙:
+
+- `validation.valid`가 `false`면 실행하지 않는다. `errors`/`questions`를 읽고
+  목표 재지정(`use_goal_query`) 또는 지도 보강(`sap_map_augment_start`)으로 간다.
+- 유효한 미리보기에는 `activation`이 따라온다. 사용자가 확인한 뒤
+  `activation.arguments`를 그대로 `sap_plan_execute`에 넘긴다. ID나 hash를 사람이
+  다시 조립하지 않는다.
+- `plan_ref`는 daemon 메모리에만 있고 기본 TTL 900초다. 만료되면 재미리보기한다.
+- `verify_mode`는 `cheap`(기본) 또는 `full`.
+- 결과 `status`가 `outcome_unknown`이면 **절대 재시도하지 않는다.** 사용자에게
+  SAP 실제 반영 여부를 확인받고 `sap_job_reconcile(job_id="plan:<execution_id>",
+  resolution="verified_applied" | "verified_not_applied" | "verified_failed")`로
+  정리한다.
+- locator 불일치나 지도 stale로 실패하면 개별 도구로 우회 실행하지 않는다. 지도
+  보강 또는 새 계획이 정상 경로다.
+
+CLI만 쓰는 경우의 상세 절차는 `sap-map-build` / `sap-plan-author` /
+`sap-plan-run` 스킬에 있다.
 
 ---
 

@@ -45,6 +45,8 @@ SAP 업무는 익숙하지만 스크립팅이 처음이라면 명령어를 외�
 8. [MCP 도구를 활용한 AI 자동화 시나리오](#8-mcp-도구를-활용한-ai-자동화-시나리오)
 9. [트러블슈팅](#9-트러블슈팅)
 10. [아키텍처](#10-아키텍처)
+11. [테스트](#11-테스트)
+12. [AI 스킬·서브에이전트 설치](#12-ai-스킬서브에이전트-설치)
 
 ---
 
@@ -1848,9 +1850,15 @@ sap_cli/
 │           ├── meta_edges/     # 메타엣지 규칙
 │           └── patterns/       # 공통 패턴 (메타온톨로지)
 ├── skill/
-│   ├── SKILL.md                # SAP GUI 자동화 스킬 정의
-│   └── sap-ontology-qa/
-│       └── SKILL.md            # 온톨로지 Q&A 스킬 정의
+│   ├── SKILL.md                # SAP GUI 자동화 스킬 정의 (MCP 도구 표면 + 도메인 지식)
+│   ├── sap-cli-usage/SKILL.md  # CLI 화면 조작 사용법
+│   ├── sap-ontology-qa/SKILL.md # 온톨로지 Q&A (SAP 연결 불필요)
+│   ├── sap-map-build/SKILL.md  # CLI 전용 — UI 지도 제작/보강
+│   ├── sap-plan-author/SKILL.md # CLI 전용 — 자연어 → 실행 계획
+│   ├── sap-plan-run/SKILL.md   # CLI 전용 — 승인/실행/결과 판정
+│   └── agents/
+│       ├── claude/sap-map-planner.md          # Claude Code 서브에이전트
+│       └── codex/sap-map-planner/SKILL.md     # Codex용 에이전트 스킬
 └── tests/                      # 326개 테스트 (SAP/Windows 불필요)
     ├── test_dispatcher.py      # 디스패처 통합 테스트
     ├── test_mcp_server.py      # MCP 서버 테스트
@@ -1894,3 +1902,138 @@ pytest tests/ -v
 | SAP/Windows 필요 여부 | 불필요 |
 
 매크로 변수 치환, 온톨로지 스키마 검증, ReBAC 정책 판단, 디스패처 통합, MCP 서버 라우팅, 데몬 위임, 세션 스토어, 레시피 검색, 온톨로지 Q&A, 연결 안정성(멀티 시스템/세션 복구), 병렬 멀티 세션(풀 CRUD/TTL/슬롯 검증/디스패처 통합/스레드 안전) 등을 포함합니다.
+
+---
+
+## 12. AI 스킬·서브에이전트 설치
+
+이 저장소는 Claude Code와 Codex CLI에서 바로 쓸 수 있는 스킬과 에이전트 정의를
+`skill/` 아래에 포함합니다. 스킬은 **파일을 복사(또는 심볼릭 링크)하기만 하면**
+설치됩니다. 별도 빌드나 등록 명령은 없습니다.
+
+### 12.1 무엇이 들어 있나
+
+| 이름 | 종류 | 범위 | MCP 필요 |
+|------|------|------|---------|
+| `sap` (`skill/SKILL.md`) | 스킬 | MCP 도구 표면 + SAP 도메인 지식 | O |
+| `sap-cli-usage` | 스킬 | CLI 화면 조작 사용법 | X |
+| `sap-ontology-qa` | 스킬 | 온톨로지 Q&A (SAP 연결 불필요) | X |
+| `sap-map-build` | 스킬 | UI 지도 수집·보강·점검 | X (CLI 전용) |
+| `sap-plan-author` | 스킬 | 자연어 요청 → 실행 계획 컴파일 | X (CLI 전용) |
+| `sap-plan-run` | 스킬 | 승인·실행·결과 판정 | X (CLI 전용) |
+| `sap-map-planner` | 에이전트 | 위 셋을 자연어 요청 하나로 묶어 수행 | X (CLI 전용) |
+
+지도·계획·실행 3종과 에이전트는 MCP 서버 없이 `sap` CLI만으로 동작합니다.
+다만 `plan-preview` / `plan-approve` / `plan-execute`와 지도 job 계열은
+persistent daemon이 필요하므로 `sap daemon start`를 먼저 실행합니다.
+
+### 12.2 Claude Code에 설치
+
+스킬은 `~/.claude/skills/<이름>/SKILL.md`, 서브에이전트는
+`~/.claude/agents/<이름>.md`에 둡니다.
+
+```bash
+# 저장소 루트에서
+mkdir -p ~/.claude/skills ~/.claude/agents
+
+# CLI 전용 스킬 3종
+cp -r skill/sap-map-build   ~/.claude/skills/
+cp -r skill/sap-plan-author ~/.claude/skills/
+cp -r skill/sap-plan-run    ~/.claude/skills/
+
+# (선택) 기존 스킬
+cp -r skill/sap-cli-usage   ~/.claude/skills/
+cp -r skill/sap-ontology-qa ~/.claude/skills/
+mkdir -p ~/.claude/skills/sap && cp skill/SKILL.md ~/.claude/skills/sap/
+
+# 서브에이전트
+cp skill/agents/claude/sap-map-planner.md ~/.claude/agents/
+```
+
+Windows PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.claude\skills","$HOME\.claude\agents" | Out-Null
+Copy-Item -Recurse -Force skill\sap-map-build,skill\sap-plan-author,skill\sap-plan-run "$HOME\.claude\skills\"
+Copy-Item -Force skill\agents\claude\sap-map-planner.md "$HOME\.claude\agents\"
+```
+
+저장소 변경을 계속 따라가려면 복사 대신 심볼릭 링크를 씁니다.
+
+```bash
+ln -s "$PWD/skill/sap-map-build" ~/.claude/skills/sap-map-build
+ln -s "$PWD/skill/agents/claude/sap-map-planner.md" ~/.claude/agents/sap-map-planner.md
+```
+
+프로젝트 단위로만 쓰려면 `~/.claude` 대신 저장소의 `.claude/skills`,
+`.claude/agents`에 두면 됩니다.
+
+설치 확인은 Claude Code 세션에서 `/skills`(목록에 `sap-map-build`,
+`sap-plan-author`, `sap-plan-run`)와 `/agents`(목록에 `sap-map-planner`)로 합니다.
+
+### 12.3 Codex CLI에 설치
+
+Codex 스킬은 `~/.codex/skills/<이름>/SKILL.md`에 둡니다. Codex CLI에는 Claude
+Code의 서브에이전트 레지스트리에 해당하는 기능이 없으므로, 에이전트는 **같은
+역할을 하는 스킬** 형태로 제공합니다.
+
+```bash
+mkdir -p ~/.codex/skills
+
+cp -r skill/sap-map-build   ~/.codex/skills/
+cp -r skill/sap-plan-author ~/.codex/skills/
+cp -r skill/sap-plan-run    ~/.codex/skills/
+cp -r skill/agents/codex/sap-map-planner ~/.codex/skills/
+```
+
+Windows PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.codex\skills" | Out-Null
+Copy-Item -Recurse -Force skill\sap-map-build,skill\sap-plan-author,skill\sap-plan-run "$HOME\.codex\skills\"
+Copy-Item -Recurse -Force skill\agents\codex\sap-map-planner "$HOME\.codex\skills\"
+```
+
+설치 후 Codex 세션에서 `/skills`로 목록을 확인합니다.
+
+### 12.4 설치 후 첫 실행
+
+```powershell
+sap daemon start
+sap connect
+sap session
+```
+
+그다음 자연어로 요청하면 됩니다.
+
+```
+MM03 지도를 만들어줘. 테스트 client이고 조회만 할 거야.        → sap-map-build
+mm03-readonly 지도로 자재 조회 계획을 보여줘. 실행은 하지 마.  → sap-plan-author
+계획 확인했어. 실행해줘.                                       → sap-plan-run
+```
+
+세 단계를 한 번에 맡기려면 에이전트를 부릅니다.
+
+```
+sap-map-planner로 mm03-readonly 지도를 써서 자재 TEST_MATNR 기본 데이터를 조회해줘.
+```
+
+에이전트는 계획을 보여주고 **사용자 확인 전에는 실행하지 않습니다.** 저장·변경·
+전표 생성·승인·발송이 포함된 계획은 해당 step만 별도 승인을 받습니다.
+
+### 12.5 업데이트와 제거
+
+업데이트는 같은 경로로 다시 복사하면 됩니다(심볼릭 링크로 설치했으면 불필요).
+
+```bash
+cp -r skill/sap-map-build ~/.claude/skills/
+```
+
+제거는 설치한 디렉토리를 지우면 됩니다.
+
+- Claude Code: `~/.claude/skills/sap-map-build`, `~/.claude/skills/sap-plan-author`,
+  `~/.claude/skills/sap-plan-run`, `~/.claude/agents/sap-map-planner.md`
+- Codex: `~/.codex/skills/` 아래 같은 이름의 디렉토리 4개
+
+스킬 파일은 지시문일 뿐이며 SAP 데이터를 담지 않습니다. 지도·레시피·매크로 같은
+실제 데이터는 `~/.sap_cli/` 아래에 그대로 남습니다.
