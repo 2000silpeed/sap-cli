@@ -491,6 +491,10 @@ class UiMapScheduler:
             if checkpoint is None and bool(config.get("navigate_pending", True)):
                 self._navigate(wrapper, record.tcode)
             self._assert_live_scope(wrapper, record, checkpoint)
+            # Record the live system/client/user so the test-client assertion can
+            # be confirmed against reality. Purely informational — never used to
+            # decide production from the client number.
+            self._record_observed_scope(wrapper, record)
 
             session = getattr(wrapper, "session", wrapper)
             adapter = self.adapter_factory(session)
@@ -772,6 +776,37 @@ class UiMapScheduler:
             or any(expected[name] and actual[name] != expected[name] for name in expected)
         ):
             raise RuntimeError("map_scope_mismatch")
+
+    def _record_observed_scope(self, wrapper: Any, record: MapJobRecord) -> None:
+        """Read live connection identity and store it on the job (best effort)."""
+
+        getter = getattr(wrapper, "get_session_info", None)
+        if not callable(getter):
+            return
+        try:
+            info = getter()
+        except Exception:
+            return
+        dump = getattr(info, "model_dump", None)
+        raw = dump(mode="json") if callable(dump) else {
+            name: getattr(info, name, "")
+            for name in ("system_name", "client", "user", "language", "transaction")
+        }
+        if not isinstance(raw, dict):
+            return
+        scope = {
+            "system_id": str(raw.get("system_name", "") or ""),
+            "client": str(raw.get("client", "") or ""),
+            "user": str(raw.get("user", "") or ""),
+            "language": str(raw.get("language", "") or ""),
+            "transaction": str(raw.get("transaction", "") or ""),
+        }
+        if any(scope.values()):
+            try:
+                self.job_store.record_observed_scope(record.job_id, scope)
+            except Exception:
+                # Surfacing identity must never break the traversal itself.
+                pass
 
     @staticmethod
     def _validate_mode(mode: str) -> str:

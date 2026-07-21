@@ -1261,3 +1261,33 @@ def test_dispatcher_augmentation_resume_persists_manual_screen_end_to_end(tmp_pa
     saved = maps.latest("existing", tcode="ZMAP")
     assert {state.screen_number for state in saved.states.values()} == {100, 200}
     assert any(item.action == "user_guided_navigation" for item in saved.transitions)
+
+
+def test_tick_records_live_client_identity_without_production_judgement(tmp_path):
+    # A test client that happens to be numbered 100 must be recorded verbatim
+    # and the job must run normally — the number is never treated as production.
+    from sap_cli.dispatchers.ui_maps import _job_summary
+
+    wrapper = FakeWrapper()
+    wrapper.get_session_info = lambda: SimpleNamespace(
+        system_name="DEV",
+        client="100",
+        user="TESTER",
+        language="EN",
+        transaction="ZMAP",
+    )
+    runner, _ = scheduler(tmp_path, wrapper)
+    record = runner.start(tcode="ZMAP", map_id="scope-map", mode="passive")
+
+    runner.tick(record.job_id)
+
+    stored = runner.job_store.get(record.job_id)
+    assert stored.observed_scope["client"] == "100"
+    assert stored.observed_scope["system_id"] == "DEV"
+    assert stored.observed_scope["user"] == "TESTER"
+    # 100 is not production: a passive scan still completes.
+    assert stored.status == "completed"
+
+    summary = _job_summary(stored)
+    assert summary["observed_scope"]["client"] == "100"
+    assert summary["test_client_confirmed"] is False

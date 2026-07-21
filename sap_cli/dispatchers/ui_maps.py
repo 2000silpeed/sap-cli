@@ -522,6 +522,13 @@ def _job_summary(record: MapJobRecord) -> dict[str, Any]:
         "stop_reason": record.stop_reason,
         "error": record.error,
         "pending_questions": record.pending_questions,
+        # Live connection identity + the caller's assertion, shown together so
+        # the test-client claim can be checked against reality. The client
+        # number is never auto-classified as production.
+        "test_client_confirmed": bool(
+            record.traversal_config.get("test_client_confirmed", False)
+        ),
+        "observed_scope": dict(record.observed_scope),
         "budget": dict(record.traversal_config.get("budget") or {}),
         "usage": {
             "elapsed_seconds": checkpoint.elapsed_seconds,

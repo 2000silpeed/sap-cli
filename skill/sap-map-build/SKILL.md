@@ -31,7 +31,10 @@ type), 확인된 전이만 남는다. 자재번호·고객번호·금액 같은 
      `인쇄`, `출력`
 3. **`passive` 외 모든 모드는 테스트 client에서만.** `--test-client-confirmed`
    없이는 실행 자체가 거부된다. 사용자에게 "지금 접속한 client가 테스트
-   client인지" 먼저 확인받는다.
+   client인지" 먼저 확인받는다. **client 번호로 운영 여부를 판단하지 않는다** —
+   `100`이라고 운영이 아니고, 운영 여부는 client 카테고리(landscape마다 다름)로
+   정해진다. 첫 tick 이후 `map-job-status`의 `observed_scope`(실제 접속
+   system/client/user)를 사용자에게 보여주고 사실과 맞는지 확인받는다.
 4. **버튼·메뉴 이름을 추측해 누르지 않는다.** 조회성 분기는 `guided`에서 사용자가
    고르거나 `allowlisted` 규칙으로 명시한 것만 수집한다.
 5. **`passive` 한 번으로 끝내지 않는다.** 계획에 쓸 수 있는 지도는 최소한
@@ -378,6 +381,12 @@ sap job-status
 ```
 
 `map-job-status`는 인자 없이 부르면 본인 agent와 현재 slot의 job 목록을 준다.
+
+job 요약에는 `test_client_confirmed`(호출자가 넣은 확인 플래그)와
+`observed_scope`(첫 tick에서 읽은 실제 접속 system/client/user/language)가 함께
+들어 있다. 이 둘을 대조해 "테스트 client라고 확인했는데 실제로도 맞는지"를
+사용자에게 검증받는다. 데몬은 client 번호로 운영을 자동 판정하지 않으므로,
+사실 확인은 사람이 한다.
 
 ## 저장 위치
 
