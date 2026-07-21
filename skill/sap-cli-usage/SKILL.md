@@ -36,6 +36,21 @@ sap --help                          # 활성화 확인
 
 가상환경은 보통 그 폴더의 `.venv`다. 이름이 다르면(`venv` 등) 사용자에게 확인한다.
 
+## 메뉴 / "More" 네비게이션 (VL02N 등)
+
+신형 SAP GUI에서 메뉴바가 접혀 **"More"** 버튼으로 뜨는 화면(VL02N 등)의 메뉴
+항목은 전부 `GuiMenu`이고 `wnd[0]/mbar/...` 아래에 그대로 있다. "More"가 접혀
+있어도 스크립팅에서는 메뉴 트리가 노출된다.
+
+- **누르는 법**: `sap press <menu_id>` 또는 `sap act <menu_id> select`. GuiMenu는
+  `Press()`가 아니라 `Select()`로 실행된다(도구가 자동 처리). "More" 버튼 자체를
+  누를 필요 없이, 목표 메뉴 **항목(leaf)** 을 바로 Select하면 동작이 실행된다.
+  예: `sap press "wnd[0]/mbar/menu[3]/menu[1]"`.
+- **항목 id 찾기**: `sap screen`은 최상위 메뉴(`wnd[0]/mbar/menu[i]` + text)를
+  보여준다. 하위 항목은 `wnd[0]/mbar/menu[i]/menu[j]` 경로 규칙을 따른다. 최상위
+  메뉴를 먼저 Select하면 열리며, 필요한 leaf 경로를 지정해 Select한다.
+- 저장·전기 같은 변경 메뉴는 그 결과(상태바/모달)를 반드시 확인한다.
+
 ## 기본 원칙
 
 1. `sap connect` 또는 `sap_connect`로 연결한다.
