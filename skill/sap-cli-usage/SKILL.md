@@ -8,6 +8,22 @@ description: SAP CLI 실제 사용법 스킬. sap connect/run/screen/set/fill/vk
 이 스킬은 `sap` CLI와 MCP `sap_*` 도구로 SAP GUI를 실제 조작하는 방법을 제공한다.
 이슈 해결/재설치/커밋이 아니라 **운영 사용법**에 집중한다.
 
+## 환경 준비 (프로젝트 폴더 + 가상환경)
+
+`sap` CLI는 프로젝트의 가상환경에 editable로 설치돼 있다. **어떤 `sap` 명령이나
+테스트든 먼저 sap_cli 프로젝트 폴더로 이동해 그 안의 `.venv`를 활성화한 뒤
+실행한다.** 활성화하지 않으면 `sap`이 PATH에 없거나 다른 설치본을 쓸 수 있다.
+
+```powershell
+cd <sap_cli 프로젝트 폴더>          # pyproject.toml과 sap_cli/ 가 있는 곳
+.venv\Scripts\Activate.ps1          # Windows PowerShell (macOS/Linux: source .venv/bin/activate)
+sap --help                          # 활성화 확인
+```
+
+활성화가 어려우면 venv 실행파일을 직접 부른다: `.venv\Scripts\sap ...`(Windows) /
+`.venv/bin/sap ...`(macOS/Linux). 테스트도 반드시 같은 venv에서 돈다:
+`.venv\Scripts\pytest tests\ -q`.
+
 ## 기본 원칙
 
 1. `sap connect` 또는 `sap_connect`로 연결한다.

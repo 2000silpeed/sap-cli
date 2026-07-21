@@ -29,7 +29,11 @@ Codex CLI에는 Claude Code의 서브에이전트 레지스트리에 해당하�
    여부를 확인받고 `sap job-reconcile`로 정리한다.
 4. **저장·변경·전표 생성·승인·발송은 별도 승인 단계를 거친다.**
 5. **비밀번호·토큰·개인식별정보를 요청문이나 값에 넣지 않는다.**
-6. 명령은 **실제 셸에서 실행한다.** 의사코드로 대체하지 않는다.
+6. 명령은 **실제 셸에서 실행한다.** 의사코드로 대체하지 않는다. 실행 전
+   **sap_cli 프로젝트 폴더로 이동해 `.venv`를 활성화한다**(`cd <프로젝트 폴더>`
+   → `.venv\Scripts\Activate.ps1` / macOS·Linux `source .venv/bin/activate`).
+   활성화하지 않으면 `sap`이 PATH에 없거나 다른 설치본을 쓸 수 있다. 테스트도
+   같은 venv에서 돈다.
 7. **JSON 인자는 `@파일`로 넘긴다.** PowerShell에서 큰따옴표가 든 JSON을 명령줄에
    직접 박으면 셸 인용 규칙에 걸려 깨진다. `answers`, `--values-json`,
    `--plan-ref-json`, `step_ids` 등은 JSON을 파일에 써서 `@경로`로 넘긴다(`@-`는

@@ -19,6 +19,11 @@ UI 지도와 레시피를 읽어 step, 변수, 필요한 승인, 지도 버전/f
 
 ## 전제
 
+**먼저 sap_cli 프로젝트 폴더로 이동해 `.venv`를 활성화한 뒤** 모든 `sap` 명령을
+실행한다. 활성화하지 않으면 `sap`이 PATH에 없거나 다른 설치본을 쓸 수 있다.
+(`cd <프로젝트 폴더>` → `.venv\Scripts\Activate.ps1`, macOS/Linux는
+`source .venv/bin/activate`. 대안: `.venv\Scripts\sap ...` 직접 호출.)
+
 ```powershell
 sap daemon status
 sap map-list --tcode MM03

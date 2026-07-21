@@ -121,14 +121,24 @@ sap map-traverse-resume <job-id> '@answer.json'
 즉 끝은 **coverage 숫자가 아니라 "그 계획에 필요한 화면이 도달 가능한가"** 로
 판단한다. 무한 확장하지 말고, 목표에 닿으면 멈춘다.
 
-## 0단계 — daemon과 SAP 세션 준비
+## 0단계 — 프로젝트 폴더 + 가상환경, daemon과 SAP 세션 준비
+
+`sap` CLI는 프로젝트의 가상환경에 editable 설치돼 있다. **먼저 sap_cli 프로젝트
+폴더로 이동해 `.venv`를 활성화한 뒤** 모든 `sap` 명령을 실행한다. 활성화하지
+않으면 `sap`이 PATH에 없거나 다른 설치본을 쓸 수 있다.
 
 ```powershell
+cd <sap_cli 프로젝트 폴더>          # pyproject.toml과 sap_cli/ 가 있는 곳
+.venv\Scripts\Activate.ps1          # Windows (macOS/Linux: source .venv/bin/activate)
+sap --help                          # 활성화 확인
 sap daemon status
 sap daemon start
 sap connect
 sap session
 ```
+
+활성화가 어려우면 venv 실행파일을 직접 부른다: `.venv\Scripts\sap ...` /
+`.venv/bin/sap ...`. 테스트도 같은 venv에서: `.venv\Scripts\pytest tests\ -q`.
 
 `map-traverse-start`, `map-traverse-resume`, `map-augment-start`,
 `map-job-cancel`은 **persistent daemon 전용**이다. daemon이 없으면 direct

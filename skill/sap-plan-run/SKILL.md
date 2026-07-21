@@ -13,6 +13,11 @@ description: >-
 `sap plan-approve`와 `sap plan-execute`만 쓴다. 이 스킬은 **plan-preview로 만든
 유효한 `plan_ref`가 이미 있고, 사용자가 계획 내용을 확인한 뒤에만** 진입한다.
 
+**먼저 sap_cli 프로젝트 폴더로 이동해 `.venv`를 활성화한 뒤** 모든 `sap` 명령을
+실행한다(`cd <프로젝트 폴더>` → `.venv\Scripts\Activate.ps1`, macOS/Linux는
+`source .venv/bin/activate`). 활성화하지 않으면 `sap`이 PATH에 없거나 다른
+설치본을 쓸 수 있다. 대안으로 `.venv\Scripts\sap ...`를 직접 부른다.
+
 ## 실행 전 게이트
 
 다음이 모두 참이어야 실행한다. 하나라도 아니면 실행하지 않고 사용자에게
