@@ -545,11 +545,21 @@ class UiMapScheduler:
                 answers=answers,
             )
         except Exception as exc:
-            failed = self.job_store.fail(record.job_id, "map_traversal_failed")
+            # Preserve a known, safe reason so a scope mismatch (live
+            # system/client/language differs from the map) is visible instead
+            # of a generic failure — this is a scope difference, never a
+            # client-number "production" verdict.
+            error_code = "map_traversal_failed"
+            if isinstance(exc, RuntimeError) and str(exc) in {
+                "map_scope_mismatch",
+                "map_scope_unverifiable",
+            }:
+                error_code = str(exc)
+            failed = self.job_store.fail(record.job_id, error_code)
             if self.coordinator is not None:
                 self.coordinator.fail(
                     self._coordinator_id(record.job_id),
-                    error_code="map_traversal_failed",
+                    error_code=error_code,
                 )
             return failed
 

@@ -1291,3 +1291,36 @@ def test_tick_records_live_client_identity_without_production_judgement(tmp_path
     summary = _job_summary(stored)
     assert summary["observed_scope"]["client"] == "100"
     assert summary["test_client_confirmed"] is False
+
+
+def test_scope_mismatch_surfaces_specific_reason_not_generic_failure(tmp_path):
+    # If the live system/client/language differs from what the map was recorded
+    # on, the job must fail with an explicit map_scope_mismatch so the cause is
+    # visible — this is a scope difference, never a client-number production
+    # verdict. Live client 100 vs a map recorded on client 200.
+    wrapper = FakeWrapper()
+    wrapper.get_session_info = lambda: SimpleNamespace(
+        system_name="DEV", client="100", user="T", language="EN", transaction="ZMAP",
+    )
+    store = MapJobStore(tmp_path)
+    record = store.create(
+        tcode="ZMAP",
+        map_id="scope-map",
+        traversal_config={
+            "mode": "passive",
+            "navigate_pending": False,
+            "map_scope": {"system_id": "DEV", "client": "200", "language": "EN"},
+        },
+    )
+
+    def get_wrapper(slot_id: str) -> FakeWrapper:
+        return wrapper
+
+    runner = UiMapScheduler(
+        store, get_wrapper, scanner=FakeScanner(), adapter_factory=FakeAdapter
+    )
+    runner.tick(record.job_id)
+
+    failed = store.get(record.job_id)
+    assert failed.status == "failed"
+    assert failed.error == "map_scope_mismatch"

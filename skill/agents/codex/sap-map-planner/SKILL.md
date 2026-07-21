@@ -34,6 +34,12 @@ Codex CLI에는 Claude Code의 서브에이전트 레지스트리에 해당하�
    직접 박으면 셸 인용 규칙에 걸려 깨진다. `answers`, `--values-json`,
    `--plan-ref-json`, `step_ids` 등은 JSON을 파일에 써서 `@경로`로 넘긴다(`@-`는
    stdin). 값 없는 짧은 것(`'{}'`)만 인라인 허용.
+8. **client 번호로 운영 여부를 스스로 판단해 거부하지 않는다.** `100`이라고
+   운영이 아니다 — 운영 여부는 landscape별 client 카테고리로 정해지고, 번호만으로
+   알 수 없다. reversible·guided 같은 active 수집을 client 번호를 보고 임의로
+   막지 말고, 실제 접속 정보(`map-job-status`의 `observed_scope`)를 사용자에게
+   보여주고 "테스트 client가 맞는지" **확인받은 뒤** `--test-client-confirmed`로
+   진행한다. 판단은 사람이 한다.
 
 ## 진행 절차
 
