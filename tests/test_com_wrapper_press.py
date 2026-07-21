@@ -13,7 +13,7 @@ class Element:
         self.selected = 0
 
     def Press(self):
-        if self.Type in ("GuiTab", "GuiMenu"):
+        if self.Type in ("GuiTab", "GuiMenu", "GuiRadioButton"):
             raise AssertionError(f"{self.Type} has no Press()")
         self.pressed += 1
 
@@ -37,12 +37,14 @@ def _wrapper(*elements):
     return w
 
 
-def test_press_uses_select_for_menu_and_tab_and_press_for_button():
+def test_press_uses_select_for_menu_tab_radio_and_press_for_button():
     button = Element("wnd[0]/tbar[1]/btn[0]", "GuiButton")
     tab = Element("wnd[0]/usr/tabs/tabpX", "GuiTab")
     # A "More" menu item is a GuiMenu — it must be Select()ed, not Pressed.
     menu = Element("wnd[0]/mbar/menu[3]/menu[1]", "GuiMenu")
-    w = _wrapper(button, tab, menu)
+    # GuiRadioButton also has no Press(); it selects via Select().
+    radio = Element("wnd[0]/usr/radRB", "GuiRadioButton")
+    w = _wrapper(button, tab, menu, radio)
 
     w.press(button.Id)
     assert (button.pressed, button.selected) == (1, 0)
@@ -52,6 +54,9 @@ def test_press_uses_select_for_menu_and_tab_and_press_for_button():
 
     w.press(menu.Id)
     assert (menu.pressed, menu.selected) == (0, 1)
+
+    w.press(radio.Id)
+    assert (radio.pressed, radio.selected) == (0, 1)
 
 
 def test_press_on_menu_no_longer_raises():

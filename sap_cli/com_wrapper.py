@@ -661,15 +661,16 @@ class SapGuiWrapper:
     # -------------------------------------------------------------------
 
     def press(self, element_id: str) -> None:
-        """버튼 클릭 / 탭·메뉴 선택.
+        """버튼 클릭 / 탭·메뉴·라디오 선택.
 
-        GuiTab과 GuiMenu는 Press()가 없고 Select()로 실행한다("More" 메뉴 항목
-        포함). 요소 타입을 확인해 자동으로 적절한 메서드를 호출한다.
+        SAP GUI Scripting에서 Press()는 GuiButton/GuiStatusBarLink에만 있고,
+        GuiTab·GuiMenu("More" 메뉴 포함)·GuiRadioButton은 Select()로 실행한다.
+        요소 타입을 확인해 자동으로 적절한 메서드를 호출한다.
         """
         try:
             obj = self.session.FindById(element_id)
             obj_type = str(obj.Type)
-            if obj_type in ("GuiTab", "GuiMenu"):
+            if obj_type in ("GuiTab", "GuiMenu", "GuiRadioButton"):
                 obj.Select()
             else:
                 obj.Press()
