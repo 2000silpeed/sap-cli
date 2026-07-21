@@ -56,6 +56,18 @@ sap daemon stop
 sap daemon start
 ```
 
+### 첫 `sap_connect`가 60초 매달릴 때 (daemon 한정)
+
+MCP(daemon 경유) 첫 connect만 ~60초 걸리고 두 번째부터 즉시라면, daemon 프로세스의
+첫 SAP COM 호출 cold-start다(CLI direct 연결은 즉시라 COM 코드 문제 아님).
+
+- **간단한 우회**: daemon을 한 번 띄우고 `sap connect`를 한 번 해서 warm 시켜 둔다.
+  이 비용은 daemon 수명당 한 번뿐이고 이후 MCP는 즉시다.
+- **실험적 수정(opt-in)**: MCP env에 `SAP_CLI_COM_WORKER=1`을 넣으면 daemon이 SAP
+  COM을 전용 STA 스레드에서 처리해 첫 connect도 빨라진다. Windows에서 검증 후 켠다.
+  문제가 생기면 `SAP_CLI_COM_WORKER=0`(또는 제거)으로 즉시 원복한다. daemon 재시작
+  필요.
+
 직접 실행으로 강제하려면 환경변수로 끈다.
 
 ```powershell

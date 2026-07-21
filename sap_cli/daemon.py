@@ -249,15 +249,32 @@ class _DaemonServer(socketserver.TCPServer):
             load_or_create_secret()
         )
         self._sap = None
+        self._sap_connected = False
         self._event_manager = None
         from .events.runtime import set_event_manager
         from .planning.approvals import PlanApprovalStore, set_plan_approval_store
         from .planning.runtime import PlanRuntime, set_plan_runtime
 
+        # Optional dedicated STA COM thread. When enabled, every COM operation
+        # (command dispatch, event pump, map traversal ticks) runs on this one
+        # thread and owner-thread-bound state is pinned to it. Off by default.
+        self._com_worker = None
+        try:
+            from .com_worker import ComWorker, com_worker_enabled
+
+            if com_worker_enabled():
+                self._com_worker = ComWorker()
+                self._com_worker.start()
+                logger.info("COM worker thread enabled (tid=%s)", self._com_worker.ident)
+        except Exception as exc:  # pragma: no cover - defensive; fall back to inline
+            logger.warning("COM worker unavailable, using inline dispatch: %s", exc)
+            self._com_worker = None
+        owner_tid = self._com_worker.ident if self._com_worker is not None else None
+
         set_event_manager(None)
-        self._plan_runtime = PlanRuntime()
+        self._plan_runtime = PlanRuntime(owner_thread_id=owner_tid)
         set_plan_runtime(self._plan_runtime)
-        self._plan_approval_store = PlanApprovalStore()
+        self._plan_approval_store = PlanApprovalStore(owner_thread_id=owner_tid)
         set_plan_approval_store(self._plan_approval_store)
         from .jobs import (
             DaemonJobCoordinator,
@@ -318,7 +335,11 @@ class _DaemonServer(socketserver.TCPServer):
             from .events.manager import EventSubscriptionManager
             from .events.win32_backend import Win32EventBackend
 
-            self._event_manager = EventSubscriptionManager(Win32EventBackend())
+            # The event backend pins itself to the thread that creates it, and
+            # it must be the same STA thread that pumps and runs SAP COM.
+            self._event_manager = self._run_com(
+                lambda: EventSubscriptionManager(Win32EventBackend())
+            )
             set_event_manager(self._event_manager)
 
         # Runtime state is ready — now expose the port. Until this point a
@@ -334,7 +355,20 @@ class _DaemonServer(socketserver.TCPServer):
     def authenticate(self, request: dict) -> None:
         self._ipc_authenticator.verify_request(request)
 
+    def _run_com(self, fn, *, timeout=None):
+        """Run ``fn`` on the COM worker thread, or inline when it is disabled."""
+
+        worker = getattr(self, "_com_worker", None)
+        if worker is None:
+            return fn()
+        return worker.run(fn, timeout=timeout)
+
     def service_actions(self) -> None:
+        # Idle SAP COM (event pump + one traversal tick) must run on the same
+        # STA thread as command dispatch.
+        self._run_com(self._service_actions_impl)
+
+    def _service_actions_impl(self) -> None:
         self.pump_events()
         scheduler = getattr(self, "_ui_map_scheduler", None)
         if scheduler is not None:
@@ -358,9 +392,14 @@ class _DaemonServer(socketserver.TCPServer):
         from .events.runtime import set_event_manager
 
         if self._event_manager is not None:
-            self._event_manager.close_all()
+            # close_all touches COM sinks; run it on the owner (worker) thread.
+            self._run_com(self._event_manager.close_all)
             self._event_manager = None
         set_event_manager(None)
+        worker = getattr(self, "_com_worker", None)
+        if worker is not None:
+            worker.stop()
+            self._com_worker = None
         from .ui_map.runtime import set_ui_map_scheduler
         from .planning.approvals import set_plan_approval_store
         from .planning.runtime import set_plan_runtime
@@ -382,8 +421,13 @@ class _DaemonServer(socketserver.TCPServer):
 
     def dispatch(self, cmd: str, args: dict, ctx_dict: dict | None = None) -> dict:
         if cmd == "ping":
+            # Ping must answer instantly for liveness probing. With the COM
+            # worker active the connection is owned by that thread, so read a
+            # cheap cached flag instead of touching COM cross-thread.
             connected = False
-            if self._sap is not None:
+            if self._com_worker is not None:
+                connected = bool(getattr(self, "_sap_connected", False))
+            elif self._sap is not None:
                 try:
                     connected = self._sap.is_connected
                 except Exception:
@@ -413,17 +457,7 @@ class _DaemonServer(socketserver.TCPServer):
                 ctx.session_id = str(ctx_dict["session_id"])
 
         try:
-            data = dispatch_command(
-                cmd,
-                args,
-                ctx,
-            )
-            if cmd == "connect":
-                from .service import get_pool
-                slot_id = ctx.slot_id
-                wrapper = get_pool().get(slot_id)
-                if wrapper:
-                    self._sap = wrapper
+            data = self._run_com(lambda: self._execute_tracked(cmd, args, ctx))
             return {"ok": True, "data": data}
         except ApprovalRequiredError as e:
             return {
@@ -434,6 +468,19 @@ class _DaemonServer(socketserver.TCPServer):
             }
         except (PermissionDeniedError, ValueError, RuntimeError, SapGuiError) as e:
             return {"ok": False, "error": str(e)}
+
+    def _execute_tracked(self, cmd: str, args: dict, ctx: DispatchContext) -> dict:
+        """Run one command (on the COM worker when enabled) and track the slot."""
+
+        data = dispatch_command(cmd, args, ctx)
+        if cmd == "connect":
+            from .service import get_pool
+
+            wrapper = get_pool().get(ctx.slot_id)
+            if wrapper:
+                self._sap = wrapper
+                self._sap_connected = True
+        return data
 
     # -- 명령 핸들러 --
 
