@@ -102,6 +102,29 @@ class CachedUiMapStore:
         self._notify_head(saved)
         return saved
 
+    def delete(self, map_id: str | MapManifest, **scope: Any) -> dict[str, Any]:
+        result = self.store.delete(map_id, **scope)
+        removed = (
+            str(result["map_id"]),
+            str(result["scope"]["tcode"]).upper(),
+            str(result["scope"]["system_id"]).upper(),
+            str(result["scope"]["client"]),
+            str(result["scope"]["language"]).upper(),
+        )
+        self._evict_scope(removed)
+        # The map's head is gone; drop any cached plans bound to this scope so a
+        # stale plan can never execute against a deleted map.
+        if self._on_head_change is not None:
+            self._on_head_change(
+                map_id=removed[0],
+                tcode=removed[1],
+                system_id=removed[2],
+                client=removed[3],
+                language=removed[4],
+                head_version=None,
+            )
+        return result
+
     def invalidate_manifest(self, manifest: MapManifest) -> int:
         scope = (
             manifest.map_id,

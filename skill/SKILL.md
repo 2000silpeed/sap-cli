@@ -164,6 +164,7 @@ sap session-excel "업로드 대상 범위 확인" --action check --workbook inp
 | `sap_map_path` | 시작 상태 → 목표까지 최단 경로 | `map_id`, `tcode`, `from_state_id`, `target`, `target_type` |
 | `sap_map_report` | 지도 coverage·복구 계측 | `map_id`, `tcode` |
 | `sap_map_view` | 화면 연결 outline + mermaid 그래프 | `map_id`, `tcode` |
+| `sap_map_delete` | 저장된 지도를 모든 버전째 영구 삭제 | `map_id`, `tcode`, `confirm` |
 | `sap_map_scan` | 현재 화면 1장을 UiState로 스캔 | - |
 
 `mode`는 `passive` / `guided` / `reversible` / `allowlisted`. MCP에서 mode를

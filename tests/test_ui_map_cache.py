@@ -81,3 +81,26 @@ def test_save_notifies_exact_plan_dependency_invalidator(tmp_path):
     }]
     assert len(notifications[0]["head_fingerprint"]) == 64
     assert saved.manifest.map_version == 1
+
+
+def test_delete_evicts_cache_and_notifies_head_change(tmp_path):
+    raw = UiMapStore(tmp_path)
+    saved = raw.save(make_map())
+    notified = []
+    cache = CachedUiMapStore(
+        raw, on_head_change=lambda **kw: notified.append(kw)
+    )
+    cache.latest(saved.manifest)
+    assert len(cache) == 1
+
+    result = cache.delete(saved.manifest)
+
+    assert result["deleted"] is True
+    assert len(cache) == 0  # cached snapshot evicted
+    # Plan runtime is told the head is gone (head_version=None) for this scope.
+    assert notified and notified[-1]["head_version"] is None
+    assert notified[-1]["map_id"] == "map"
+    # The underlying store no longer has the map.
+    import pytest
+    with pytest.raises(Exception):
+        raw.latest(saved.manifest)

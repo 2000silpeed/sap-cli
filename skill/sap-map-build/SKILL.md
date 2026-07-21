@@ -352,6 +352,21 @@ sap map-path mm03-readonly MM03 <from-state-id> <target> --target-type component
 `map-view`는 `outline`(화면별 다음 경로)과 `mermaid`(그래프 문자열)를 준다.
 사용자에게 지도를 설명할 때는 `mermaid`를 그대로 렌더링해 보여 준다.
 
+### 지도 삭제
+
+잘못 만든 지도나 폐기할 지도는 모든 버전째 지운다. **되돌릴 수 없다.**
+
+```powershell
+sap map-delete mm03-readonly MM03            # --yes 없이는 삭제 대상만 미리 본다
+sap map-delete mm03-readonly MM03 --yes      # 실제 삭제
+```
+
+`--yes` 없이 부르면 `deleted:false`, `confirmation_required:true`와 삭제 대상
+(`target`)만 돌려주고 지우지 않는다. 반드시 대상을 사용자에게 보여주고 확인받은
+뒤 `--yes`(MCP는 `confirm:true`)로 실행한다. scope가 모호하면(같은 map_id가 여러
+system/client) `--system/--client/--language`로 정확히 지정한다. 지도는 구조
+경로만 담으므로(업무값 없음) 지운 뒤 다시 스캔해 재생성할 수 있다.
+
 `map-report`의 `coverage_gate.complete`가 `false`면 계획 컴파일이
 `map_coverage_incomplete`로 막힐 수 있다. 아래 항목을 우선 확인한다.
 

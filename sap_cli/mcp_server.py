@@ -173,6 +173,21 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         }, "required": ["map_id", "tcode"]},
     },
     {
+        "name": "sap_map_delete",
+        "description": (
+            "저장된 UI 지도를 모든 버전째 영구 삭제합니다. 되돌릴 수 없습니다. "
+            "지도는 구조 경로만 담으므로(업무값 없음) 다시 스캔해 재생성할 수 있습니다. "
+            "confirm=true 없이 호출하면 삭제 대상만 미리 보여주고 삭제하지 않습니다."
+        ),
+        "inputSchema": {"type": "object", "properties": {
+            "map_id": {"type": "string"}, "tcode": {"type": "string"},
+            "system_id": {"type": "string"}, "client": {"type": "string"},
+            "language": {"type": "string"},
+            "confirm": {"type": "boolean", "default": False,
+                        "description": "true여야 실제 삭제. 생략/false면 미리보기만."}
+        }, "required": ["map_id", "tcode"]},
+    },
+    {
         "name": "sap_map_job_cancel",
         "description": "지도 생성 job을 취소합니다.",
         "inputSchema": {"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]},
@@ -1714,6 +1729,7 @@ COMPACT_TOOL_NAMES = frozenset(
         "sap_map_search",
         "sap_map_report",
         "sap_map_view",
+        "sap_map_delete",
         "sap_map_job_cancel",
         "sap_map_augment_start",
         "sap_map_traverse_start",

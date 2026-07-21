@@ -585,6 +585,32 @@ def map_view(
     _run_command("map_view", locals(), allow_daemon=True)
 
 
+@app.command("map-delete")
+def map_delete(
+    map_id: str = typer.Argument(),
+    tcode: str = typer.Argument(),
+    system_id: str = typer.Option("", "--system"),
+    client: str = typer.Option("", "--client"),
+    language: str = typer.Option("", "--language"),
+    yes: bool = typer.Option(
+        False, "--yes", help="영구 삭제 확인. 없으면 삭제 대상만 미리 본다"
+    ),
+) -> None:
+    """저장된 UI 지도를 모든 버전째 영구 삭제. --yes 없이는 미리보기만 한다."""
+    _run_command(
+        "map_delete",
+        {
+            "map_id": map_id,
+            "tcode": tcode,
+            "system_id": system_id,
+            "client": client,
+            "language": language,
+            "confirm": yes,
+        },
+        allow_daemon=True,
+    )
+
+
 @app.command("map-job-cancel")
 def map_job_cancel(job_id: str = typer.Argument()) -> None:
     """대기 또는 실행 중인 지도 생성 job을 취소."""

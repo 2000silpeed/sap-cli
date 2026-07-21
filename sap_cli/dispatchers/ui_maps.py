@@ -20,6 +20,7 @@ UI_MAP_COMMANDS = frozenset(
         "map_path",
         "map_report",
         "map_view",
+        "map_delete",
         "map_job_status",
         "map_job_cancel",
         "map_augment_start",
@@ -98,6 +99,31 @@ def dispatch_ui_map_command(
 
     if command == "map_view":
         return map_view(_load_map(map_store, args))
+
+    if command == "map_delete":
+        # Resolve the exact map first (raises on ambiguous/unknown scope) so a
+        # delete can never hit the wrong system/client by omission.
+        manifest = _load_map(map_store, args).manifest
+        target = {
+            "map_id": manifest.map_id,
+            "tcode": manifest.tcode,
+            "system_id": manifest.system_id,
+            "client": manifest.client,
+            "language": manifest.language,
+            "map_version": manifest.map_version,
+        }
+        if not bool(args.get("confirm", False)):
+            # Deletion is irreversible; require an explicit confirmation.
+            return {
+                "deleted": False,
+                "confirmation_required": True,
+                "target": target,
+                "message": (
+                    "이 지도의 모든 버전이 영구 삭제됩니다. "
+                    "confirm=true (CLI: --yes)로 다시 실행하세요."
+                ),
+            }
+        return map_store.delete(manifest)
 
     if command == "map_job_status":
         job_id = str(args.get("job_id", "")).strip()
