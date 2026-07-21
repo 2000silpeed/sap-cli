@@ -51,6 +51,18 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "map_delete": CommandDef(
         "sap_map_delete", Permission.WRITE, category="ui_map", risk_level="high"
     ),
+    "map_record_start": CommandDef(
+        "sap_map_record_start", Permission.WRITE, category="ui_map", risk_level="medium"
+    ),
+    "map_record_finish": CommandDef(
+        "sap_map_record_finish", Permission.WRITE, category="ui_map", risk_level="low"
+    ),
+    "map_record_cancel": CommandDef(
+        "sap_map_record_cancel", Permission.WRITE, category="ui_map", risk_level="low"
+    ),
+    "map_record_status": CommandDef(
+        "sap_map_record_status", Permission.READ, category="ui_map", risk_level="low"
+    ),
     "map_job_status": CommandDef(
         "sap_map_job_status", Permission.READ, category="ui_map", risk_level="low"
     ),

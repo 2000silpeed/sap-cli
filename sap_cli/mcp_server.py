@@ -188,6 +188,33 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         }, "required": ["map_id", "tcode"]},
     },
     {
+        "name": "sap_map_record_start",
+        "description": (
+            "지도 기록 세션을 시작합니다. 시작 후 sap_press·sap_ui_action 등으로 "
+            "직접 탭·버튼을 눌러 화면을 이동하면, 도달한 화면과(안전한 구조 컨트롤 "
+            "클릭이면) 전이가 자동으로 지도에 저장됩니다. 저장·전기 등 위험 컨트롤 "
+            "클릭은 전이로 기록하지 않습니다. persistent daemon 전용."
+        ),
+        "inputSchema": {"type": "object", "properties": {
+            "map_id": {"type": "string"}, "tcode": {"type": "string"}
+        }, "required": ["map_id", "tcode"]},
+    },
+    {
+        "name": "sap_map_record_finish",
+        "description": "지도 기록 세션을 종료하고 기록 요약(state/transition 수)을 반환합니다.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "sap_map_record_cancel",
+        "description": "지도 기록 세션을 중단합니다. 이미 저장된 화면은 남습니다(제거하려면 sap_map_delete).",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "sap_map_record_status",
+        "description": "현재 지도 기록 세션 상태(recording, map_id, 현재 state, 기록 수)를 조회합니다.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "sap_map_job_cancel",
         "description": "지도 생성 job을 취소합니다.",
         "inputSchema": {"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]},
@@ -1730,6 +1757,10 @@ COMPACT_TOOL_NAMES = frozenset(
         "sap_map_report",
         "sap_map_view",
         "sap_map_delete",
+        "sap_map_record_start",
+        "sap_map_record_finish",
+        "sap_map_record_cancel",
+        "sap_map_record_status",
         "sap_map_job_cancel",
         "sap_map_augment_start",
         "sap_map_traverse_start",

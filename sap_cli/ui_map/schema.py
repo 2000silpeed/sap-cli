@@ -92,7 +92,9 @@ class MapManifest(BaseModel):
     language: str = ""
     gui_version: str = ""
     application_release: str = ""
-    capture_mode: Literal["passive", "guided", "reversible", "allowlisted"] = "passive"
+    capture_mode: Literal[
+        "passive", "guided", "reversible", "allowlisted", "record"
+    ] = "passive"
     fixture_ids: list[str] = Field(default_factory=list)
     created_at: str = ""
     updated_at: str = ""

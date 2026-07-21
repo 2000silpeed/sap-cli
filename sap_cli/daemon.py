@@ -288,7 +288,12 @@ class _DaemonServer(socketserver.TCPServer):
         from .dispatchers.ui_maps import default_job_store, default_map_store
         from .service import get_sap
         from .ui_map.cache import CachedUiMapStore
-        from .ui_map.runtime import set_ui_map_scheduler, set_ui_map_store
+        from .ui_map.recorder import MapRecorder
+        from .ui_map.runtime import (
+            set_map_recorder_factory,
+            set_ui_map_scheduler,
+            set_ui_map_store,
+        )
         from .ui_map.scheduler import UiMapScheduler
         from .ui_map.semantic import MapSemanticReviewer
 
@@ -306,6 +311,9 @@ class _DaemonServer(socketserver.TCPServer):
         )
         self._ui_map_scheduler.hydrate_persisted_jobs()
         set_ui_map_scheduler(self._ui_map_scheduler)
+        set_map_recorder_factory(
+            lambda _slot, store=self._ui_map_store: MapRecorder(store, get_sap)
+        )
         if platform.system() == "Windows":
             from .events.manager import EventSubscriptionManager
             from .events.win32_backend import Win32EventBackend

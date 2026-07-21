@@ -260,6 +260,38 @@ sap map-report mm03-readonly MM03
 화면(예: 조회하려는 데이터 탭)이 지도에 들어오면 거기서 멈춰도 된다 — "끝 판단"
 참고.
 
+## 2-B단계 — LLM이 직접 클릭하며 기록 (map-record)
+
+daemon 순회(guided)에 맡기지 않고 **LLM/사용자가 직접 `sap press`·`sap act`로
+탭·버튼을 눌러 순회**하고 싶을 때 쓴다. 기록 세션을 켜두면 그 클릭들이 자동으로
+지도에 저장된다.
+
+```powershell
+sap map-record-start mm03-readonly MM03     # 현재 화면을 첫 state로 기록
+# 이후 평소처럼 직접 이동:
+sap press "wnd[0]/usr/tabs/tabpSANM"        # 탭/버튼 클릭 → 도달 화면+전이 자동 저장
+sap act  "wnd[0]/usr/..." press
+# ...탭을 하나씩 눌러 순회...
+sap map-record-status                        # 기록 상태(state/transition 수) 확인
+sap map-record-finish                        # 종료 + 요약
+```
+
+동작 규칙:
+
+- `record-start` 후 **navigating 액션(`press`/`act`/`vkey`/`run`)마다** daemon이
+  도달 화면을 스캔해 새 state로 저장한다. 화면이 안 바뀌면 아무것도 안 남긴다.
+- **재실행 가능한 전이**는 안전한 구조 컨트롤 클릭에서만 만든다: GuiTab→select_tab,
+  GuiButton→press, GuiMenu→select_menu. `vkey`/`run`으로 바뀐 화면은 state만
+  기록하고 전이는 남기지 않는다.
+- **저장·전기·삭제·승인·전송·인쇄** 등 위험 표식 컨트롤 클릭은 전이로 기록하지
+  않는다(화면은 값 없이 구조만 남을 수 있음).
+- 지도 TCode를 벗어난 화면(다른 transaction)은 흡수하지 않는다.
+- **daemon 전용**이다. daemon이 없으면 세션 상태가 유지되지 않아 기록되지 않는다.
+- 잘못 기록됐으면 `sap map-delete`로 통째로 지우고 다시 시작한다.
+
+guided(2단계)와 record(2-B)는 목적이 같다(지도 채우기). daemon이 후보를 못
+찾거나 LLM이 스스로 순회하는 편이 나을 때 record를 쓴다.
+
 ## 3단계 — 누락 화면 보강 (map-augment-start)
 
 지도를 다 만든 뒤 빠진 탭·팝업이 보이면 전체를 다시 수집하지 않는다. 사용자가

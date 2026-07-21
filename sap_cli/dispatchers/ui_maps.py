@@ -21,6 +21,10 @@ UI_MAP_COMMANDS = frozenset(
         "map_report",
         "map_view",
         "map_delete",
+        "map_record_start",
+        "map_record_finish",
+        "map_record_cancel",
+        "map_record_status",
         "map_job_status",
         "map_job_cancel",
         "map_augment_start",
@@ -158,6 +162,26 @@ def dispatch_ui_map_command(
             else job_store.request_cancel(job_id)
         )
         return {"job": _job_summary(record)}
+
+    if command in {"map_record_start", "map_record_finish", "map_record_cancel", "map_record_status"}:
+        from sap_cli.ui_map.runtime import get_map_recorder
+
+        recorder = get_map_recorder(slot_id)
+        if recorder is None:
+            raise RuntimeError(
+                "map recording requires the persistent daemon; start the daemon first"
+            )
+        if command == "map_record_start":
+            return recorder.start(
+                map_id=_required(args, "map_id"),
+                tcode=_required(args, "tcode"),
+                slot_id=slot_id,
+            )
+        if command == "map_record_finish":
+            return recorder.finish()
+        if command == "map_record_cancel":
+            return recorder.cancel()
+        return recorder.status()
 
     if get_scheduler is None:
         from sap_cli.ui_map.runtime import get_ui_map_scheduler

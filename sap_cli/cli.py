@@ -611,6 +611,35 @@ def map_delete(
     )
 
 
+@app.command("map-record-start")
+def map_record_start(
+    map_id: str = typer.Argument(),
+    tcode: str = typer.Argument(),
+) -> None:
+    """지도 기록 세션 시작. 이후 press/act로 직접 이동하면 자동으로 지도에 저장."""
+    _run_command(
+        "map_record_start", {"map_id": map_id, "tcode": tcode}, allow_daemon=True
+    )
+
+
+@app.command("map-record-finish")
+def map_record_finish() -> None:
+    """지도 기록 세션 종료 후 요약 반환."""
+    _run_command("map_record_finish", {}, allow_daemon=True)
+
+
+@app.command("map-record-cancel")
+def map_record_cancel() -> None:
+    """지도 기록 세션 중단 (저장된 화면은 유지)."""
+    _run_command("map_record_cancel", {}, allow_daemon=True)
+
+
+@app.command("map-record-status")
+def map_record_status() -> None:
+    """현재 지도 기록 세션 상태 조회."""
+    _run_command("map_record_status", {}, allow_daemon=True)
+
+
 @app.command("map-job-cancel")
 def map_job_cancel(job_id: str = typer.Argument()) -> None:
     """대기 또는 실행 중인 지도 생성 job을 취소."""

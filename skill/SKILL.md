@@ -165,7 +165,17 @@ sap session-excel "업로드 대상 범위 확인" --action check --workbook inp
 | `sap_map_report` | 지도 coverage·복구 계측 | `map_id`, `tcode` |
 | `sap_map_view` | 화면 연결 outline + mermaid 그래프 | `map_id`, `tcode` |
 | `sap_map_delete` | 저장된 지도를 모든 버전째 영구 삭제 | `map_id`, `tcode`, `confirm` |
+| `sap_map_record_start` | 기록 세션 시작 — 이후 직접 클릭한 이동을 지도에 자동 저장 | `map_id`, `tcode` |
+| `sap_map_record_finish` | 기록 세션 종료 + 요약 | - |
+| `sap_map_record_cancel` | 기록 세션 중단 (저장된 화면은 유지) | - |
+| `sap_map_record_status` | 기록 세션 상태 조회 | - |
 | `sap_map_scan` | 현재 화면 1장을 UiState로 스캔 | - |
+
+**지도 기록 세션.** daemon 순회에 맡기지 않고 **LLM이 직접 `sap_press`/`sap_ui_action`으로
+탭·버튼을 눌러 순회**할 때 쓴다. `sap_map_record_start` 후 이동하면, 도달한 화면과
+(안전한 구조 컨트롤 클릭이면) 전이가 자동으로 지도에 저장된다. 화면은 값 없이
+구조만 기록되고, 저장·전기 등 위험 컨트롤 클릭은 전이로 기록하지 않는다. 다른
+TCode로 벗어난 화면은 흡수하지 않는다. `sap_map_record_finish`로 종료. daemon 전용.
 
 `mode`는 `passive` / `guided` / `reversible` / `allowlisted`. MCP에서 mode를
 생략하면 기본값은 `guided`이며, `passive` 외 모든 모드는
