@@ -24,6 +24,18 @@ sap --help                          # 활성화 확인
 `.venv/bin/sap ...`(macOS/Linux). 테스트도 반드시 같은 venv에서 돈다:
 `.venv\Scripts\pytest tests\ -q`.
 
+**프로젝트 폴더 찾는 법** (경로는 사용자마다 다르므로 박아두지 않는다):
+
+1. **사용자에게 경로를 물어본다** — 가장 확실하다.
+2. 이미 설치돼 있으면 위치를 역추적한다.
+   ```powershell
+   pip show sap-cli        # "Editable project location: ..." 이 프로젝트 폴더
+   python -c "import sap_cli, pathlib; print(pathlib.Path(sap_cli.__file__).resolve().parent.parent)"
+   ```
+3. 그래도 모르면 `name = \"sap-cli\"`를 담은 `pyproject.toml`이 있는 폴더를 찾는다.
+
+가상환경은 보통 그 폴더의 `.venv`다. 이름이 다르면(`venv` 등) 사용자에게 확인한다.
+
 ## 기본 원칙
 
 1. `sap connect` 또는 `sap_connect`로 연결한다.

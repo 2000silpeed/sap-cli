@@ -140,6 +140,13 @@ sap session
 활성화가 어려우면 venv 실행파일을 직접 부른다: `.venv\Scripts\sap ...` /
 `.venv/bin/sap ...`. 테스트도 같은 venv에서: `.venv\Scripts\pytest tests\ -q`.
 
+**프로젝트 폴더 찾는 법** (경로는 사용자마다 다르므로 박아두지 않는다): ①
+사용자에게 물어본다(가장 확실). ② 이미 설치돼 있으면 `pip show sap-cli`의
+"Editable project location" 또는
+`python -c "import sap_cli, pathlib; print(pathlib.Path(sap_cli.__file__).resolve().parent.parent)"`로
+역추적한다. ③ 그래도 모르면 `name = "sap-cli"`를 담은 `pyproject.toml` 폴더를
+찾는다. venv는 보통 그 폴더의 `.venv`(다르면 사용자에게 확인).
+
 `map-traverse-start`, `map-traverse-resume`, `map-augment-start`,
 `map-job-cancel`은 **persistent daemon 전용**이다. daemon이 없으면 direct
 fallback 없이 실패한다. 반면 `map-list`, `map-search`, `map-path`, `map-report`,
