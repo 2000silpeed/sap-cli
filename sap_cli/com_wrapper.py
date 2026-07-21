@@ -425,13 +425,28 @@ class SapGuiWrapper:
     # -------------------------------------------------------------------
 
     def set_field(self, element_id: str, value: str) -> None:
-        """필드에 값 설정.
+        """필드에 값 설정 (요소 타입에 맞게 자동 처리).
 
-        GuiComboBox는 Text 대신 Key/Value 계열 속성을 써야 하는 경우가
-        있어 콤보박스 타입이면 select_combo와 같은 경로로 처리한다.
+        타입별로 쓰는 멤버가 다르다: GuiCheckBox는 Selected(bool),
+        GuiRadioButton은 Select(), GuiComboBox는 Key/Value, 그 외는 Text.
+        id 관례(/chk, /rad, /cmb)에 의존하지 않고 실제 Type으로 분기하므로
+        비표준 id의 체크박스·라디오도 올바르게 동작한다.
         """
         try:
             element = self.session.FindById(element_id)
+            etype = ""
+            try:
+                etype = str(element.Type)
+            except Exception:
+                pass
+            if etype == "GuiCheckBox":
+                element.Selected = str(value).strip().lower() not in (
+                    "", "0", "false", "off", "no",
+                )
+                return
+            if etype == "GuiRadioButton":
+                element.Select()
+                return
             if self._is_combo_box(element, element_id):
                 self._set_combo_value(element, value)
                 return

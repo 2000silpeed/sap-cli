@@ -65,3 +65,36 @@ def test_press_on_menu_no_longer_raises():
     # Before the fix this called Press() and failed with a SapGuiError.
     w.press(menu.Id)
     assert menu.selected == 1
+
+
+class Field:
+    """A settable field fake for set_field routing tests."""
+
+    def __init__(self, sap_id, ctype):
+        self.Id = sap_id
+        self.Type = ctype
+        self.Selected = False
+        self.Text = ""
+        self.selects = 0
+
+    def Select(self):
+        self.selects += 1
+
+
+def test_set_field_routes_by_type_even_for_nonstandard_ids():
+    # ids intentionally lack the /chk, /rad, /cmb conventions.
+    chk = Field("wnd[0]/usr/ctrlOPT", "GuiCheckBox")
+    rad = Field("wnd[0]/usr/ctrlMODE", "GuiRadioButton")
+    txt = Field("wnd[0]/usr/ctrlNAME", "GuiTextField")
+    w = _wrapper(chk, rad, txt)
+
+    w.set_field(chk.Id, "true")
+    assert chk.Selected is True
+    w.set_field(chk.Id, "false")
+    assert chk.Selected is False
+
+    w.set_field(rad.Id, "x")
+    assert rad.selects == 1
+
+    w.set_field(txt.Id, "hello")
+    assert txt.Text == "hello"
