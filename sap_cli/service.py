@@ -127,6 +127,8 @@ ACTION_MAP: dict[str, ActionType] = {
     "screen": ActionType.READ_SCREEN,
     "read": ActionType.READ_SCREEN,
     "read-screen": ActionType.READ_SCREEN,
+    "read-field": ActionType.READ_FIELD,
+    "read_field": ActionType.READ_FIELD,
     "table-select": ActionType.SELECT_TABLE_ROW,
     "select-row": ActionType.SELECT_TABLE_ROW,
     "table-row": ActionType.SELECT_TABLE_ROW,
@@ -198,6 +200,10 @@ def execute_sap_action(
         sap.select_menu(target)
     elif action_type == ActionType.READ_SCREEN:
         sap.get_screen()
+    elif action_type == ActionType.READ_FIELD:
+        if not target:
+            raise ValueError("read-field 액션은 필드 ID가 필요합니다.")
+        sap.get_field(target)
     elif action_type == ActionType.SELECT_TABLE_ROW:
         sap.select_table_row(target, int(value or "0"))
     elif action_type == ActionType.SELECT_TABLE_CELL:

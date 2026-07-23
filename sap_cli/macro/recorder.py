@@ -243,6 +243,14 @@ class MacroRecorder:
             tcode=self._tcode,
             variables=macro_vars,
             steps=list(self._steps),
+            output_schema=[
+                {
+                    "name": str(step.params.get("as") or step.params.get("name") or step.target_id),
+                    "field": step.target_id,
+                }
+                for step in self._steps
+                if step.action == ActionType.READ_FIELD
+            ],
             created_at=now,
             updated_at=now,
         )

@@ -838,6 +838,9 @@ sap record-step enter enter --desc "Enter로 확인"
 # 테이블의 세 번째 행 선택 (행 번호는 0-based)
 sap record-step select-row "<table element ID>" --row 2 --desc "대상 행 선택"
 
+# 조회 결과를 output 레코드에 저장할 필드 기록
+sap record-step read-field "wnd[0]/usr/ctxtRMMG1-MATNR" --as material_number
+
 # 뷰 선택 화면에서 Enter
 sap record-step vkey 0
 
@@ -937,6 +940,7 @@ sap macro-delete a1b2c3d4e5f6
 | `press` | 버튼 클릭 / 탭 선택 | 버튼 또는 탭 ID | - |
 | `vkey` | 키보드 키 전송 | VKey 번호 (0=Enter) | - |
 | `enter` | Enter 전송 (VKey 0) | `enter` | - |
+| `read-field` | 필드 값을 읽어 실행 결과에 캡처 | 필드 ID | `--as` 결과 이름 |
 | `checkbox` | 체크박스 토글 | 체크박스 ID | `true` 또는 `false` |
 | `radio` | 라디오 버튼 선택 | 라디오 ID | - |
 | `combo` | 드롭다운 선택 | 콤보박스 ID | 선택할 값 |
@@ -949,6 +953,13 @@ sap macro-delete a1b2c3d4e5f6
 `select_row`로 해석한다. 먼저 `sap screen` 또는 `sap inspect <table ID>`로 테이블
 element를 확인하고, 행 순서가 동적으로 바뀌는 화면에서는 선택 후 셀 값/화면을
 검증한다. “엔터”, “확인하고 진행해”는 `enter` 또는 VKey `0`으로 실행한다.
+
+`read-field` 단계가 포함된 매크로는 실행 결과의 `captured_data`에 읽은 값이 들어간다.
+파일에 누적하려면 `--out`을 사용한다. 매 실행 성공 시 한 줄씩 JSONL에 append한다.
+
+```powershell
+sap macro-play <macro_id> --var matnr=100-100 --out .\output\materials.jsonl
+```
 
 ### 5.6 fill 명령으로 간단하게
 

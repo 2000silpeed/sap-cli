@@ -2088,12 +2088,13 @@ def record_start(name: str = typer.Argument(help="매크로 이름")) -> None:
 
 @app.command("record-step")
 def record_step(
-    action: str = typer.Argument(help="액션 (set/press/enter/vkey/run/checkbox/radio/combo/tab/menu/read-screen/select-row/table-cell/table-doubleclick/click-cell/tree-doubleclick/ui-action)"),
+    action: str = typer.Argument(help="액션 (set/press/enter/vkey/run/read-field/checkbox/radio/combo/tab/menu/select-row/table-cell/tree-doubleclick/ui-action)"),
     target: str = typer.Argument(help="대상 ID 또는 값"),
     value: str = typer.Argument(None, help="값 (set/vkey/checkbox/combo용)"),
     node_key: str = typer.Option("", "--node-key", help="트리 node_key"),
     column: str = typer.Option("", "--column", help="테이블/트리 컬럼"),
     row: int | None = typer.Option(None, "--row", help="테이블 행 번호 (0-based)"),
+    as_name: str = typer.Option("", "--as", help="read-field 결과를 저장할 이름"),
     description: str = typer.Option("", "--desc", "-d"),
 ) -> None:
     """매크로 단계 기록 + 실제 SAP 실행."""
@@ -2104,6 +2105,8 @@ def record_step(
         params["column"] = column
     if row is not None:
         params["row"] = row
+    if as_name:
+        params["as"] = as_name
     _output_json(
         _dispatch_local(
             "record_step",
@@ -2184,6 +2187,7 @@ def macro_play(
         help='변수 JSON. 예: \'{"material_number": "200-200"}\''),
     var: Optional[list[str]] = typer.Option(None, "--var", help="변수 KEY=VALUE. 여러 번 사용 가능"),
     dry_run: bool = typer.Option(False, "--dry-run", help="실제 실행 없이 프리뷰"),
+    out: str = typer.Option("", "--out", help="captured_data를 JSONL 파일에 append"),
 ) -> None:
     """매크로 재생."""
     try:
@@ -2191,8 +2195,7 @@ def macro_play(
         if variables:
             vars_dict = _parse_vars(variables)
         vars_dict = _merge_var_assignments(vars_dict, var)
-        _output_json(
-            _dispatch_local(
+        result = _dispatch_local(
                 "macro_play",
                 {
                     "macro_id": macro_id,
@@ -2200,7 +2203,13 @@ def macro_play(
                     "dry_run": dry_run,
                 },
             )
-        )
+        if out and isinstance(result, dict) and result.get("success") and result.get("captured_data"):
+            output_path = Path(out).expanduser()
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with output_path.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(result["captured_data"], ensure_ascii=False) + "\n")
+            result["output_file"] = str(output_path)
+        _output_json(result)
     except json.JSONDecodeError as e:
         _handle_error(e)
 

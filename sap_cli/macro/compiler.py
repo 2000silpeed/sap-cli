@@ -240,7 +240,7 @@ def _risk_contract(
             effect, risk = SideEffectClass.COMMIT, "high"
         return effect, risk, True, True, [{"semantic_risk": "business_commit"}]
 
-    if step.action == ActionType.READ_SCREEN:
+    if step.action in {ActionType.READ_SCREEN, ActionType.READ_FIELD}:
         return SideEffectClass.READ_ONLY, "low", False, False, []
     if step.action in {
         ActionType.SET_FIELD_VALUE,
@@ -291,6 +291,11 @@ def _canonical_action(step: MacroStep) -> tuple[str, dict[str, Any], str]:
         command, args = "ui_select", {"element_id": target}
     elif action == ActionType.READ_SCREEN:
         command, args = "screen", {}
+    elif action == ActionType.READ_FIELD:
+        command, args = "get", {
+            "element_id": target,
+            "capture_as": str(step.params.get("as") or step.params.get("name") or target),
+        }
     elif action == ActionType.SELECT_TREE_NODE:
         command, args = "tree_select", {"element_id": target, "node_key": _required_value(step, "node_key")}
     elif action == ActionType.EXPAND_TREE_NODE:

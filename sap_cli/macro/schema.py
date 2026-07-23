@@ -34,6 +34,8 @@ _ACTION_ALIASES: dict[str, ActionType] = {
     "screen": ActionType.READ_SCREEN,
     "read": ActionType.READ_SCREEN,
     "read-screen": ActionType.READ_SCREEN,
+    "read-field": ActionType.READ_FIELD,
+    "read_field": ActionType.READ_FIELD,
     "table-select": ActionType.SELECT_TABLE_ROW,
     "select-row": ActionType.SELECT_TABLE_ROW,
     "table-row": ActionType.SELECT_TABLE_ROW,
@@ -124,6 +126,7 @@ class Macro(BaseModel):
     tcode: str = ""
     variables: list[MacroVariable] = Field(default_factory=list)
     steps: list[MacroStep] = Field(default_factory=list)
+    output_schema: list[dict[str, str]] = Field(default_factory=list)
     created_at: str = ""
     updated_at: str = ""
     tags: list[str] = Field(default_factory=list)
@@ -142,3 +145,4 @@ class MacroRunResult(BaseModel):
     error_step: int | None = None
     started_at: str = ""
     finished_at: str = ""
+    captured_data: dict[str, str] = Field(default_factory=dict)

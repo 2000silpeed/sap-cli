@@ -246,6 +246,7 @@ def dispatch_macro_play(
     child_ctx.include_post_action_context = False
     child_ctx.include_screen_summary = False
     step_results: list[dict[str, Any]] = []
+    captured_data: dict[str, str] = {}
     for step in compiled.steps:
         child_ctx.sensitive_values = tuple(step.sensitive_values)
         try:
@@ -254,6 +255,9 @@ def dispatch_macro_play(
                 step.reveal_params(),
                 child_ctx,
             )
+            if step.command == "get" and isinstance(result, dict) and "value" in result:
+                capture_as = str(step.reveal_params().get("capture_as") or step.target_locator.get("sap_id", ""))
+                captured_data[capture_as] = str(result.get("value", ""))
             status = dispatch_step("status", {}, child_ctx)
             status_type = str(status.get("type", "S"))
             if status_type.upper() in {"E", "A"}:
@@ -302,6 +306,7 @@ def dispatch_macro_play(
                 "error_step": step.macro_step_number,
                 "started_at": started_at,
                 "finished_at": datetime.now().isoformat(),
+                "captured_data": captured_data,
             }
         if step.wait_after > 0:
             time.sleep(step.wait_after)
@@ -317,6 +322,7 @@ def dispatch_macro_play(
         "completed_steps": len([step for step in compiled.steps if not step.synthetic]),
         "started_at": started_at,
         "finished_at": datetime.now().isoformat(),
+        "captured_data": captured_data,
     }
     return with_post_action(payload, sap, "macro_play", ctx)
 

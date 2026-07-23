@@ -104,6 +104,7 @@ class ActionType(str, Enum):
     SELECT_TAB = "SelectTab"
     SELECT_MENU = "SelectMenu"
     READ_SCREEN = "ReadScreen"
+    READ_FIELD = "ReadField"
     SELECT_TREE_NODE = "SelectTreeNode"
     EXPAND_TREE_NODE = "ExpandTreeNode"
     DOUBLE_CLICK_TREE_NODE = "DoubleClickTreeNode"

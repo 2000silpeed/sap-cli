@@ -51,6 +51,7 @@ class MacroPlayer:
         variables = normalize_runtime_variables(variables, macro)
         started_at = datetime.now().isoformat()
         step_results: list[MacroStepResult] = []
+        captured_data: dict[str, str] = {}
 
         effective_vars = self._effective_variables(macro, variables)
         resolved_steps = self._resolve_all_steps(macro, effective_vars)
@@ -76,7 +77,7 @@ class MacroPlayer:
 
         # 각 스텝 실행
         for step in resolved_steps:
-            result = self._execute_step(step)
+            result = self._execute_step(step, captured_data)
             step_results.append(result)
 
             if not result.success:
@@ -91,6 +92,7 @@ class MacroPlayer:
                     error_step=step.step_number,
                     started_at=started_at,
                     finished_at=datetime.now().isoformat(),
+                    captured_data=captured_data,
                 )
 
             # wait_after 대기
@@ -107,6 +109,7 @@ class MacroPlayer:
             completed_steps=len(step_results),
             started_at=started_at,
             finished_at=datetime.now().isoformat(),
+            captured_data=captured_data,
         )
 
     def dry_run(
@@ -209,12 +212,14 @@ class MacroPlayer:
             }))
         return resolved
 
-    def _execute_step(self, step: MacroStep) -> MacroStepResult:
+    def _execute_step(self, step: MacroStep, captured_data: dict[str, str] | None = None) -> MacroStepResult:
         """단일 스텝 실행.
 
         ActionType별로 com_wrapper의 적절한 메서드 호출.
         """
         try:
+            if captured_data is None:
+                captured_data = {}
             action = step.action
 
             if action == ActionType.SET_FIELD_VALUE:
@@ -322,6 +327,10 @@ class MacroPlayer:
 
             elif action == ActionType.READ_SCREEN:
                 self.sap.get_screen()
+
+            elif action == ActionType.READ_FIELD:
+                alias = str(step.params.get("as") or step.params.get("name") or step.target_id)
+                captured_data[alias] = self.sap.get_field(step.target_id)
 
             else:
                 return MacroStepResult(

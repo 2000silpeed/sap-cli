@@ -97,6 +97,22 @@ sap record-step select-row "<table element ID>" --row 2 --desc "대상 행 선�
 target="<table ID>", row=2, description="대상 행 선택")`을 사용한다. 일반 UI fallback은
 `sap_ui_action(action="select_row", element_id="<table ID>", row=2)`다.
 
+## 조회 결과를 매크로에 저장
+
+사용자가 “이 화면에서 자재명과 플랜트를 읽어서 저장해”라고 요청하면 각 필드를
+`read-field` 단계로 기록하고 `--as`에 안정적인 결과 이름을 지정한다.
+
+```powershell
+sap record-step read-field "<자재명 field ID>" --as description
+sap record-step read-field "<플랜트 field ID>" --as plant
+sap macro-play <macro_id> --var matnr=100-100 --out .\output\materials.jsonl
+```
+
+실행 결과에는 `captured_data`가 포함되고, `--out`을 사용하면 성공한 실행마다 JSONL
+한 줄이 추가된다. 같은 매크로를 여러 입력값으로 반복 실행하면 결과 파일에 레코드가
+누적된다. 필드 ID와 결과 이름은 자연어 요청마다 달라도 되며, 매크로마다 자신의
+output schema로 저장한다.
+
 사용자가 “엔터”, “Enter를 눌러”, “확인하고 진행해”라고 요청하면 `enter`로 해석하고
 SAP VKey `0`을 전송한다. 매크로 기록에서는 `sap record-step enter enter`를 사용하며,
 재생 시에도 동일하게 Enter로 실행된다. 숫자 VKey가 필요한 경우에만 `vkey`를 사용한다.
