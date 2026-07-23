@@ -214,6 +214,7 @@ GuiTableControl이다.
 
 | 도구 | 용도 |
 |------|------|
+| `sap_daemon_status` | daemon 상태 + 실행 환경(인터프리터/venv, import, 로그 tail) 진단. `action=start/restart` |
 | `sap_api_object_action` | SAP GUI Scripting 객체 계층의 공식 member 직접 호출 |
 | `sap_event_subscribe` / `sap_event_poll` / `sap_event_unsubscribe` / `sap_event_list` | SAP GUI 이벤트 구독·폴링 |
 | `sap_session_start` / `sap_session_mark` / `sap_session_excel` / `sap_session_end` | AI 실행 세션 기록 |
