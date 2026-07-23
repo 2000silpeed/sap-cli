@@ -97,6 +97,10 @@ sap record-step select-row "<table element ID>" --row 2 --desc "대상 행 선�
 target="<table ID>", row=2, description="대상 행 선택")`을 사용한다. 일반 UI fallback은
 `sap_ui_action(action="select_row", element_id="<table ID>", row=2)`다.
 
+사용자가 “엔터”, “Enter를 눌러”, “확인하고 진행해”라고 요청하면 `enter`로 해석하고
+SAP VKey `0`을 전송한다. 매크로 기록에서는 `sap record-step enter enter`를 사용하며,
+재생 시에도 동일하게 Enter로 실행된다. 숫자 VKey가 필요한 경우에만 `vkey`를 사용한다.
+
 ## Claude/Codex/MCP daemon 기본 실행
 
 CLI와 MCP는 기본적으로 daemon 경유를 우선 사용한다. daemon이 없으면 자동 시작을

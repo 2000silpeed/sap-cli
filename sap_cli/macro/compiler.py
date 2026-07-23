@@ -265,7 +265,7 @@ def _canonical_action(step: MacroStep) -> tuple[str, dict[str, Any], str]:
     elif action == ActionType.SEND_VKEY:
         raw = step.value or target
         try:
-            key = int(raw)
+            key = 0 if str(raw).strip().lower().replace("_", "-") in {"enter", "send-enter"} else int(raw)
         except (TypeError, ValueError) as exc:
             raise MacroCompileError(f"macro step {step.step_number} vkey must be an integer") from exc
         command, args = "vkey", {"key": key}

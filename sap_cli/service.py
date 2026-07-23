@@ -116,6 +116,8 @@ ACTION_MAP: dict[str, ActionType] = {
     "set": ActionType.SET_FIELD_VALUE,
     "press": ActionType.PRESS_BUTTON,
     "vkey": ActionType.SEND_VKEY,
+    "enter": ActionType.SEND_VKEY,
+    "send-enter": ActionType.SEND_VKEY,
     "run": ActionType.RUN_TRANSACTION,
     "checkbox": ActionType.TOGGLE_CHECKBOX,
     "radio": ActionType.SELECT_RADIO,
@@ -180,7 +182,8 @@ def execute_sap_action(
     elif action_type == ActionType.PRESS_BUTTON:
         sap.press(target)
     elif action_type == ActionType.SEND_VKEY:
-        sap.send_vkey(int(target))
+        key = 0 if normalized_action in {"enter", "send-enter"} else int(target)
+        sap.send_vkey(key)
     elif action_type == ActionType.RUN_TRANSACTION:
         sap.run_transaction(target)
     elif action_type == ActionType.TOGGLE_CHECKBOX:

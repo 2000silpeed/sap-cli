@@ -20,6 +20,8 @@ _ACTION_ALIASES: dict[str, ActionType] = {
     "click": ActionType.PRESS_BUTTON,
     "vkey": ActionType.SEND_VKEY,
     "send-vkey": ActionType.SEND_VKEY,
+    "enter": ActionType.SEND_VKEY,
+    "send-enter": ActionType.SEND_VKEY,
     "run": ActionType.RUN_TRANSACTION,
     "transaction": ActionType.RUN_TRANSACTION,
     "checkbox": ActionType.TOGGLE_CHECKBOX,
