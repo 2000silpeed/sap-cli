@@ -275,6 +275,18 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
         category="session",
         risk_level="low",
     ),
+    "daemon_status": CommandDef(
+        "sap_daemon_status",
+        Permission.READ,
+        expose_cli=False,
+        expose_mcp=True,
+        description=(
+            "상주 daemon 상태와 실행 환경(인터프리터/venv, sap_cli·pywin32·mcp "
+            "import 가능 여부, 로그 tail)을 진단한다. action=start/restart로 기동도 시도."
+        ),
+        category="daemon",
+        risk_level="low",
+    ),
     "slots": CommandDef("sap_session_pool", Permission.READ),
     "slot_allocate": CommandDef(
         "sap_session_allocate",

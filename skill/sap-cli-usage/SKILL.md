@@ -26,7 +26,17 @@ CLI와 MCP는 기본적으로 daemon 경유를 우선 사용한다. daemon이 �
 sap daemon status
 sap daemon stop
 sap daemon start
+sap daemon restart
+sap daemon doctor
 ```
+
+명령이 계속 실패하거나 다른 프로젝트에서 실행이 안 될 때는 먼저 `sap daemon doctor`
+(MCP에서는 `sap_daemon_status` 도구)를 호출한다. 어떤 인터프리터/가상환경(venv)으로
+도는지, `sap_cli`·`pywin32`·`mcp`를 import 할 수 있는지, 데몬이 살아있는지, 기동 실패
+원인(`~/.sap_cli/daemon.log` tail)을 한 번에 보여준다. 기동 실패의 흔한 원인은 데몬이
+`sap_cli`가 설치되지 않은 다른 venv로 스폰되는 경우이며, doctor의 `python_executable`과
+`sap_cli_path`로 즉시 확인할 수 있다. `SAP_CLI_DAEMON_START_TIMEOUT`(초)으로 콜드
+스타트 대기 예산을 조정한다.
 
 직접 실행으로 강제하려면 환경변수로 끈다.
 

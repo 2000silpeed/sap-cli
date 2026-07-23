@@ -33,6 +33,7 @@ SESSION_COMMANDS: frozenset[str] = frozenset(
 
 SESSION_SKIP_COMMANDS: frozenset[str] = frozenset(
     {
+        "daemon_status",
         "session_start",
         "session_end",
         "session_list",

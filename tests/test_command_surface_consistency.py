@@ -28,6 +28,9 @@ MCP_ONLY_COMMANDS = {
     "slot_allocate",
     "slot_release",
     "api_live_probe",
+    # daemon_status는 MCP 도구로 노출하되, CLI에는 별도 `sap daemon status/doctor`
+    # subcommand가 이미 있어 `_run_command("daemon_status")` 경로를 두지 않는다.
+    "daemon_status",
 }
 
 VALID_RISK_LEVELS = {"low", "medium", "high"}

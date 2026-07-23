@@ -91,6 +91,27 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "sap_daemon_status",
+        "description": (
+            "상주 daemon 상태와 실행 환경을 진단합니다. 명령이 계속 실패하거나 "
+            "다른 프로젝트에서 실행이 안 될 때 먼저 호출하세요. 어떤 인터프리터/"
+            "가상환경(venv)으로 도는지, sap_cli·pywin32·mcp를 import 할 수 있는지, "
+            "데몬이 살아있는지, 실패 시 daemon.log tail을 반환합니다. "
+            "action='start'는 미기동 시 기동을 시도하고, action='restart'는 종료 후 재기동합니다."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["status", "start", "restart"],
+                    "default": "status",
+                    "description": "status(기본)=진단만, start=미기동 시 기동 시도, restart=종료 후 재기동",
+                },
+            },
+        },
+    },
+    {
         "name": "sap_screen",
         "description": "현재 SAP 화면의 전체 UI 구조를 JSON으로 반환합니다. 필드, 버튼, 탭, 테이블 등 모든 요소를 포함합니다. search로 특정 요소를 패턴 검색할 수 있습니다.",
         "inputSchema": {
@@ -1700,6 +1721,7 @@ COMPACT_TOOL_NAMES = frozenset(
     {
         "sap_connect",
         "sap_session",
+        "sap_daemon_status",
         "sap_screen",
         "sap_run",
         "sap_ui_action",
@@ -1874,7 +1896,10 @@ def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         slot_id = str(normalized_args.pop("slot_id", "ses0"))
 
         # daemon 위임 모드
-        if _use_daemon():
+        # daemon_status는 호출자 프로세스의 실행 환경을 진단하는 control-plane
+        # 명령이라 daemon으로 위임하지 않고 항상 로컬에서 실행한다. (데몬이 죽어
+        # 있을 때도 진단이 가능해야 하는 바로 그 도구다.)
+        if _use_daemon() and command != "daemon_status":
             daemon_result = _dispatch_via_daemon(
                 command, normalized_args, name, effective_agent,
                 session_id=_active_session_id,
@@ -1916,7 +1941,9 @@ def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             "map_traverse_resume",
         }:
             return _error_result(
-                f"{name}는 persistent daemon 전용이며 direct fallback을 허용하지 않습니다."
+                f"{name}는 persistent daemon 전용이며 direct fallback을 허용하지 않습니다. "
+                "daemon 기동에 실패했다면 sap_daemon_status 도구(action='status')로 "
+                "원인(인터프리터/venv, import 실패, 로그)을 확인하고 action='start'로 재시도하세요."
             )
 
         ctx = DispatchContext(

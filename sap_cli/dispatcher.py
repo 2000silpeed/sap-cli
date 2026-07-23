@@ -191,6 +191,7 @@ from .service import (
 
 
 TRANSCRIPT_OMIT_COMMANDS = {
+    "daemon_status",
     "plan_approve",
     "plan_execute",
     "job_status",
@@ -387,6 +388,8 @@ def _execute_command(
 ) -> dict[str, Any]:
     if command == "recipe_replay_execute":
         return _dispatch_recipe_replay_execute(args, ctx, policy)
+    if command == "daemon_status":
+        return _dispatch_daemon_status(args, ctx)
     if is_event_command(command):
         return dispatch_event_command(command, args, ctx, get_sap=_get_sap)
     if is_job_command(command):
@@ -574,6 +577,30 @@ def _dispatch_vkey(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]
 
 def _dispatch_status(_args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
     return _dispatch_status_impl(ctx, _get_sap)
+
+
+def _dispatch_daemon_status(args: dict[str, Any], _ctx: DispatchContext) -> dict[str, Any]:
+    """상주 daemon 헬스체크 (control-plane). SAP 세션을 건드리지 않는다.
+
+    호출자 프로세스(MCP/CLI)의 실행 환경을 그대로 진단해야 하므로 daemon으로
+    위임하지 않고 항상 로컬에서 실행한다(mcp_server가 위임을 우회한다).
+    """
+    from . import daemon
+
+    action = str(args.get("action", "status")).strip().lower()
+    if action == "restart":
+        daemon.stop_daemon()
+        daemon.wait_until_stopped()  # 죽어가는 데몬을 already-running으로 오판 방지
+        ok, err = daemon.start_daemon_detailed()
+        info = daemon.doctor()
+        info["restart"] = {"ok": ok, "error": err}
+        return info
+    if action == "start":
+        ok, err = daemon.start_daemon_detailed()
+        info = daemon.doctor()
+        info["start"] = {"ok": ok, "error": err}
+        return info
+    return daemon.doctor()
 
 
 def _dispatch_table_read(args: dict[str, Any], ctx: DispatchContext) -> dict[str, Any]:
