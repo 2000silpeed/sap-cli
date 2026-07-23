@@ -2088,7 +2088,7 @@ def record_start(name: str = typer.Argument(help="매크로 이름")) -> None:
 
 @app.command("record-step")
 def record_step(
-    action: str = typer.Argument(help="액션 (set/press/vkey/run/checkbox/radio/combo/tab/menu/read-screen/table-cell/table-doubleclick/click-cell/tree-doubleclick/ui-action)"),
+    action: str = typer.Argument(help="액션 (set/press/vkey/run/checkbox/radio/combo/tab/menu/read-screen/select-row/table-cell/table-doubleclick/click-cell/tree-doubleclick/ui-action)"),
     target: str = typer.Argument(help="대상 ID 또는 값"),
     value: str = typer.Argument(None, help="값 (set/vkey/checkbox/combo용)"),
     node_key: str = typer.Option("", "--node-key", help="트리 node_key"),

@@ -461,6 +461,9 @@ def dispatch_record_step(
 
     action_type = map_action(action)
     normalized_action = action.lower().replace("_", "-")
+    if normalized_action in {"select-row", "table-select", "table-row"}:
+        if value is None and params.get("row") not in (None, ""):
+            value = str(params["row"])
     if normalized_action.startswith("tree-") and not value and params.get("node_key"):
         value = params["node_key"]
     if normalized_action in {
