@@ -44,6 +44,11 @@ DEFAULT_START_TIMEOUT = 20.0
 # start_daemon 실패 원인(자식 stderr 마지막 줄, import 오류 등)을 기록해 두어
 # doctor / CLI status 가 사용자에게 그대로 보여줄 수 있게 한다.
 _last_start_error: str | None = None
+# Side-effect-free liveness probe. A healthy local daemon answers a ping in
+# milliseconds, so this only bites when the port is held by a process that is
+# not responding (dead-but-bound, or wedged on a blocking COM call). Keeping it
+# short bounds how long a first contact waits before giving up.
+DAEMON_PROBE_TIMEOUT = 2.0
 
 
 def _daemon_log_path() -> str:
@@ -121,15 +126,47 @@ def send_command(
         return None
 
 
-def is_running(timeout: float = 2.0) -> bool:
-    """데몬 실행 중인지 확인 (ping으로 실제 응답 확인).
+def probe_daemon(timeout: float | None = None) -> str:
+    """Classify the daemon port without running any real command.
 
-    기동 폴링 중에는 짧은 timeout을 넘겨, 포트는 바인딩됐지만 아직
-    serve_forever가 시작되지 않은 창(window)에서 ping이 길게 블록되지
-    않도록 한다.
+    Returns one of:
+      "refused"      – nothing is listening (instant; safe to launch one).
+      "alive"        – a ping was answered.
+      "unresponsive" – the port is held but no reply arrived within `timeout`
+                       (a foreign process, or a wedged daemon). A second daemon
+                       cannot bind the port, so callers must not keep waiting.
     """
-    result = send_command("ping", timeout=timeout)
-    return result is not None and result.get("ok", False)
+    if timeout is None:
+        timeout = DAEMON_PROBE_TIMEOUT
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    try:
+        sock.connect(("127.0.0.1", PORT))
+    except (ConnectionRefusedError, OSError):
+        sock.close()
+        return "refused"
+    try:
+        signer = IpcAuthenticator(load_or_create_secret())
+        request = signer.sign_request("ping", {}, None)
+        sock.sendall(json.dumps(request).encode("utf-8") + b"\n")
+        sock.shutdown(socket.SHUT_WR)
+        chunks = []
+        while True:
+            chunk = sock.recv(65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        result = json.loads(b"".join(chunks).decode("utf-8"))
+        return "alive" if isinstance(result, dict) and result.get("ok") else "unresponsive"
+    except (TimeoutError, OSError, json.JSONDecodeError):
+        return "unresponsive"
+    finally:
+        sock.close()
+
+
+def is_running(timeout: float = DAEMON_PROBE_TIMEOUT) -> bool:
+    """데몬 실행 중인지 확인 (ping으로 실제 응답 확인)."""
+    return probe_daemon(timeout=timeout) == "alive"
 
 
 def _start_timeout() -> float:
@@ -147,13 +184,22 @@ def start_daemon_detailed(timeout: float | None = None) -> tuple[bool, str | Non
       import 실패/포트 점유 등 기동 실패 원인을 진단할 수 있게 한다.
     - 자식이 준비되기 전에 죽으면(`proc.poll()`) 예산을 다 쓰지 않고 즉시
       실패로 판정하고 로그 tail을 원인으로 돌려준다.
-    - 준비 폴링은 짧은 ping timeout을 써서 느린 콜드 스타트에서 2초씩
-      누적되지 않도록 한다.
+    - 포트가 잡혀 있으나 응답이 없으면(외부/wedged 프로세스) 새 데몬이 바인딩할
+      수 없으므로 대기하지 않고 즉시 실패한다. 데몬은 runtime 초기화를 끝낸 뒤에
+      포트를 바인딩하므로, 정상 기동 중에는 unresponsive로 보이지 않는다.
     """
     global _last_start_error
-    if is_running():
+    status = probe_daemon()
+    if status == "alive":
         _last_start_error = None
         return True, None
+    if status == "unresponsive":
+        _last_start_error = (
+            f"포트 {PORT}가 응답 없는 프로세스에 점유되어 있습니다 "
+            "(죽었지만 바인딩 유지, 또는 wedged daemon). 새 데몬을 띄울 수 없습니다. "
+            "해당 프로세스를 종료한 뒤 다시 시도하세요."
+        )
+        return False, _last_start_error
 
     python = sys.executable
     cmd = [python, "-m", "sap_cli.daemon"]
@@ -187,9 +233,21 @@ def start_daemon_detailed(timeout: float | None = None) -> tuple[bool, str | Non
 
     deadline = time.monotonic() + (timeout if timeout is not None else _start_timeout())
     while time.monotonic() < deadline:
-        if is_running(timeout=0.5):
+        status = probe_daemon(timeout=0.5)
+        if status == "alive":
             _last_start_error = None
             return True, None
+        if status == "unresponsive":
+            # The port was grabbed by a process that will not answer; our
+            # spawned daemon could not bind it. Stop waiting instead of
+            # pinging a wedged port for the whole readiness window.
+            tail = _read_log_tail(log_path)
+            _last_start_error = (
+                f"포트 {PORT}가 응답 없는 프로세스에 점유되어 새 데몬이 바인딩하지 "
+                f"못했습니다. 인터프리터: {python}. 로그: {log_path}"
+                + (f"\n--- daemon.log tail ---\n{tail}" if tail else "")
+            )
+            return False, _last_start_error
         exit_code = proc.poll()
         if exit_code is not None:
             tail = _read_log_tail(log_path)
@@ -211,6 +269,23 @@ def start_daemon_detailed(timeout: float | None = None) -> tuple[bool, str | Non
 
 def start_daemon() -> bool:
     """데몬 백그라운드 시작. 성공 시 True (하위호환용 wrapper)."""
+    ok, _ = start_daemon_detailed()
+    return ok
+
+
+def ensure_daemon(autostart: bool = True) -> bool:
+    """살아있는 데몬이 있으면 True. 없으면 (autostart 시) 띄운다.
+
+    포트가 잡혀 있으나 응답하지 않으면(죽었거나 wedged) 실제 명령을 보내지 않고
+    즉시 False를 돌려주어, 호출자가 command 타임아웃까지 매달리지 않게 한다.
+    """
+    status = probe_daemon()
+    if status == "alive":
+        return True
+    if status == "unresponsive":
+        return False
+    if not autostart:
+        return False
     ok, _ = start_daemon_detailed()
     return ok
 
@@ -332,20 +407,44 @@ class _DaemonServer(socketserver.TCPServer):
     allow_reuse_address = True
 
     def __init__(self, *, authenticator: IpcAuthenticator | None = None):
-        super().__init__(("127.0.0.1", PORT), _Handler)
+        # Defer the bind until all runtime state below is ready. TCPServer binds
+        # at the top of __init__ by default, which leaves the port accepting
+        # connections into the backlog while the heavy setup that follows (COM,
+        # Win32 events, ledger recovery, map hydration) is still running. A
+        # client connecting during that window blocks on recv until its command
+        # timeout instead of getting a fast connection-refused — the "daemon
+        # hangs until timeout on first launch" symptom.
+        super().__init__(("127.0.0.1", PORT), _Handler, bind_and_activate=False)
         self._ipc_authenticator = authenticator or IpcAuthenticator(
             load_or_create_secret()
         )
         self._sap = None
+        self._sap_connected = False
         self._event_manager = None
         from .events.runtime import set_event_manager
         from .planning.approvals import PlanApprovalStore, set_plan_approval_store
         from .planning.runtime import PlanRuntime, set_plan_runtime
 
+        # Optional dedicated STA COM thread. When enabled, every COM operation
+        # (command dispatch, event pump, map traversal ticks) runs on this one
+        # thread and owner-thread-bound state is pinned to it. Off by default.
+        self._com_worker = None
+        try:
+            from .com_worker import ComWorker, com_worker_enabled
+
+            if com_worker_enabled():
+                self._com_worker = ComWorker()
+                self._com_worker.start()
+                logger.info("COM worker thread enabled (tid=%s)", self._com_worker.ident)
+        except Exception as exc:  # pragma: no cover - defensive; fall back to inline
+            logger.warning("COM worker unavailable, using inline dispatch: %s", exc)
+            self._com_worker = None
+        owner_tid = self._com_worker.ident if self._com_worker is not None else None
+
         set_event_manager(None)
-        self._plan_runtime = PlanRuntime()
+        self._plan_runtime = PlanRuntime(owner_thread_id=owner_tid)
         set_plan_runtime(self._plan_runtime)
-        self._plan_approval_store = PlanApprovalStore()
+        self._plan_approval_store = PlanApprovalStore(owner_thread_id=owner_tid)
         set_plan_approval_store(self._plan_approval_store)
         from .jobs import (
             DaemonJobCoordinator,
@@ -376,7 +475,12 @@ class _DaemonServer(socketserver.TCPServer):
         from .dispatchers.ui_maps import default_job_store, default_map_store
         from .service import get_sap
         from .ui_map.cache import CachedUiMapStore
-        from .ui_map.runtime import set_ui_map_scheduler, set_ui_map_store
+        from .ui_map.recorder import MapRecorder
+        from .ui_map.runtime import (
+            set_map_recorder_factory,
+            set_ui_map_scheduler,
+            set_ui_map_store,
+        )
         from .ui_map.scheduler import UiMapScheduler
         from .ui_map.semantic import MapSemanticReviewer
 
@@ -394,17 +498,47 @@ class _DaemonServer(socketserver.TCPServer):
         )
         self._ui_map_scheduler.hydrate_persisted_jobs()
         set_ui_map_scheduler(self._ui_map_scheduler)
+        set_map_recorder_factory(
+            lambda _slot, store=self._ui_map_store: MapRecorder(store, get_sap)
+        )
         if platform.system() == "Windows":
             from .events.manager import EventSubscriptionManager
             from .events.win32_backend import Win32EventBackend
 
-            self._event_manager = EventSubscriptionManager(Win32EventBackend())
+            # The event backend pins itself to the thread that creates it, and
+            # it must be the same STA thread that pumps and runs SAP COM.
+            self._event_manager = self._run_com(
+                lambda: EventSubscriptionManager(Win32EventBackend())
+            )
             set_event_manager(self._event_manager)
+
+        # Runtime state is ready — now expose the port. Until this point a
+        # connect() is refused instantly, so is_running()/first-contact probes
+        # fail fast and the autostart loop simply retries until we are ready.
+        try:
+            self.server_bind()
+            self.server_activate()
+        except BaseException:
+            self.server_close()
+            raise
 
     def authenticate(self, request: dict) -> None:
         self._ipc_authenticator.verify_request(request)
 
+    def _run_com(self, fn, *, timeout=None):
+        """Run ``fn`` on the COM worker thread, or inline when it is disabled."""
+
+        worker = getattr(self, "_com_worker", None)
+        if worker is None:
+            return fn()
+        return worker.run(fn, timeout=timeout)
+
     def service_actions(self) -> None:
+        # Idle SAP COM (event pump + one traversal tick) must run on the same
+        # STA thread as command dispatch.
+        self._run_com(self._service_actions_impl)
+
+    def _service_actions_impl(self) -> None:
         self.pump_events()
         scheduler = getattr(self, "_ui_map_scheduler", None)
         if scheduler is not None:
@@ -428,9 +562,14 @@ class _DaemonServer(socketserver.TCPServer):
         from .events.runtime import set_event_manager
 
         if self._event_manager is not None:
-            self._event_manager.close_all()
+            # close_all touches COM sinks; run it on the owner (worker) thread.
+            self._run_com(self._event_manager.close_all)
             self._event_manager = None
         set_event_manager(None)
+        worker = getattr(self, "_com_worker", None)
+        if worker is not None:
+            worker.stop()
+            self._com_worker = None
         from .ui_map.runtime import set_ui_map_scheduler
         from .planning.approvals import set_plan_approval_store
         from .planning.runtime import set_plan_runtime
@@ -452,8 +591,13 @@ class _DaemonServer(socketserver.TCPServer):
 
     def dispatch(self, cmd: str, args: dict, ctx_dict: dict | None = None) -> dict:
         if cmd == "ping":
+            # Ping must answer instantly for liveness probing. With the COM
+            # worker active the connection is owned by that thread, so read a
+            # cheap cached flag instead of touching COM cross-thread.
             connected = False
-            if self._sap is not None:
+            if self._com_worker is not None:
+                connected = bool(getattr(self, "_sap_connected", False))
+            elif self._sap is not None:
                 try:
                     connected = self._sap.is_connected
                 except Exception:
@@ -483,17 +627,7 @@ class _DaemonServer(socketserver.TCPServer):
                 ctx.session_id = str(ctx_dict["session_id"])
 
         try:
-            data = dispatch_command(
-                cmd,
-                args,
-                ctx,
-            )
-            if cmd == "connect":
-                from .service import get_pool
-                slot_id = ctx.slot_id
-                wrapper = get_pool().get(slot_id)
-                if wrapper:
-                    self._sap = wrapper
+            data = self._run_com(lambda: self._execute_tracked(cmd, args, ctx))
             return {"ok": True, "data": data}
         except ApprovalRequiredError as e:
             return {
@@ -504,6 +638,19 @@ class _DaemonServer(socketserver.TCPServer):
             }
         except (PermissionDeniedError, ValueError, RuntimeError, SapGuiError) as e:
             return {"ok": False, "error": str(e)}
+
+    def _execute_tracked(self, cmd: str, args: dict, ctx: DispatchContext) -> dict:
+        """Run one command (on the COM worker when enabled) and track the slot."""
+
+        data = dispatch_command(cmd, args, ctx)
+        if cmd == "connect":
+            from .service import get_pool
+
+            wrapper = get_pool().get(ctx.slot_id)
+            if wrapper:
+                self._sap = wrapper
+                self._sap_connected = True
+        return data
 
     # -- 명령 핸들러 --
 
@@ -620,8 +767,9 @@ def _run_server():
     )
     pid = os.getpid()
 
-    # 서버 생성(포트 바인딩 + 무거운 초기화)이 실패하면 그 traceback이
-    # 자식 stderr(=daemon.log)로 남도록 하고, PID 파일은 성공했을 때만 쓴다.
+    # 서버 생성(무거운 runtime 초기화 후 마지막에 포트 바인딩)이 실패하면 그
+    # traceback이 자식 stderr(=daemon.log)로 남도록 하고, PID 파일은 성공했을
+    # 때만 쓴다.
     try:
         server = _DaemonServer()
     except Exception:

@@ -19,6 +19,21 @@ SPEC.loader.exec_module(windows_canary)
 
 
 def config(*, mode: str = "passive", plan: bool = False) -> dict[str, Any]:
+    active_mapping = mode in {"reversible", "allowlisted"}
+    allowed_branches = (
+        [
+            {
+                "action": "press",
+                "source_state_id": "state-mm03-main",
+                "target_logical_id": "open-detail",
+                "target_sap_id": "wnd[0]/usr/btnDETAIL",
+                "component_type": "GuiButton",
+                "restore_vkey": 3,
+            }
+        ]
+        if mode == "allowlisted"
+        else []
+    )
     value: dict[str, Any] = {
         "tcode": "MM03",
         "mapping": {
@@ -26,11 +41,12 @@ def config(*, mode: str = "passive", plan: bool = False) -> dict[str, Any]:
             "map_id": "canary-mm03",
             "budget": {"max_states": 10},
             "allowed_actions": ["tab-next"] if mode == "reversible" else [],
+            "allowed_branches": allowed_branches,
         },
         "acknowledgements": {
             "read_only_tcode": True,
-            "non_production_client": mode == "reversible",
-            "reversible_actions_only": mode == "reversible",
+            "non_production_client": active_mapping,
+            "reversible_actions_only": active_mapping,
         },
         "polling": {"interval_seconds": 0.01, "timeout_seconds": 5},
     }
@@ -281,6 +297,60 @@ def test_one_mapping_job_is_polled_and_report_is_sanitized(tmp_path: Path) -> No
     assert "MM03" not in text
 
 
+def test_allowlisted_canary_forwards_only_validated_exact_branches(tmp_path: Path) -> None:
+    cfg = write_config(tmp_path, config(mode="allowlisted"))
+    output = tmp_path / "result.jsonl"
+    transport = FakeTransport()
+
+    code = windows_canary.main(
+        ["--config", str(cfg), "--output", str(output), "--allow-fake"],
+        platform_name="Darwin",
+        transport=transport,
+        sleep=lambda _seconds: None,
+        now=fixed_now,
+    )
+
+    assert code == 0
+    start_args = next(
+        call[1] for call in transport.calls if call[0] == "map_traverse_start"
+    )
+    assert start_args["mode"] == "allowlisted"
+    assert start_args["test_client_confirmed"] is True
+    assert start_args["allowed_branches"] == [
+        {
+            "action": "press",
+            "source_state_id": "state-mm03-main",
+            "source_fingerprint": "",
+            "target_logical_id": "open-detail",
+            "target_sap_id": "wnd[0]/usr/btnDETAIL",
+            "component_type": "GuiButton",
+            "item_id": "",
+            "restore_vkey": 3,
+            "expected_program": "",
+            "expected_screen_number": None,
+            "expected_modal_signature": "",
+            "rule_id": start_args["allowed_branches"][0]["rule_id"],
+        }
+    ]
+
+
+def test_allowlisted_canary_requires_an_exact_branch_before_daemon(tmp_path: Path) -> None:
+    value = config(mode="allowlisted")
+    value["mapping"]["allowed_branches"] = []
+    cfg = write_config(tmp_path, value)
+    output = tmp_path / "result.jsonl"
+    transport = FakeTransport()
+
+    code = windows_canary.main(
+        ["--config", str(cfg), "--output", str(output), "--allow-fake"],
+        platform_name="Darwin", transport=transport, now=fixed_now,
+    )
+
+    assert code == 2
+    assert transport.calls == []
+    assert read_jsonl(output)[-1]["error_code"] == "allowlisted_branches_required"
+
+
 def test_existing_user_guided_job_is_polled_without_starting_another_job(tmp_path: Path) -> None:
     value = config()
     value["mapping"]["existing_job_id"] = "map-job-1"
@@ -373,6 +443,13 @@ def test_api_probe_example_is_a_valid_read_only_canary_config() -> None:
     assert parsed.api_live_probes == (
         {"scope": "session_info", "action": "get_property", "member_name": "Client"},
     )
+
+
+def test_allowlisted_example_is_a_valid_non_production_canary_config() -> None:
+    example = Path(__file__).parents[1] / "examples" / "windows_canary.allowlisted.example.json"
+    parsed = windows_canary.CanaryConfig.from_mapping(json.loads(example.read_text()))
+    assert parsed.mode == "allowlisted"
+    assert len(parsed.allowed_branches) == 1
 
 
 def test_plan_rescan_is_rejected_even_when_cheap_execution_reports_success(

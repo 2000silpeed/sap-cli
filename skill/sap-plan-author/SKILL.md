@@ -19,6 +19,11 @@ UI 지도와 레시피를 읽어 step, 변수, 필요한 승인, 지도 버전/f
 
 ## 전제
 
+**먼저 sap_cli 프로젝트 폴더로 이동해 `.venv`를 활성화한 뒤** 모든 `sap` 명령을
+실행한다. 활성화하지 않으면 `sap`이 PATH에 없거나 다른 설치본을 쓸 수 있다.
+(`cd <프로젝트 폴더>` → `.venv\Scripts\Activate.ps1`, macOS/Linux는
+`source .venv/bin/activate`. 대안: `.venv\Scripts\sap ...` 직접 호출.)
+
 ```powershell
 sap daemon status
 sap map-list --tcode MM03
@@ -34,6 +39,15 @@ sap map-list --tcode MM03
 sap plan-preview "MM03에서 자재 기본 데이터를 조회해줘" `
   --tcode MM03 --map-id mm03-readonly --goal "기본 데이터" `
   --values-json '{"material":"TEST_MATNR"}'
+```
+
+**PowerShell 주의.** 큰따옴표가 여럿 든 `--values-json`을 명령줄에 직접 박으면
+셸 인용 규칙에 걸려 깨진다. LLM이 CLI를 호출할 때는 값 객체를 파일에 써서
+`@경로`로 넘긴다(`@-`는 stdin). 값이 하나뿐인 짧은 경우만 인라인을 쓴다.
+
+```powershell
+Set-Content values.json -Value '{"material":"TEST_MATNR","plant":"1000"}'
+sap plan-preview "..." --tcode MM03 --map-id mm03-readonly --values-json '@values.json'
 ```
 
 주요 옵션:

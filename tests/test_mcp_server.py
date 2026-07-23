@@ -65,6 +65,7 @@ def test_default_mcp_surface_is_compact_and_full_is_explicit(monkeypatch):
     compact = set(get_visible_tool_names())
 
     assert compact == COMPACT_TOOL_NAMES
+    assert "sap_scripting_query" in compact
     assert "sap_ui_append_text" not in compact
     assert "sap_recipe_history" not in compact
 

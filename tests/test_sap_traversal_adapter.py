@@ -263,6 +263,79 @@ def test_exact_allowlisted_button_is_typed_and_restored_by_declared_vkey() -> No
     assert window.vkeys == [3]
 
 
+@pytest.mark.parametrize(
+    ("action", "attribute", "item_id", "method_name"),
+    [
+        ("press_toolbar_button", "toolbar_actions", "DETAIL", "PressToolbarButton"),
+        (
+            "select_context_menu_item",
+            "context_menu_actions",
+            "OPEN_DETAIL",
+            "SelectContextMenuItem",
+        ),
+    ],
+)
+def test_exact_allowlisted_alv_branch_is_typed_and_restored(
+    action, attribute, item_id, method_name
+) -> None:
+    """Native GuiGridView ALV branches are executable only as exact rules."""
+
+    class BranchGrid:
+        Type = "GuiGridView"
+
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str]] = []
+
+        def PressToolbarButton(self, value: str) -> None:
+            self.calls.append(("PressToolbarButton", value))
+
+        def SelectContextMenuItem(self, value: str) -> None:
+            self.calls.append(("SelectContextMenuItem", value))
+
+    grid = BranchGrid()
+    window = BranchWindow()
+    session = Session({"wnd[0]/usr/cntlALV/shell": grid})
+    session.ActiveWindow = window
+    collection_kwargs = {attribute: [{"id": item_id, "enabled": True, "visible": True}]}
+    state = UiState(
+        tcode="ZMAP",
+        components=[
+            UiComponent(
+                logical_id="result-grid",
+                sap_id="wnd[0]/usr/cntlALV/shell",
+                type="GuiGridView",
+                visible=True,
+                enabled=True,
+                supported_actions=[action],
+            )
+        ],
+        collections=[
+            CollectionDescriptor(
+                component_logical_id="result-grid", kind="alv", **collection_kwargs
+            )
+        ],
+    ).ensure_state_id()
+    rule = TraversalBranchRule(
+        action=action,
+        source_state_id=state.state_id,
+        target_logical_id="result-grid",
+        target_sap_id="wnd[0]/usr/cntlALV/shell",
+        component_type="GuiGridView",
+        item_id=item_id,
+        restore_vkey=3,
+    )
+    adapter = SapTraversalAdapter(session, branch_rules=[rule])
+
+    candidate = next(item for item in adapter.discover(state) if item.action == action)
+    assert candidate.target_locator["item_id"] == item_id
+    assert candidate.params["branch_rule_id"] == rule.rule_id
+    adapter.execute(candidate)
+
+    assert grid.calls == [(method_name, item_id)]
+    adapter.restore(state)
+    assert window.vkeys == [3]
+
+
 def test_exact_branch_rejects_forged_candidate_and_dangerous_rule() -> None:
     adapter, state, _, _, _ = make_fixture()
     forged = TraversalCandidate(

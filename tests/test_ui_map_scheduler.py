@@ -11,6 +11,7 @@ from sap_cli.ui_map.scheduler import UiMapScheduler
 from sap_cli.ui_map.sap_traversal import SapTraversalAdapter
 from sap_cli.ui_map.store import UiMapStore
 from sap_cli.ui_map.schema import (
+    CollectionDescriptor,
     MapManifest,
     SideEffectClass,
     SemanticLink,
@@ -813,6 +814,173 @@ def test_user_taught_structural_route_is_saved_and_compiles_from_latest_map(tmp_
     assert [step.command for step in result.plan.steps] == ["run", "ui_press"]
 
 
+@pytest.mark.parametrize(
+    ("action", "attribute", "item_id", "expected_command"),
+    [
+        (
+            "press_toolbar_button",
+            "toolbar_actions",
+            "DISPLAY_DETAIL",
+            "ui_press_toolbar_button",
+        ),
+        (
+            "select_context_menu_item",
+            "context_menu_actions",
+            "OPEN_DETAIL",
+            "ui_select_context_menu_item",
+        ),
+    ],
+)
+def test_user_taught_alv_structural_route_is_saved_and_compiles(
+    tmp_path, action, attribute, item_id, expected_command
+):
+    """A user-confirmed ALV action must become an executable graph edge.
+
+    The map never guesses these actions: the descriptor has to have been
+    scanned and the augmentation answer must select its exact stable ID.
+    """
+
+    wrapper = FakeWrapper()
+    jobs = MapJobStore(tmp_path / "jobs")
+    maps = UiMapStore(tmp_path / "maps")
+    grid = UiComponent(
+        logical_id="result-grid",
+        sap_id="wnd[0]/usr/cntlALV/shell",
+        type="GuiGridView",
+        visible=True,
+        enabled=True,
+        supported_actions=["press_toolbar_button", "select_context_menu_item"],
+    )
+    collection_kwargs = {attribute: [{"id": item_id, "enabled": True, "visible": True}]}
+    source = FakeScanner().scan(wrapper.session, tcode="ZMAP").model_copy(
+        update={
+            "components": [grid],
+            "collections": [
+                CollectionDescriptor(
+                    component_logical_id=grid.logical_id,
+                    kind="alv",
+                    **collection_kwargs,
+                )
+            ],
+        }
+    )
+    original = maps.save(
+        UiMap(
+            manifest=MapManifest(map_id="existing", tcode="ZMAP"),
+            states={source.state_id: source},
+        )
+    )
+    runner = UiMapScheduler(
+        jobs,
+        lambda _slot: wrapper,
+        scanner=FakeScanner(),
+        adapter_factory=SapTraversalAdapter,
+        map_store=maps,
+    )
+    paused = runner.augment_start(
+        ui_map=original,
+        from_state_id=source.state_id,
+        request="상세 화면",
+        job_id=f"teach-{action}",
+    )
+    token = paused.pending_questions[0]["resume_token"]
+    transition = {
+        "action": action,
+        "target_logical_id": grid.logical_id,
+        "item_id": item_id,
+    }
+    assert {"transition": transition} in paused.pending_questions[0]["choices"]
+
+    wrapper.session.screen = 200
+    runner.resume(
+        paused.job_id,
+        {token: {"continue": True, "transition": transition}},
+    )
+    assert runner.tick(paused.job_id).status == "completed"
+
+    saved = maps.latest("existing", tcode="ZMAP")
+    taught = next(item for item in saved.transitions if item.action == action)
+    assert taught.target_locator == {
+        "sap_id": grid.sap_id,
+        "component_type": "GuiGridView",
+        "item_id": item_id,
+    }
+    assert taught.observed_params == {"item_id": item_id}
+    result = PlanCompiler(maps).compile(
+        "tcode ZMAP screen 조회", goal_query="screen-200"
+    )
+    assert result.validation.valid
+    assert [step.command for step in result.plan.steps] == ["run", expected_command]
+    assert result.plan.steps[-1].params["value"] == item_id
+
+
+def test_augmentation_never_offers_or_accepts_dangerous_structural_routes(tmp_path):
+    wrapper = FakeWrapper()
+    grid = UiComponent(
+        logical_id="result-grid",
+        sap_id="wnd[0]/usr/cntlALV/shell",
+        type="GuiGridView",
+        visible=True,
+        enabled=True,
+        supported_actions=["press_toolbar_button"],
+    )
+    source = FakeScanner().scan(wrapper.session, tcode="ZMAP").model_copy(
+        update={
+            "components": [
+                grid,
+                UiComponent(
+                    logical_id="저장", sap_id="wnd[0]/tbar/btnSAVE", type="GuiButton",
+                    visible=True, enabled=True, supported_actions=["press"],
+                ),
+            ],
+            "collections": [
+                CollectionDescriptor(
+                    component_logical_id=grid.logical_id,
+                    kind="alv",
+                    toolbar_actions=[{"id": "저장", "enabled": True, "visible": True}],
+                )
+            ],
+        }
+    )
+    maps = UiMapStore(tmp_path / "maps")
+    original = maps.save(
+        UiMap(
+            manifest=MapManifest(map_id="existing", tcode="ZMAP"),
+            states={source.state_id: source},
+        )
+    )
+    runner = UiMapScheduler(
+        MapJobStore(tmp_path / "jobs"),
+        lambda _slot: wrapper,
+        scanner=FakeScanner(),
+        adapter_factory=SapTraversalAdapter,
+        map_store=maps,
+    )
+    paused = runner.augment_start(
+        ui_map=original, from_state_id=source.state_id, request="상세 화면"
+    )
+    question = paused.pending_questions[0]
+    assert question["choices"] == [{"continue": True}]
+    assert runner._dangerous_structural_marker("SAVE")
+    assert runner._dangerous_structural_marker("저장")
+
+    wrapper.session.screen = 200
+    runner.resume(
+        paused.job_id,
+        {
+            question["resume_token"]: {
+                "continue": True,
+                "transition": {
+                    "action": "press_toolbar_button",
+                    "target_logical_id": grid.logical_id,
+                    "item_id": "저장",
+                },
+            }
+        },
+    )
+    assert runner.tick(paused.job_id).status == "needs_user_input"
+
+
 def test_augmentation_requires_a_replayable_choice_when_source_has_one(tmp_path):
     wrapper = FakeWrapper()
     source = FakeScanner().scan(wrapper.session, tcode="ZMAP").model_copy(
@@ -1093,3 +1261,66 @@ def test_dispatcher_augmentation_resume_persists_manual_screen_end_to_end(tmp_pa
     saved = maps.latest("existing", tcode="ZMAP")
     assert {state.screen_number for state in saved.states.values()} == {100, 200}
     assert any(item.action == "user_guided_navigation" for item in saved.transitions)
+
+
+def test_tick_records_live_client_identity_without_production_judgement(tmp_path):
+    # A test client that happens to be numbered 100 must be recorded verbatim
+    # and the job must run normally — the number is never treated as production.
+    from sap_cli.dispatchers.ui_maps import _job_summary
+
+    wrapper = FakeWrapper()
+    wrapper.get_session_info = lambda: SimpleNamespace(
+        system_name="DEV",
+        client="100",
+        user="TESTER",
+        language="EN",
+        transaction="ZMAP",
+    )
+    runner, _ = scheduler(tmp_path, wrapper)
+    record = runner.start(tcode="ZMAP", map_id="scope-map", mode="passive")
+
+    runner.tick(record.job_id)
+
+    stored = runner.job_store.get(record.job_id)
+    assert stored.observed_scope["client"] == "100"
+    assert stored.observed_scope["system_id"] == "DEV"
+    assert stored.observed_scope["user"] == "TESTER"
+    # 100 is not production: a passive scan still completes.
+    assert stored.status == "completed"
+
+    summary = _job_summary(stored)
+    assert summary["observed_scope"]["client"] == "100"
+    assert summary["test_client_confirmed"] is False
+
+
+def test_scope_mismatch_surfaces_specific_reason_not_generic_failure(tmp_path):
+    # If the live system/client/language differs from what the map was recorded
+    # on, the job must fail with an explicit map_scope_mismatch so the cause is
+    # visible — this is a scope difference, never a client-number production
+    # verdict. Live client 100 vs a map recorded on client 200.
+    wrapper = FakeWrapper()
+    wrapper.get_session_info = lambda: SimpleNamespace(
+        system_name="DEV", client="100", user="T", language="EN", transaction="ZMAP",
+    )
+    store = MapJobStore(tmp_path)
+    record = store.create(
+        tcode="ZMAP",
+        map_id="scope-map",
+        traversal_config={
+            "mode": "passive",
+            "navigate_pending": False,
+            "map_scope": {"system_id": "DEV", "client": "200", "language": "EN"},
+        },
+    )
+
+    def get_wrapper(slot_id: str) -> FakeWrapper:
+        return wrapper
+
+    runner = UiMapScheduler(
+        store, get_wrapper, scanner=FakeScanner(), adapter_factory=FakeAdapter
+    )
+    runner.tick(record.job_id)
+
+    failed = store.get(record.job_id)
+    assert failed.status == "failed"
+    assert failed.error == "map_scope_mismatch"

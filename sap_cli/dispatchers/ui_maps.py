@@ -20,6 +20,11 @@ UI_MAP_COMMANDS = frozenset(
         "map_path",
         "map_report",
         "map_view",
+        "map_delete",
+        "map_record_start",
+        "map_record_finish",
+        "map_record_cancel",
+        "map_record_status",
         "map_job_status",
         "map_job_cancel",
         "map_augment_start",
@@ -99,6 +104,31 @@ def dispatch_ui_map_command(
     if command == "map_view":
         return map_view(_load_map(map_store, args))
 
+    if command == "map_delete":
+        # Resolve the exact map first (raises on ambiguous/unknown scope) so a
+        # delete can never hit the wrong system/client by omission.
+        manifest = _load_map(map_store, args).manifest
+        target = {
+            "map_id": manifest.map_id,
+            "tcode": manifest.tcode,
+            "system_id": manifest.system_id,
+            "client": manifest.client,
+            "language": manifest.language,
+            "map_version": manifest.map_version,
+        }
+        if not bool(args.get("confirm", False)):
+            # Deletion is irreversible; require an explicit confirmation.
+            return {
+                "deleted": False,
+                "confirmation_required": True,
+                "target": target,
+                "message": (
+                    "이 지도의 모든 버전이 영구 삭제됩니다. "
+                    "confirm=true (CLI: --yes)로 다시 실행하세요."
+                ),
+            }
+        return map_store.delete(manifest)
+
     if command == "map_job_status":
         job_id = str(args.get("job_id", "")).strip()
         if job_id:
@@ -132,6 +162,26 @@ def dispatch_ui_map_command(
             else job_store.request_cancel(job_id)
         )
         return {"job": _job_summary(record)}
+
+    if command in {"map_record_start", "map_record_finish", "map_record_cancel", "map_record_status"}:
+        from sap_cli.ui_map.runtime import get_map_recorder
+
+        recorder = get_map_recorder(slot_id)
+        if recorder is None:
+            raise RuntimeError(
+                "map recording requires the persistent daemon; start the daemon first"
+            )
+        if command == "map_record_start":
+            return recorder.start(
+                map_id=_required(args, "map_id"),
+                tcode=_required(args, "tcode"),
+                slot_id=slot_id,
+            )
+        if command == "map_record_finish":
+            return recorder.finish()
+        if command == "map_record_cancel":
+            return recorder.cancel()
+        return recorder.status()
 
     if get_scheduler is None:
         from sap_cli.ui_map.runtime import get_ui_map_scheduler
@@ -522,6 +572,13 @@ def _job_summary(record: MapJobRecord) -> dict[str, Any]:
         "stop_reason": record.stop_reason,
         "error": record.error,
         "pending_questions": record.pending_questions,
+        # Live connection identity + the caller's assertion, shown together so
+        # the test-client claim can be checked against reality. The client
+        # number is never auto-classified as production.
+        "test_client_confirmed": bool(
+            record.traversal_config.get("test_client_confirmed", False)
+        ),
+        "observed_scope": dict(record.observed_scope),
         "budget": dict(record.traversal_config.get("budget") or {}),
         "usage": {
             "elapsed_seconds": checkpoint.elapsed_seconds,

@@ -437,7 +437,7 @@ where python
 사용 가능한 MCP 도구 목록을 보여줘
 ```
 
-기본 MCP 표면(`compact`)에서는 다음 22개의 SAP 도구가 목록에 표시되면 MCP 서버가
+기본 MCP 표면(`compact`)에서는 다음 28개의 SAP 도구가 목록에 표시되면 MCP 서버가
 정상적으로 연결된 것입니다:
 
 | 도구 | 설명 |
@@ -446,13 +446,16 @@ where python
 | `sap_session` | 세션 정보 조회 |
 | `sap_daemon_status` | daemon 상태 + 실행 환경 진단 (`action=start/restart`로 기동·재기동) |
 | `sap_screen` | 현재 화면 UI 구조 (JSON) |
+| `sap_scripting_query` | SAP GUI Scripting API 그래프 조회 |
 | `sap_run` | 트랜잭션 실행 |
 | `sap_ui_action` | Scripting capability 기반 범용 UI 액션 |
 | `sap_get_status` | 상태바 메시지 |
 | `sap_modal` | 모달 팝업 확인 |
 | `sap_map_list` / `sap_map_search` / `sap_map_report` / `sap_map_view` | UI 지도 조회/검색/보고 |
 | `sap_map_augment_start` / `sap_map_traverse_start` / `sap_map_traverse_resume` | UI 지도 수집/보강 |
+| `sap_map_record_start` / `sap_map_record_finish` / `sap_map_record_cancel` / `sap_map_record_status` | 직접 조작 이동을 지도로 기록 |
 | `sap_map_job_status` / `sap_map_job_cancel` | 지도 작업 상태/취소 |
+| `sap_map_delete` | 지도 영구 삭제 (확인 필요) |
 | `sap_ontology_query` | 온톨로지 조회 |
 | `sap_plan_preview` / `sap_plan_approve` / `sap_plan_execute` | 계획 미리보기/승인/실행 |
 | `sap_job_status` | 공통 작업 상태 조회 |
@@ -574,7 +577,7 @@ SAP CLI 스킬이 설치되어 있어?
 - [ ] `pip install -e ".[mcp]"` 설치 완료
 - [ ] `python -m sap_cli.mcp_server` 에러 없이 시작
 - [ ] `settings.json`에 `sap-gui` MCP 서버 등록
-- [ ] Claude Code 재시작 후 SAP 도구 22개(compact)가 목록에 보임
+- [ ] Claude Code 재시작 후 SAP 도구 28개(compact)가 목록에 보임
 - [ ] Claude Code에서 "SAP에 연결해줘" 테스트 성공
 - [ ] Claude Code에서 "MM03에서 자재 100-100 조회해줘" 테스트 성공
 

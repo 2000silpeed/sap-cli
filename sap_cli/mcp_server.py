@@ -194,6 +194,48 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         }, "required": ["map_id", "tcode"]},
     },
     {
+        "name": "sap_map_delete",
+        "description": (
+            "저장된 UI 지도를 모든 버전째 영구 삭제합니다. 되돌릴 수 없습니다. "
+            "지도는 구조 경로만 담으므로(업무값 없음) 다시 스캔해 재생성할 수 있습니다. "
+            "confirm=true 없이 호출하면 삭제 대상만 미리 보여주고 삭제하지 않습니다."
+        ),
+        "inputSchema": {"type": "object", "properties": {
+            "map_id": {"type": "string"}, "tcode": {"type": "string"},
+            "system_id": {"type": "string"}, "client": {"type": "string"},
+            "language": {"type": "string"},
+            "confirm": {"type": "boolean", "default": False,
+                        "description": "true여야 실제 삭제. 생략/false면 미리보기만."}
+        }, "required": ["map_id", "tcode"]},
+    },
+    {
+        "name": "sap_map_record_start",
+        "description": (
+            "지도 기록 세션을 시작합니다. 시작 후 sap_press·sap_ui_action 등으로 "
+            "직접 탭·버튼을 눌러 화면을 이동하면, 도달한 화면과(안전한 구조 컨트롤 "
+            "클릭이면) 전이가 자동으로 지도에 저장됩니다. 저장·전기 등 위험 컨트롤 "
+            "클릭은 전이로 기록하지 않습니다. persistent daemon 전용."
+        ),
+        "inputSchema": {"type": "object", "properties": {
+            "map_id": {"type": "string"}, "tcode": {"type": "string"}
+        }, "required": ["map_id", "tcode"]},
+    },
+    {
+        "name": "sap_map_record_finish",
+        "description": "지도 기록 세션을 종료하고 기록 요약(state/transition 수)을 반환합니다.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "sap_map_record_cancel",
+        "description": "지도 기록 세션을 중단합니다. 이미 저장된 화면은 남습니다(제거하려면 sap_map_delete).",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "sap_map_record_status",
+        "description": "현재 지도 기록 세션 상태(recording, map_id, 현재 state, 기록 수)를 조회합니다.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "sap_map_job_cancel",
         "description": "지도 생성 job을 취소합니다.",
         "inputSchema": {"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]},
@@ -241,7 +283,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                         "target_logical_id": {"type": "string"},
                         "target_sap_id": {"type": "string"},
                         "component_type": {"enum": [
-                            "GuiButton", "GuiMenu", "GuiToolbar", "GuiShell"
+                            "GuiButton", "GuiMenu", "GuiToolbar", "GuiShell",
+                            "GuiGridView", "GuiTableControl"
                         ]},
                         "item_id": {"type": "string"},
                         "restore_vkey": {"enum": [3, 12]},
@@ -1723,6 +1766,10 @@ COMPACT_TOOL_NAMES = frozenset(
         "sap_session",
         "sap_daemon_status",
         "sap_screen",
+        # One read-only discovery entry point keeps the compact surface small
+        # while still letting an MCP agent look up the documented API for an
+        # uncommon SAP control before it chooses a generic ui_action.
+        "sap_scripting_query",
         "sap_run",
         "sap_ui_action",
         "sap_get_status",
@@ -1731,6 +1778,11 @@ COMPACT_TOOL_NAMES = frozenset(
         "sap_map_search",
         "sap_map_report",
         "sap_map_view",
+        "sap_map_delete",
+        "sap_map_record_start",
+        "sap_map_record_finish",
+        "sap_map_record_cancel",
+        "sap_map_record_status",
         "sap_map_job_cancel",
         "sap_map_augment_start",
         "sap_map_traverse_start",
@@ -1846,13 +1898,11 @@ def _dispatch_via_daemon(
     if session_id:
         ctx["session_id"] = session_id
 
-    result = daemon.send_command(
-        command, args, timeout=daemon.command_timeout(command), context=ctx
-    )
-    if result is not None:
-        return result
-
-    if not daemon.start_daemon():
+    # Probe liveness (side-effect-free ping) before sending the real command so
+    # a bound-but-unresponsive daemon (mid-init or wedged on a blocking call)
+    # fails fast to local dispatch instead of blocking on the command timeout —
+    # which for plan_execute can be hours.
+    if not daemon.ensure_daemon():
         return None
     return daemon.send_command(
         command, args, timeout=daemon.command_timeout(command), context=ctx

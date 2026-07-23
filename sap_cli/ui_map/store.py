@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import threading
 from collections import deque
 from dataclasses import dataclass
@@ -90,6 +91,46 @@ class UiMapStore:
             )
             self._write_snapshot(scope, saved)
             return saved
+
+    def delete(
+        self,
+        map_id: str | MapManifest,
+        *,
+        tcode: str = "",
+        system_id: str = "",
+        client: str = "",
+        language: str = "",
+    ) -> dict[str, Any]:
+        """Permanently remove every stored version of one exact map scope.
+
+        Irreversible: deletes the scope directory — all numbered snapshots, the
+        latest pointer, and the graph sidecars. A UI map holds only structural
+        routes (no business values), so a deleted map can be rebuilt by scanning
+        the screens again.
+        """
+
+        scope = self._scope(map_id, tcode, system_id, client, language)
+        scope_dir = self._scope_dir(scope)
+        with self._lock:
+            if not scope_dir.exists():
+                raise UiMapNotFoundError(
+                    f"no UI map to delete: {scope[0]} ({scope[1]})"
+                )
+            versions = self._list_versions(scope)
+            head_version = self._latest_version(scope, missing_ok=True)
+            shutil.rmtree(scope_dir)
+        return {
+            "deleted": True,
+            "map_id": scope[0],
+            "scope": {
+                "tcode": scope[1],
+                "system_id": scope[2],
+                "client": scope[3],
+                "language": scope[4],
+            },
+            "versions_removed": len(versions),
+            "head_version": head_version,
+        }
 
     def save_delta(self, delta: UiMap) -> UiMap:
         """Merge a delta into the latest snapshot and save a new version.

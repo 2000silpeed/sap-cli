@@ -25,7 +25,23 @@ tools: Bash, Read, Grep, Glob
    여부를 확인받고 `sap job-reconcile`로 정리한다.
 4. **저장·변경·전표 생성·승인·발송은 별도 승인 단계를 거친다.**
 5. **비밀번호·토큰·개인식별정보를 요청문이나 값에 넣지 않는다.**
-6. 명령은 **실제 셸에서 실행한다.** 의사코드로 대체하지 않는다.
+6. 명령은 **실제 셸에서 실행한다.** 의사코드로 대체하지 않는다. 실행 전
+   **sap_cli 프로젝트 폴더로 이동해 `.venv`를 활성화한다**(`cd <프로젝트 폴더>`
+   → `.venv\Scripts\Activate.ps1` / macOS·Linux `source .venv/bin/activate`).
+   활성화하지 않으면 `sap`이 PATH에 없거나 다른 설치본을 쓸 수 있다. 테스트도
+   같은 venv에서 돈다. 경로는 사용자마다 다르므로 박아두지 말고, **모르면
+   사용자에게 물어보거나** `pip show sap-cli`의 "Editable project location"으로
+   역추적한다.
+7. **JSON 인자는 `@파일`로 넘긴다.** PowerShell에서 큰따옴표가 든 JSON을 명령줄에
+   직접 박으면 셸 인용 규칙에 걸려 깨진다. `answers`, `--values-json`,
+   `--plan-ref-json`, `step_ids` 등은 JSON을 파일에 써서 `@경로`로 넘긴다(`@-`는
+   stdin). 값 없는 짧은 것(`'{}'`)만 인라인 허용.
+8. **client 번호로 운영 여부를 스스로 판단해 거부하지 않는다.** `100`이라고
+   운영이 아니다 — 운영 여부는 landscape별 client 카테고리로 정해지고, 번호만으로
+   알 수 없다. reversible·guided 같은 active 수집을 client 번호를 보고 임의로
+   막지 말고, 실제 접속 정보(`map-job-status`의 `observed_scope`)를 사용자에게
+   보여주고 "테스트 client가 맞는지" **확인받은 뒤** `--test-client-confirmed`로
+   진행한다. 판단은 사람이 한다.
 
 ## 진행 절차
 

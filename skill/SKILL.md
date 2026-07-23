@@ -170,7 +170,18 @@ sap session-excel "업로드 대상 범위 확인" --action check --workbook inp
 | `sap_map_path` | 시작 상태 → 목표까지 최단 경로 | `map_id`, `tcode`, `from_state_id`, `target`, `target_type` |
 | `sap_map_report` | 지도 coverage·복구 계측 | `map_id`, `tcode` |
 | `sap_map_view` | 화면 연결 outline + mermaid 그래프 | `map_id`, `tcode` |
+| `sap_map_delete` | 저장된 지도를 모든 버전째 영구 삭제 | `map_id`, `tcode`, `confirm` |
+| `sap_map_record_start` | 기록 세션 시작 — 이후 직접 클릭한 이동을 지도에 자동 저장 | `map_id`, `tcode` |
+| `sap_map_record_finish` | 기록 세션 종료 + 요약 | - |
+| `sap_map_record_cancel` | 기록 세션 중단 (저장된 화면은 유지) | - |
+| `sap_map_record_status` | 기록 세션 상태 조회 | - |
 | `sap_map_scan` | 현재 화면 1장을 UiState로 스캔 | - |
+
+**지도 기록 세션.** daemon 순회에 맡기지 않고 **LLM이 직접 `sap_press`/`sap_ui_action`으로
+탭·버튼을 눌러 순회**할 때 쓴다. `sap_map_record_start` 후 이동하면, 도달한 화면과
+(안전한 구조 컨트롤 클릭이면) 전이가 자동으로 지도에 저장된다. 화면은 값 없이
+구조만 기록되고, 저장·전기 등 위험 컨트롤 클릭은 전이로 기록하지 않는다. 다른
+TCode로 벗어난 화면은 흡수하지 않는다. `sap_map_record_finish`로 종료. daemon 전용.
 
 `mode`는 `passive` / `guided` / `reversible` / `allowlisted`. MCP에서 mode를
 생략하면 기본값은 `guided`이며, `passive` 외 모든 모드는
@@ -178,6 +189,25 @@ sap session-excel "업로드 대상 범위 확인" --action check --workbook inp
 않는다 — 영문 `save`, `post`, `delete`, `release`, `send`, `print`와 한글
 `저장`, `전기`, `삭제`, `릴리스`, `릴리즈`, `승인`, `전송`, `발송`, `인쇄`,
 `출력`이 라벨·ID에 있으면 후보에서 제외된다.
+
+**지도 수집은 비동기 job이다.** `sap_map_traverse_start`는 job을 만들고 즉시
+돌려줄 뿐이며, 수집은 daemon이 백그라운드로 진행한다. 아래 루프를 벗어나지 않는다.
+
+1. `sap_map_traverse_start` 응답의 `job.job_id`를 잡는다.
+2. `sap_map_job_status(job_id)`로 `status`가 바뀔 때까지 폴링한다 (폴링은 job을
+   진행시키지 않고 관찰만 한다).
+3. `status`로 분기: `running`/`queued`면 계속 폴링 · `needs_user_input`이면
+   `job.pending_questions`를 읽어 답을 만들고 `sap_map_traverse_resume` 후 다시
+   폴링 · `paused`면 budget으로 재개 · `completed`면 종료.
+4. **guided는 화면마다 질문을 새로 낸다.** RESUME 한 번으로 끝이 아니라
+   `completed`까지 (폴링 → 답변 → resume)를 반복한다.
+
+`resume_token`·`candidate_id`는 **반드시 살아있는 job의 `pending_questions`에서
+읽어온다.** 기억·추측으로 만들면 `unknown resume token`으로 거부된다.
+`guided_candidate_selection`은 임의로 고르지 말고 사용자에게 `label`을 보여주고
+하나 받는다. 끝 판단은 커버리지 100%가 아니라 **목표 화면이 지도에 들어와 도달
+가능한가**로 한다 (`sap_map_report`의 `coverage_gate` 또는 `sap_map_path`로 확인).
+CLI 전용 상세 절차는 `sap-map-build` 스킬에 있다.
 
 `sap_map_traverse_resume`의 `answers`는 **resume_token을 키로 하는 객체**이고,
 질문의 `reason`에 따라 값 모양이 다르다.

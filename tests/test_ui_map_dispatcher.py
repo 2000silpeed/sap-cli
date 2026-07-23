@@ -414,3 +414,23 @@ def test_paused_job_resume_accepts_larger_budget_and_reports_usage(stores):
     assert resumed["job"]["status"] == "queued"
     assert resumed["job"]["budget"]["max_transitions"] == 2
     assert resumed["job"]["usage"]["elapsed_seconds"] == 12.5
+
+
+def test_map_delete_requires_confirmation_then_removes_all_versions(stores):
+    # Without confirm: a preview only — nothing is deleted.
+    preview = call("map_delete", scope(), stores)
+    assert preview["deleted"] is False
+    assert preview["confirmation_required"] is True
+    assert preview["target"]["map_id"] == "DEV-100-ZMAP"
+    assert call("map_list", {"tcode": "zmap"}, stores)["count"] == 1
+
+    # With confirm: every version is removed.
+    result = call("map_delete", scope(confirm=True), stores)
+    assert result["deleted"] is True
+    assert result["versions_removed"] >= 1
+    assert result["map_id"] == "DEV-100-ZMAP"
+    assert call("map_list", {"tcode": "zmap"}, stores)["count"] == 0
+
+    # Deleting a missing map fails clearly rather than silently succeeding.
+    with pytest.raises(Exception):
+        call("map_delete", scope(confirm=True), stores)

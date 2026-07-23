@@ -8,6 +8,49 @@ description: SAP CLI 실제 사용법 스킬. sap connect/run/screen/set/fill/vk
 이 스킬은 `sap` CLI와 MCP `sap_*` 도구로 SAP GUI를 실제 조작하는 방법을 제공한다.
 이슈 해결/재설치/커밋이 아니라 **운영 사용법**에 집중한다.
 
+## 환경 준비 (프로젝트 폴더 + 가상환경)
+
+`sap` CLI는 프로젝트의 가상환경에 editable로 설치돼 있다. **어떤 `sap` 명령이나
+테스트든 먼저 sap_cli 프로젝트 폴더로 이동해 그 안의 `.venv`를 활성화한 뒤
+실행한다.** 활성화하지 않으면 `sap`이 PATH에 없거나 다른 설치본을 쓸 수 있다.
+
+```powershell
+cd <sap_cli 프로젝트 폴더>          # pyproject.toml과 sap_cli/ 가 있는 곳
+.venv\Scripts\Activate.ps1          # Windows PowerShell (macOS/Linux: source .venv/bin/activate)
+sap --help                          # 활성화 확인
+```
+
+활성화가 어려우면 venv 실행파일을 직접 부른다: `.venv\Scripts\sap ...`(Windows) /
+`.venv/bin/sap ...`(macOS/Linux). 테스트도 반드시 같은 venv에서 돈다:
+`.venv\Scripts\pytest tests\ -q`.
+
+**프로젝트 폴더 찾는 법** (경로는 사용자마다 다르므로 박아두지 않는다):
+
+1. **사용자에게 경로를 물어본다** — 가장 확실하다.
+2. 이미 설치돼 있으면 위치를 역추적한다.
+   ```powershell
+   pip show sap-cli        # "Editable project location: ..." 이 프로젝트 폴더
+   python -c "import sap_cli, pathlib; print(pathlib.Path(sap_cli.__file__).resolve().parent.parent)"
+   ```
+3. 그래도 모르면 `name = \"sap-cli\"`를 담은 `pyproject.toml`이 있는 폴더를 찾는다.
+
+가상환경은 보통 그 폴더의 `.venv`다. 이름이 다르면(`venv` 등) 사용자에게 확인한다.
+
+## 메뉴 / "More" 네비게이션 (VL02N 등)
+
+신형 SAP GUI에서 메뉴바가 접혀 **"More"** 버튼으로 뜨는 화면(VL02N 등)의 메뉴
+항목은 전부 `GuiMenu`이고 `wnd[0]/mbar/...` 아래에 그대로 있다. "More"가 접혀
+있어도 스크립팅에서는 메뉴 트리가 노출된다.
+
+- **누르는 법**: `sap press <menu_id>` 또는 `sap act <menu_id> select`. GuiMenu는
+  `Press()`가 아니라 `Select()`로 실행된다(도구가 자동 처리). "More" 버튼 자체를
+  누를 필요 없이, 목표 메뉴 **항목(leaf)** 을 바로 Select하면 동작이 실행된다.
+  예: `sap press "wnd[0]/mbar/menu[3]/menu[1]"`.
+- **항목 id 찾기**: `sap screen`은 최상위 메뉴(`wnd[0]/mbar/menu[i]` + text)를
+  보여준다. 하위 항목은 `wnd[0]/mbar/menu[i]/menu[j]` 경로 규칙을 따른다. 최상위
+  메뉴를 먼저 Select하면 열리며, 필요한 leaf 경로를 지정해 Select한다.
+- 저장·전기 같은 변경 메뉴는 그 결과(상태바/모달)를 반드시 확인한다.
+
 ## 기본 원칙
 
 1. `sap connect` 또는 `sap_connect`로 연결한다.
@@ -37,6 +80,18 @@ sap daemon doctor
 `sap_cli`가 설치되지 않은 다른 venv로 스폰되는 경우이며, doctor의 `python_executable`과
 `sap_cli_path`로 즉시 확인할 수 있다. `SAP_CLI_DAEMON_START_TIMEOUT`(초)으로 콜드
 스타트 대기 예산을 조정한다.
+
+### 첫 `sap_connect`가 60초 매달릴 때 (daemon 한정)
+
+MCP(daemon 경유) 첫 connect만 ~60초 걸리고 두 번째부터 즉시라면, daemon 프로세스의
+첫 SAP COM 호출 cold-start다(CLI direct 연결은 즉시라 COM 코드 문제 아님).
+
+- **간단한 우회**: daemon을 한 번 띄우고 `sap connect`를 한 번 해서 warm 시켜 둔다.
+  이 비용은 daemon 수명당 한 번뿐이고 이후 MCP는 즉시다.
+- **실험적 수정(opt-in)**: MCP env에 `SAP_CLI_COM_WORKER=1`을 넣으면 daemon이 SAP
+  COM을 전용 STA 스레드에서 처리해 첫 connect도 빨라진다. Windows에서 검증 후 켠다.
+  문제가 생기면 `SAP_CLI_COM_WORKER=0`(또는 제거)으로 즉시 원복한다. daemon 재시작
+  필요.
 
 직접 실행으로 강제하려면 환경변수로 끈다.
 

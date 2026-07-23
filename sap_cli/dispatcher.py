@@ -254,6 +254,28 @@ class DispatchContext:
     sensitive_values: tuple[str, ...] = ()
 
 
+def _maybe_record_map_step(command: str, args: dict[str, Any], ctx: DispatchContext) -> None:
+    """Fold a navigating action into the slot's active map recording, if any.
+
+    Runs only when the operator has an active map-record session; recording is
+    best-effort and never affects the command's own result.
+    """
+
+    from .ui_map.recorder import NAV_COMMANDS
+
+    if command not in NAV_COMMANDS:
+        return
+    from .ui_map.runtime import try_get_active_recorder
+
+    recorder = try_get_active_recorder(ctx.slot_id or "ses0")
+    if recorder is None:
+        return
+    try:
+        recorder.record(command, args)
+    except Exception:
+        pass
+
+
 def dispatch_command(
     command: str,
     arguments: dict[str, Any] | None = None,
@@ -347,6 +369,8 @@ def dispatch_command(
             after_state=after_state,
         )
         raise
+
+    _maybe_record_map_step(command, args, ctx)
 
     after_state = _extract_transcript_state_from_result(result)
     if need_state and after_state is None:

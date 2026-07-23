@@ -59,6 +59,11 @@ class MapJobRecord(BaseModel):
     checkpoint: TraversalCheckpoint | None = None
     pending_questions: list[dict[str, Any]] = Field(default_factory=list)
     resume_provenance: list[dict[str, Any]] = Field(default_factory=list)
+    # Live connection identity (system/client/user/language/transaction) seen
+    # while the job actually ran. It exists so a human or agent can confirm the
+    # test-client assertion against reality — the client NUMBER is never used to
+    # auto-classify a system as production.
+    observed_scope: dict[str, str] = Field(default_factory=dict)
 
 
 class MapJobStore:
@@ -165,6 +170,29 @@ class MapJobStore:
                 record.status = "failed"
             record.updated_at = _now()
             self._write(record)
+            return record.model_copy(deep=True)
+
+    def record_observed_scope(
+        self, job_id: str, scope: dict[str, str]
+    ) -> MapJobRecord:
+        """Persist the live connection identity seen while running the job.
+
+        Connection identity (not business data), surfaced so the test-client
+        assertion can be confirmed against reality. No number-based production
+        judgement is made here or anywhere downstream.
+        """
+
+        cleaned = {
+            str(key): str(value)
+            for key, value in scope.items()
+            if str(value).strip()
+        }
+        with self._lock:
+            record = self.get(job_id)
+            if cleaned and record.observed_scope != cleaned:
+                record.observed_scope = cleaned
+                record.updated_at = _now()
+                self._write(record)
             return record.model_copy(deep=True)
 
     def resume_paused(

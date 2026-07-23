@@ -45,7 +45,9 @@ _SAFE_TRAVERSAL_ACTIONS = {
     "select_context_menu_item",
 }
 _DANGEROUS_MARKER = re.compile(
-    r"(?<![a-z])(save|post|delete|release|send|print)(?![a-z])", re.I
+    r"(?<![a-z])(save|post|delete|release|send|print)(?![a-z])"
+    r"|저장|전기|삭제|릴리스|릴리즈|승인|전송|발송|인쇄|출력",
+    re.I,
 )
 
 
@@ -862,15 +864,19 @@ class TraversalEngine:
             if (
                 item.provenance.get("source") == "user_augmentation_request"
                 and isinstance(item.scope, dict)
-                and item.scope.get("replayable_transition_required") is True
             ):
                 baseline = graph.states.get(item.current_state_id)
-                if baseline is None or self._taught_transition(
-                    baseline, item, answers[item.resume_token]
-                ) is None:
+                answer = answers[item.resume_token]
+                requires_replay = item.scope.get("replayable_transition_required") is True
+                supplied_transition = isinstance(answer, dict) and "transition" in answer
+                if (requires_replay or supplied_transition) and (
+                    baseline is None
+                    or self._taught_transition(baseline, item, answer) is None
+                ):
                     # Do not convert a user-confirmed structural route into a
                     # non-executable ``user_guided_navigation`` edge merely
-                    # because the MCP client omitted the selected choice.
+                    # because the MCP client omitted the selected choice or
+                    # supplied a forged/dangerous structural selector.
                     remaining.append(item)
                     continue
             if item.provenance.get("source") == "guided_candidate_selection":
@@ -1074,6 +1080,7 @@ class TraversalEngine:
         action = taught["action"] if taught is not None else "user_guided_navigation"
         target_logical_id = taught["target_logical_id"] if taught is not None else ""
         target_locator = taught["target_locator"] if taught is not None else {}
+        observed_params = taught["observed_params"] if taught is not None else {}
         transition_id = hashlib.sha256(
             json.dumps(
                 [
@@ -1095,6 +1102,7 @@ class TraversalEngine:
                     action=action,
                     target_logical_id=target_logical_id,
                     target_locator=target_locator,
+                    observed_params=observed_params,
                     side_effect=SideEffectClass.NAVIGATION,
                     reversible=False,
                     evidence=[
@@ -1129,26 +1137,84 @@ class TraversalEngine:
         if not isinstance(answer, dict) or not isinstance(answer.get("transition"), dict):
             return None
         spec = answer["transition"]
-        if set(spec) - {"action", "target_logical_id"}:
-            return None
         action = str(spec.get("action", "")).strip().lower().replace("-", "_")
         logical_id = str(spec.get("target_logical_id", "")).strip()
         component = next(
             (candidate for candidate in baseline.components if candidate.logical_id == logical_id),
             None,
         )
+        if component is None or not component.sap_id or component.visible is False or component.enabled is False:
+            return None
+        if _DANGEROUS_MARKER.search(
+            json.dumps(
+                {
+                    "action": action,
+                    "logical_id": component.logical_id,
+                    "sap_id": component.sap_id,
+                    "item_id": spec.get("item_id", ""),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        ):
+            return None
+        collection_attribute = {
+            "press_toolbar_button": "toolbar_actions",
+            "select_context_menu_item": "context_menu_actions",
+        }.get(action)
+        if collection_attribute is not None:
+            if set(spec) != {"action", "target_logical_id", "item_id"}:
+                return None
+            if component.type not in {"GuiToolbar", "GuiShell", "GuiGridView", "GuiTableControl"}:
+                return None
+            item_id = str(spec.get("item_id", "")).strip()
+            if not item_id:
+                return None
+            collection = next(
+                (
+                    candidate
+                    for candidate in baseline.collections
+                    if candidate.component_logical_id == component.logical_id
+                ),
+                None,
+            )
+            if collection is None:
+                return None
+            items = getattr(collection, collection_attribute, ())
+            if not any(
+                isinstance(item, dict)
+                and item.get("enabled") is not False
+                and item.get("visible") is not False
+                and TraversalEngine._collection_item_id(item, position) == item_id
+                for position, item in enumerate(items)
+            ):
+                return None
+            supported = {
+                value.strip().lower().replace("-", "_")
+                for value in component.supported_actions
+            }
+            if supported and action not in supported:
+                return None
+            return {
+                "action": action,
+                "target_logical_id": component.logical_id,
+                "target_locator": {
+                    "sap_id": component.sap_id,
+                    "component_type": component.type,
+                    "item_id": item_id,
+                },
+                "observed_params": {"item_id": item_id},
+            }
+        if set(spec) != {"action", "target_logical_id"}:
+            return None
         expected_types = {
             "press": {"GuiButton"},
             "select_menu": {"GuiMenu"},
             "select_tab": {"GuiTab"},
         }
         if (
-            component is None
-            or not component.sap_id
-            or action not in expected_types
+            action not in expected_types
             or component.type not in expected_types[action]
-            or component.visible is False
-            or component.enabled is False
         ):
             return None
         supported = {value.strip().lower().replace("-", "_") for value in component.supported_actions}
@@ -1159,7 +1225,18 @@ class TraversalEngine:
             "action": action,
             "target_logical_id": component.logical_id,
             "target_locator": {"sap_id": component.sap_id, "component_type": component.type},
+            "observed_params": {},
         }
+
+    @staticmethod
+    def _collection_item_id(item: dict[str, Any], position: int) -> str:
+        """Return the scanner's stable, value-free ID for an ALV action."""
+
+        for key in ("id", "key", "position"):
+            value = item.get(key)
+            if value is not None and str(value):
+                return str(value)
+        return str(position)
 
     @staticmethod
     def _scope_permits(

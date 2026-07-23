@@ -13,6 +13,11 @@ description: >-
 `sap plan-approve`와 `sap plan-execute`만 쓴다. 이 스킬은 **plan-preview로 만든
 유효한 `plan_ref`가 이미 있고, 사용자가 계획 내용을 확인한 뒤에만** 진입한다.
 
+**먼저 sap_cli 프로젝트 폴더로 이동해 `.venv`를 활성화한 뒤** 모든 `sap` 명령을
+실행한다(`cd <프로젝트 폴더>` → `.venv\Scripts\Activate.ps1`, macOS/Linux는
+`source .venv/bin/activate`). 활성화하지 않으면 `sap`이 PATH에 없거나 다른
+설치본을 쓸 수 있다. 대안으로 `.venv\Scripts\sap ...`를 직접 부른다.
+
 ## 실행 전 게이트
 
 다음이 모두 참이어야 실행한다. 하나라도 아니면 실행하지 않고 사용자에게
@@ -26,14 +31,28 @@ description: >-
 계획이 오래됐거나 지도가 바뀌었을 가능성이 있으면 실행 대신 **재미리보기**를
 요청한다.
 
+## PowerShell 인자 전달 — JSON은 `@파일`로
+
+PowerShell에서 큰따옴표가 든 JSON을 명령줄에 직접 넘기면(또는 `ConvertTo-Json`
+결과를 native `sap`에 바로 파이프하면) 셸의 인자 인용 규칙에 걸려 깨진다. LLM이
+CLI를 호출할 때는 JSON을 파일에 써서 `@경로`로 넘긴다. `--plan-ref-json`,
+`--values-json`, approve의 `step_ids` 등 모든 JSON 인자가 `@경로`·`@-`(stdin)를
+받는다.
+
+```powershell
+$preview.plan_ref | ConvertTo-Json -Compress | Set-Content plan_ref.json
+sap plan-execute --plan-ref-json '@plan_ref.json' --verify cheap
+```
+
 ## 1) 승인이 필요한 경우
 
 `validation.requires_approval`이 `true`면 `required_approvals`의 step만 승인한다.
 토큰은 특정 plan hash · 승인 step · 실행 agent에 묶인 **일회용** 값이다.
 
 ```powershell
+Set-Content step_ids.json -Value '["<승인할 step-id>"]'
 $approval = sap plan-approve $preview.plan_ref.plan_id $preview.plan_ref.plan_hash `
-  <실행-agent> '["<승인할 step-id>"]' --expires-in 300 | ConvertFrom-Json
+  <실행-agent> '@step_ids.json' --expires-in 300 | ConvertFrom-Json
 ```
 
 - `step_ids`는 계획 안의 step id이거나 `"authorize-tcode"`여야 한다. 계획 밖의
@@ -46,13 +65,14 @@ $approval = sap plan-approve $preview.plan_ref.plan_id $preview.plan_ref.plan_ha
 ## 2) 실행
 
 ```powershell
-sap plan-execute --plan-ref-json ($preview.plan_ref | ConvertTo-Json -Compress) --verify cheap
+$preview.plan_ref | ConvertTo-Json -Compress | Set-Content plan_ref.json
+sap plan-execute --plan-ref-json '@plan_ref.json' --verify cheap
 ```
 
 승인이 필요한 계획이면 토큰을 함께 넘긴다.
 
 ```powershell
-sap plan-execute --plan-ref-json ($preview.plan_ref | ConvertTo-Json -Compress) `
+sap plan-execute --plan-ref-json '@plan_ref.json' `
   --verify cheap --approval-token $approval.approval_token
 ```
 
