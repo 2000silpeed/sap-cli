@@ -79,6 +79,24 @@ RemoteSigned`를 적용한다. 환경변수는 `$env:SAP_CLI_USE_DAEMON = "1"`�
 5. 조작 후 `sap status` / `sap_get_status`를 확인한다.
 6. 상태 type이 `E`면 즉시 중단하고 에러를 보고한다.
 
+## 테이블 행 선택과 매크로 기록
+
+사용자가 “표에서 n번째 행을 선택해”, “이 행을 클릭해”, “선택한 행으로 진행해”라고
+말하면 `select_row` 의도로 해석한다. SAP의 행 번호는 **0-based**다. 먼저 `sap screen`
+또는 `sap inspect <table_id>`로 실제 테이블/ALV element ID를 확인한 뒤, 실행과 매크로
+기록을 한 번에 수행한다.
+
+```powershell
+# 세 번째 행(0-based row=2)을 선택하고 현재 녹화 단계로 기록
+sap record-step select-row "<table element ID>" --row 2 --desc "대상 행 선택"
+```
+
+`select-row`, `table-select`, `table-row`는 같은 의미다. `--row`는 필수이며, 행 순서가
+동적으로 바뀌는 업무라면 고정 행 번호 대신 먼저 검색·필터링하거나 선택 후 화면/셀
+값을 검증한다. MCP에서는 `sap_macro_record_step(action="select-row",
+target="<table ID>", row=2, description="대상 행 선택")`을 사용한다. 일반 UI fallback은
+`sap_ui_action(action="select_row", element_id="<table ID>", row=2)`다.
+
 ## Claude/Codex/MCP daemon 기본 실행
 
 CLI와 MCP는 기본적으로 daemon 경유를 우선 사용한다. daemon이 없으면 자동 시작을

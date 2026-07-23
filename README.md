@@ -937,7 +937,7 @@ sap macro-delete a1b2c3d4e5f6
 | `tab` | 탭 선택 | 탭 ID | - |
 | `menu` | 메뉴 선택 | 메뉴 ID | - |
 
-| `table-select` | 테이블 행 선택 | 테이블 ID | 행 번호 (0-based) |
+| `table-select` / `select-row` | 테이블 행 선택 | 테이블 ID | 행 번호 (0-based) |
 
 ### 5.6 fill 명령으로 간단하게
 
