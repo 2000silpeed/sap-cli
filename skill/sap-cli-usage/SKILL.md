@@ -24,6 +24,25 @@ sap --help                          # 활성화 확인
 `.venv/bin/sap ...`(macOS/Linux). 테스트도 반드시 같은 venv에서 돈다:
 `.venv\Scripts\pytest tests\ -q`.
 
+### Windows 운영 체크리스트
+
+SAP GUI 자동화는 SAP GUI for Windows가 실행 중인 동일한 Windows 사용자 세션에서
+실행해야 한다. PowerShell에서 새 환경을 준비할 때는 다음 순서를 따른다.
+
+```powershell
+cd <sap_cli 프로젝트 폴더>
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e ".[mcp,dev]"
+sap daemon doctor
+sap --help
+```
+
+PowerShell이 스크립트 실행을 차단하면 `Set-ExecutionPolicy -Scope CurrentUser
+RemoteSigned`를 적용한다. 환경변수는 `$env:SAP_CLI_USE_DAEMON = "1"`처럼 설정하며,
+기본 daemon 로그는 `$env:USERPROFILE\.sap_cli\daemon.log`에 기록된다.
+
 **프로젝트 폴더 찾는 법** (경로는 사용자마다 다르므로 박아두지 않는다):
 
 1. **사용자에게 경로를 물어본다** — 가장 확실하다.

@@ -76,6 +76,22 @@ daemon이 안 뜨거나 명령이 계속 실패하면 `sap daemon doctor`(MCP에
 한 번에 보여준다. `sap daemon restart` / `sap_daemon_status(action="restart")`로
 재기동한다.
 
+### Windows 실행 기준
+
+Windows에서는 프로젝트의 `.venv\Scripts\Activate.ps1`를 활성화한 PowerShell에서
+CLI를 실행한다. SAP GUI for Windows와 CLI/daemon은 같은 로그인 세션에서 실행되어야
+한다.
+
+```powershell
+sap daemon stop
+sap daemon doctor
+sap daemon start
+sap connect
+```
+
+`doctor`에서 `platform`이 `Windows`, `pywin32`가 import 가능하고,
+`python_executable`이 프로젝트 `.venv\Scripts\python.exe`인지 확인한다.
+
 ## CLI/bash 실행 기록 원칙
 
 Codex/Claude가 터미널을 사용할 수 있으면 `sap` CLI 예시는 실제 bash/PowerShell
