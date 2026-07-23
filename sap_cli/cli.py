@@ -2013,13 +2013,15 @@ def auth_check_alias(
 
 @app.command("daemon")
 def daemon_cmd(
-    action: str = typer.Argument(help="start / stop / status"),
+    action: str = typer.Argument(help="start / stop / status / doctor / restart"),
 ) -> None:
     """데몬 프로세스 관리 (명령 실행 속도 최적화).
 
-    start:  백그라운드 데몬 시작 (COM 연결 유지)
-    stop:   데몬 종료
-    status: 데몬 상태 확인
+    start:   백그라운드 데몬 시작 (COM 연결 유지)
+    stop:    데몬 종료
+    status:  데몬 상태 확인 (미기동 시 원인 진단 포함)
+    doctor:  실행 환경(인터프리터/venv, sap_cli·pywin32·mcp import, 로그 tail) 전체 진단
+    restart: 종료 후 재기동
     """
     from . import daemon
 
@@ -2027,11 +2029,21 @@ def daemon_cmd(
         if daemon.is_running():
             _output_json({"daemon": "already running", "port": daemon.PORT})
             return
-        ok = daemon.start_daemon()
+        ok, err = daemon.start_daemon_detailed()
         if ok:
             _output_json({"daemon": "started", "port": daemon.PORT})
         else:
-            _output_json({"error": True, "message": "데몬 시작 실패"})
+            _output_json({"error": True, "message": err or "데몬 시작 실패", "doctor": daemon.doctor()})
+            raise typer.Exit(1)
+
+    elif action == "restart":
+        daemon.stop_daemon()
+        daemon.wait_until_stopped()  # 죽어가는 데몬을 already-running으로 오판 방지
+        ok, err = daemon.start_daemon_detailed()
+        if ok:
+            _output_json({"daemon": "restarted", "port": daemon.PORT})
+        else:
+            _output_json({"error": True, "message": err or "데몬 재기동 실패", "doctor": daemon.doctor()})
             raise typer.Exit(1)
 
     elif action == "stop":
@@ -2046,10 +2058,14 @@ def daemon_cmd(
             data = result.get("data", {}) if result else {}
             _output_json({"daemon": "running", "port": daemon.PORT, **data})
         else:
-            _output_json({"daemon": "not running"})
+            # 미기동 시 왜 안 뜨는지(잘못된 venv/import 실패/로그) 함께 보여준다.
+            _output_json({"daemon": "not running", **daemon.doctor()})
+
+    elif action == "doctor":
+        _output_json(daemon.doctor())
 
     else:
-        _output_json({"error": True, "message": f"알 수 없는 액션: {action}. start/stop/status 중 선택"})
+        _output_json({"error": True, "message": f"알 수 없는 액션: {action}. start/stop/status/doctor/restart 중 선택"})
         raise typer.Exit(1)
 
 

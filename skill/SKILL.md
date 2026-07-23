@@ -70,6 +70,12 @@ CLI/MCP는 기본적으로 daemon 경유를 우선 사용한다. daemon이 없�
 기본값이 켜지며, 명시하려면 `SAP_CLI_USE_DAEMON=1`,
 `SAP_CLI_DAEMON_AUTOSTART=1`을 MCP env에 넣는다.
 
+daemon이 안 뜨거나 명령이 계속 실패하면 `sap daemon doctor`(MCP에서는
+`sap_daemon_status` 도구)로 먼저 진단한다. 인터프리터/가상환경, `sap_cli`·
+`pywin32`·`mcp` import 가능 여부, 기동 실패 로그 tail(`~/.sap_cli/daemon.log`)을
+한 번에 보여준다. `sap daemon restart` / `sap_daemon_status(action="restart")`로
+재기동한다.
+
 ## CLI/bash 실행 기록 원칙
 
 Codex/Claude가 터미널을 사용할 수 있으면 `sap` CLI 예시는 실제 bash/PowerShell
@@ -238,6 +244,7 @@ GuiTableControl이다.
 
 | 도구 | 용도 |
 |------|------|
+| `sap_daemon_status` | daemon 상태 + 실행 환경(인터프리터/venv, import, 로그 tail) 진단. `action=start/restart` |
 | `sap_api_object_action` | SAP GUI Scripting 객체 계층의 공식 member 직접 호출 |
 | `sap_event_subscribe` / `sap_event_poll` / `sap_event_unsubscribe` / `sap_event_list` | SAP GUI 이벤트 구독·폴링 |
 | `sap_session_start` / `sap_session_mark` / `sap_session_excel` / `sap_session_end` | AI 실행 세션 기록 |
@@ -254,10 +261,11 @@ GuiTableControl이다.
 |------|----|------|
 | 0 | Enter | 확인/다음 화면 |
 | 3 | F3 (Back) | 이전 화면 |
+| 4 | F4 | 검색 도움말 (Search Help) |
 | 8 | F8 (Execute) | 실행/조회 |
 | 11 | Ctrl+S | 저장 |
 | 12 | F12 (Cancel) | 취소 |
-| 16 | F4 | 검색 도움말 (Search Help) |
+| 16 | Shift+F4 | 검색 도움말 — `search_help` 액션이 내부적으로 사용 |
 | 2 | F2 | 선택/더블클릭 |
 | 5 | F5 | 기타 기능 |
 

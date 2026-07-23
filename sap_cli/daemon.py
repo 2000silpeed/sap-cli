@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from typing import Any
 
 from .com_wrapper import SapGuiError
 from .ipc_auth import IpcAuthError, IpcAuthenticator, load_or_create_secret
@@ -37,11 +38,43 @@ PORT = 18471
 PID_FILE = os.path.join(tempfile.gettempdir(), "sap_cli_daemon.pid")
 DEFAULT_COMMAND_TIMEOUT = 60.0
 DEFAULT_PLAN_EXECUTE_TIMEOUT = 3600.0
+# Windows 콜드 스타트는 무거운 import(pywin32 등) 때문에 기동이 수 초 걸릴 수 있어
+# 여유 있는 벽시계 예산을 둔다. 자식이 죽으면 예산과 무관하게 즉시 실패로 판정한다.
+DEFAULT_START_TIMEOUT = 20.0
+# start_daemon 실패 원인(자식 stderr 마지막 줄, import 오류 등)을 기록해 두어
+# doctor / CLI status 가 사용자에게 그대로 보여줄 수 있게 한다.
+_last_start_error: str | None = None
 # Side-effect-free liveness probe. A healthy local daemon answers a ping in
 # milliseconds, so this only bites when the port is held by a process that is
 # not responding (dead-but-bound, or wedged on a blocking COM call). Keeping it
 # short bounds how long a first contact waits before giving up.
 DAEMON_PROBE_TIMEOUT = 2.0
+
+
+def _daemon_log_path() -> str:
+    """데몬 자식 프로세스의 stderr를 남기는 로그 경로."""
+    override = os.getenv("SAP_CLI_DAEMON_LOG")
+    if override:
+        return override
+    root = os.path.expanduser("~/.sap_cli")
+    try:
+        os.makedirs(root, exist_ok=True)
+    except OSError:
+        return os.path.join(tempfile.gettempdir(), "sap_cli_daemon.log")
+    return os.path.join(root, "daemon.log")
+
+
+def _read_log_tail(path: str, max_bytes: int = 4000) -> str:
+    """로그 파일의 마지막 부분만 읽어 반환 (없으면 빈 문자열)."""
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            if size > max_bytes:
+                f.seek(-max_bytes, os.SEEK_END)
+            data = f.read()
+        return data.decode("utf-8", errors="replace").strip()
+    except OSError:
+        return ""
 
 
 def command_timeout(cmd: str) -> float:
@@ -131,50 +164,113 @@ def probe_daemon(timeout: float | None = None) -> str:
         sock.close()
 
 
-def is_running() -> bool:
+def is_running(timeout: float = DAEMON_PROBE_TIMEOUT) -> bool:
     """데몬 실행 중인지 확인 (ping으로 실제 응답 확인)."""
-    return probe_daemon() == "alive"
+    return probe_daemon(timeout=timeout) == "alive"
 
 
-def _spawn_and_wait() -> bool:
-    """데몬 프로세스를 띄우고 응답 가능해질 때까지 대기."""
+def _start_timeout() -> float:
+    raw = os.getenv("SAP_CLI_DAEMON_START_TIMEOUT", str(DEFAULT_START_TIMEOUT))
+    try:
+        return max(2.0, float(raw))
+    except (TypeError, ValueError):
+        return DEFAULT_START_TIMEOUT
+
+
+def start_daemon_detailed(timeout: float | None = None) -> tuple[bool, str | None]:
+    """데몬 백그라운드 시작. (성공여부, 실패원인) 튜플 반환.
+
+    - 자식 stderr를 DEVNULL로 버리지 않고 로그 파일로 남겨, 잘못된 venv/
+      import 실패/포트 점유 등 기동 실패 원인을 진단할 수 있게 한다.
+    - 자식이 준비되기 전에 죽으면(`proc.poll()`) 예산을 다 쓰지 않고 즉시
+      실패로 판정하고 로그 tail을 원인으로 돌려준다.
+    - 포트가 잡혀 있으나 응답이 없으면(외부/wedged 프로세스) 새 데몬이 바인딩할
+      수 없으므로 대기하지 않고 즉시 실패한다. 데몬은 runtime 초기화를 끝낸 뒤에
+      포트를 바인딩하므로, 정상 기동 중에는 unresponsive로 보이지 않는다.
+    """
+    global _last_start_error
+    status = probe_daemon()
+    if status == "alive":
+        _last_start_error = None
+        return True, None
+    if status == "unresponsive":
+        _last_start_error = (
+            f"포트 {PORT}가 응답 없는 프로세스에 점유되어 있습니다 "
+            "(죽었지만 바인딩 유지, 또는 wedged daemon). 새 데몬을 띄울 수 없습니다. "
+            "해당 프로세스를 종료한 뒤 다시 시도하세요."
+        )
+        return False, _last_start_error
+
     python = sys.executable
     cmd = [python, "-m", "sap_cli.daemon"]
+    log_path = _daemon_log_path()
 
-    kwargs: dict = {
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
-    }
+    log_handle: Any = subprocess.DEVNULL
+    try:
+        # 반복 실패로 무한정 커지지 않도록 가볍게 회전.
+        if os.path.exists(log_path) and os.path.getsize(log_path) > 1_000_000:
+            log_handle = open(log_path, "w", encoding="utf-8")
+        else:
+            log_handle = open(log_path, "a", encoding="utf-8")
+    except OSError:
+        log_handle = subprocess.DEVNULL
+
+    kwargs: dict = {"stdout": subprocess.DEVNULL, "stderr": log_handle}
     if sys.platform == "win32":
         # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
         kwargs["creationflags"] = 0x00000008 | 0x00000200
     else:
         kwargs["start_new_session"] = True
 
-    subprocess.Popen(cmd, **kwargs)
+    try:
+        proc = subprocess.Popen(cmd, **kwargs)
+    except OSError as exc:
+        _last_start_error = f"데몬 프로세스 실행 실패 ({python}): {exc}"
+        return False, _last_start_error
+    finally:
+        if log_handle is not subprocess.DEVNULL:
+            log_handle.close()  # 자식이 자신의 복제 핸들을 유지한다
 
-    for _ in range(30):
-        time.sleep(0.2)
-        status = probe_daemon()
+    deadline = time.monotonic() + (timeout if timeout is not None else _start_timeout())
+    while time.monotonic() < deadline:
+        status = probe_daemon(timeout=0.5)
         if status == "alive":
-            return True
+            _last_start_error = None
+            return True, None
         if status == "unresponsive":
             # The port was grabbed by a process that will not answer; our
             # spawned daemon could not bind it. Stop waiting instead of
             # pinging a wedged port for the whole readiness window.
-            return False
-    return False
+            tail = _read_log_tail(log_path)
+            _last_start_error = (
+                f"포트 {PORT}가 응답 없는 프로세스에 점유되어 새 데몬이 바인딩하지 "
+                f"못했습니다. 인터프리터: {python}. 로그: {log_path}"
+                + (f"\n--- daemon.log tail ---\n{tail}" if tail else "")
+            )
+            return False, _last_start_error
+        exit_code = proc.poll()
+        if exit_code is not None:
+            tail = _read_log_tail(log_path)
+            _last_start_error = (
+                f"데몬이 기동 중 종료됨 (exit={exit_code}). "
+                f"인터프리터: {python}. 로그: {log_path}"
+                + (f"\n--- daemon.log tail ---\n{tail}" if tail else "")
+            )
+            return False, _last_start_error
+        time.sleep(0.15)
+
+    tail = _read_log_tail(log_path)
+    _last_start_error = (
+        f"데몬 기동 대기 시간 초과. 인터프리터: {python}. 로그: {log_path}"
+        + (f"\n--- daemon.log tail ---\n{tail}" if tail else "")
+    )
+    return False, _last_start_error
 
 
 def start_daemon() -> bool:
-    """데몬 백그라운드 시작. 성공 시 True."""
-    status = probe_daemon()
-    if status == "alive":
-        return True
-    if status == "unresponsive":
-        # Port held by an unresponsive process — launching another cannot help.
-        return False
-    return _spawn_and_wait()
+    """데몬 백그라운드 시작. 성공 시 True (하위호환용 wrapper)."""
+    ok, _ = start_daemon_detailed()
+    return ok
 
 
 def ensure_daemon(autostart: bool = True) -> bool:
@@ -188,13 +284,87 @@ def ensure_daemon(autostart: bool = True) -> bool:
         return True
     if status == "unresponsive":
         return False
-    return bool(autostart) and _spawn_and_wait()
+    if not autostart:
+        return False
+    ok, _ = start_daemon_detailed()
+    return ok
 
 
 def stop_daemon() -> bool:
     """데몬 종료."""
     result = send_command("shutdown", timeout=5)
     return result is not None and result.get("ok", False)
+
+
+def wait_until_stopped(timeout: float = 5.0) -> bool:
+    """데몬 포트가 실제로 닫힐 때까지 대기. 닫히면 True.
+
+    shutdown 응답은 데몬이 완전히 내려가기 전에 돌아오므로(0.1초 지연 타이머),
+    stop 직후 곧바로 start 하면 죽어가는 데몬의 ping 응답을 "already running"으로
+    오판하는 레이스가 있다. restart 경로는 반드시 이 함수로 종료를 확인해야 한다.
+    ping 대신 raw connect를 쓰는 이유: serve 루프가 멈춘 뒤에도 listen 소켓이
+    닫히기 전까지는 연결이 backlog에 수락되므로, "연결 거부"만이 완전 종료의
+    신호다.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            probe = socket.create_connection(("127.0.0.1", PORT), timeout=0.2)
+            probe.close()
+        except OSError:
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def doctor() -> dict:
+    """데몬 + 실행 환경 헬스 리포트.
+
+    "데몬이 안 뜬다 / 다른 프로젝트에서 실행이 안 된다"를 자가 진단할 수
+    있도록, 어떤 인터프리터/가상환경으로 도는지, sap_cli·pywin32·mcp를
+    import 할 수 있는지, 데몬이 살아있는지, 실패 시 로그 tail을 모아 준다.
+    """
+    log_path = _daemon_log_path()
+    info: dict[str, Any] = {
+        "python_executable": sys.executable,
+        "prefix": sys.prefix,
+        "in_venv": sys.prefix != getattr(sys, "base_prefix", sys.prefix),
+        "cwd": os.getcwd(),
+        "platform": platform.system(),
+        "port": PORT,
+        "pid_file": PID_FILE,
+        "log_path": log_path,
+    }
+
+    try:
+        import sap_cli
+
+        info["sap_cli_path"] = os.path.dirname(os.path.abspath(sap_cli.__file__ or ""))
+    except Exception as exc:  # pragma: no cover - 방어적
+        info["sap_cli_path"] = None
+        info["sap_cli_import_error"] = str(exc)
+
+    for module_name, key in (("win32com", "pywin32"), ("mcp", "mcp")):
+        try:
+            __import__(module_name)
+            info[key] = True
+        except Exception:
+            info[key] = False
+
+    running = is_running(timeout=1.0)
+    info["daemon_running"] = running
+    if running:
+        ping = send_command("ping", timeout=2.0)
+        if ping and ping.get("ok"):
+            info["daemon"] = ping.get("data")
+    else:
+        if _last_start_error:
+            info["last_start_error"] = _last_start_error
+        tail = _read_log_tail(log_path)
+        if tail:
+            info["log_tail"] = tail
+
+    return info
 
 
 # ---------------------------------------------------------------------------
@@ -596,11 +766,20 @@ def _run_server():
         format="%(asctime)s [SAP-DAEMON] %(message)s",
     )
     pid = os.getpid()
+
+    # 서버 생성(무거운 runtime 초기화 후 마지막에 포트 바인딩)이 실패하면 그
+    # traceback이 자식 stderr(=daemon.log)로 남도록 하고, PID 파일은 성공했을
+    # 때만 쓴다.
+    try:
+        server = _DaemonServer()
+    except Exception:
+        logger.exception("데몬 초기화 실패 (port=%d, pid=%d)", PORT, pid)
+        raise
+
     with open(PID_FILE, "w") as f:
         f.write(str(pid))
 
     logger.info("시작 (port=%d, pid=%d)", PORT, pid)
-    server = _DaemonServer()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

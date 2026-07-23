@@ -47,16 +47,17 @@ def test_ensure_daemon_bails_fast_on_unresponsive_port(_no_daemon):
     spawned = []
     try:
         # Must not try to spawn a second daemon (it could never bind the port),
-        # and must not block on the command timeout.
+        # and must not block on the command timeout. The spawn point is
+        # subprocess.Popen inside start_daemon_detailed.
         import sap_cli.daemon as d
 
-        original = d._spawn_and_wait
-        d._spawn_and_wait = lambda: spawned.append(1) or True
+        original = d.subprocess.Popen
+        d.subprocess.Popen = lambda *a, **k: spawned.append(1)
         try:
             assert d.ensure_daemon() is False
             assert d.start_daemon() is False
         finally:
-            d._spawn_and_wait = original
+            d.subprocess.Popen = original
         assert spawned == []
     finally:
         held.close()
@@ -64,7 +65,11 @@ def test_ensure_daemon_bails_fast_on_unresponsive_port(_no_daemon):
 
 def test_ensure_daemon_refused_respects_autostart_flag(_no_daemon, monkeypatch):
     spawned = []
-    monkeypatch.setattr(daemon, "_spawn_and_wait", lambda: spawned.append(1) or True)
+    monkeypatch.setattr(
+        daemon,
+        "start_daemon_detailed",
+        lambda timeout=None: (spawned.append(1) or True, None),
+    )
 
     # autostart off → do not launch anything.
     assert daemon.ensure_daemon(autostart=False) is False

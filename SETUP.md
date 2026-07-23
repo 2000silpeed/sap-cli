@@ -437,26 +437,31 @@ where python
 사용 가능한 MCP 도구 목록을 보여줘
 ```
 
-다음 16개의 SAP 도구가 목록에 표시되면 MCP 서버가 정상적으로 연결된 것입니다:
+기본 MCP 표면(`compact`)에서는 다음 28개의 SAP 도구가 목록에 표시되면 MCP 서버가
+정상적으로 연결된 것입니다:
 
 | 도구 | 설명 |
 |------|------|
 | `sap_connect` | SAP GUI에 연결 |
 | `sap_session` | 세션 정보 조회 |
+| `sap_daemon_status` | daemon 상태 + 실행 환경 진단 (`action=start/restart`로 기동·재기동) |
 | `sap_screen` | 현재 화면 UI 구조 (JSON) |
+| `sap_scripting_query` | SAP GUI Scripting API 그래프 조회 |
 | `sap_run` | 트랜잭션 실행 |
-| `sap_set_field` | 필드 값 설정 |
-| `sap_get_field` | 필드 값 읽기 |
-| `sap_press` | 버튼 클릭 |
-| `sap_send_vkey` | VKey 전송 |
+| `sap_ui_action` | Scripting capability 기반 범용 UI 액션 |
 | `sap_get_status` | 상태바 메시지 |
-| `sap_table_read` | 테이블 데이터 읽기 |
+| `sap_modal` | 모달 팝업 확인 |
+| `sap_map_list` / `sap_map_search` / `sap_map_report` / `sap_map_view` | UI 지도 조회/검색/보고 |
+| `sap_map_augment_start` / `sap_map_traverse_start` / `sap_map_traverse_resume` | UI 지도 수집/보강 |
+| `sap_map_record_start` / `sap_map_record_finish` / `sap_map_record_cancel` / `sap_map_record_status` | 직접 조작 이동을 지도로 기록 |
+| `sap_map_job_status` / `sap_map_job_cancel` | 지도 작업 상태/취소 |
+| `sap_map_delete` | 지도 영구 삭제 (확인 필요) |
 | `sap_ontology_query` | 온톨로지 조회 |
-| `sap_learn` | 현재 화면을 온톨로지로 학습 |
-| `sap_macro_control` | 매크로 녹화 제어 |
-| `sap_macro_record_step` | 녹화 중 단계 기록 + SAP 실행 |
-| `sap_macro_play` | 매크로 재생 |
-| `sap_macro_list` | 매크로 목록 조회 |
+| `sap_plan_preview` / `sap_plan_approve` / `sap_plan_execute` | 계획 미리보기/승인/실행 |
+| `sap_job_status` | 공통 작업 상태 조회 |
+
+세부 UI 액션, 매크로·레시피 관리 등 전체 도구를 노출하려면 MCP 서버 env에
+`SAP_CLI_MCP_SURFACE=full`을 지정합니다.
 
 ### 5.5.5 권한 정책 설정 (선택)
 
@@ -483,10 +488,22 @@ active_agent: readonly   # readonly | standard | mm_operator | sd_operator
 ## 6. Skill 설치
 
 Skill은 Claude Code가 SAP CLI의 사용법과 SAP 도메인 지식을 미리 알 수 있도록 하는 지식 파일입니다.
+`skill/` 폴더에는 메인 스킬 외에도 용도별 스킬 5개와 에이전트 정의가 있습니다.
+전체 구성과 상세 사용법은 **`skill/README.md`** 를 참고하세요.
+
+| 스킬 | 역할 |
+|------|------|
+| `skill/SKILL.md` (메인) | MCP 도구 레퍼런스 + SAP 도메인 지식 |
+| `skill/sap-cli-usage/` | 개별 화면 조작 CLI 사용법 |
+| `skill/sap-map-build/` | UI 지도 수집·보강·점검 |
+| `skill/sap-plan-author/` | 자연어 요청 → 실행 계획 컴파일 |
+| `skill/sap-plan-run/` | 계획 승인·실행·결과 판정 |
+| `skill/sap-ontology-qa/` | SAP 연결 없이 온톨로지 Q&A |
+| `skill/agents/claude/sap-map-planner.md` | 지도→계획→실행을 묶은 에이전트 정의 |
 
 ### 6.1 Skill 파일 확인
 
-프로젝트의 `skill/` 폴더에 `SKILL.md` 파일이 있는지 확인합니다:
+프로젝트의 `skill/` 폴더 구성을 확인합니다:
 
 ```powershell
 dir skill\
@@ -494,33 +511,29 @@ dir skill\
 
 ### 6.2 Skill 설치 방법
 
-**방법 A: 수동 복사**
-
-1. 사용자 홈 디렉토리에 skill 폴더를 생성합니다:
+스킬 하나당 `%USERPROFILE%\.claude\skills\<스킬이름>\SKILL.md` 형태로 복사합니다:
 
 ```powershell
-mkdir %USERPROFILE%\.claude\skills\sap-cli
+mkdir %USERPROFILE%\.claude\skills
+
+# 용도별 스킬 (폴더째 복사)
+xcopy /E /I skill\sap-cli-usage %USERPROFILE%\.claude\skills\sap-cli-usage
+xcopy /E /I skill\sap-map-build %USERPROFILE%\.claude\skills\sap-map-build
+xcopy /E /I skill\sap-plan-author %USERPROFILE%\.claude\skills\sap-plan-author
+xcopy /E /I skill\sap-plan-run %USERPROFILE%\.claude\skills\sap-plan-run
+xcopy /E /I skill\sap-ontology-qa %USERPROFILE%\.claude\skills\sap-ontology-qa
+
+# 메인 스킬 (MCP 사용 시)
+mkdir %USERPROFILE%\.claude\skills\sap
+copy skill\SKILL.md %USERPROFILE%\.claude\skills\sap\SKILL.md
+
+# 에이전트 정의
+mkdir %USERPROFILE%\.claude\agents
+copy skill\agents\claude\sap-map-planner.md %USERPROFILE%\.claude\agents\
 ```
 
-2. SKILL.md 파일을 복사합니다:
-
-```powershell
-copy skill\SKILL.md %USERPROFILE%\.claude\skills\sap-cli\SKILL.md
-```
-
-**방법 B: Claude Code에서 직접 등록**
-
-Claude Code에서 다음과 같이 입력합니다:
-
-```
-/install-skill 경로: C:\Users\사용자명\sap-cli\skill
-```
-
-또는 프로젝트의 `.claude/` 폴더에 skill을 심볼릭 링크로 연결할 수도 있습니다:
-
-```powershell
-mklink /D .claude\skills\sap-cli skill
-```
+특정 프로젝트에서만 쓰려면 `%USERPROFILE%\.claude` 대신 프로젝트 루트의
+`.claude\skills\`, `.claude\agents\`에 같은 구조로 넣습니다.
 
 ### 6.3 설치 확인
 
@@ -530,7 +543,8 @@ Claude Code를 재시작한 후 다음과 같이 질문해봅니다:
 SAP CLI 스킬이 설치되어 있어?
 ```
 
-또는 SAP 관련 질문을 했을 때 Claude Code가 SAP CLI 도구를 자연스럽게 사용한다면 정상입니다.
+또는 "MM03 지도 만들어줘" 같은 SAP 관련 요청을 했을 때 Claude Code가 해당 스킬의
+절차(daemon 확인 → 지도 → 계획 → 실행)를 따르면 정상입니다.
 
 ---
 
@@ -563,7 +577,7 @@ SAP CLI 스킬이 설치되어 있어?
 - [ ] `pip install -e ".[mcp]"` 설치 완료
 - [ ] `python -m sap_cli.mcp_server` 에러 없이 시작
 - [ ] `settings.json`에 `sap-gui` MCP 서버 등록
-- [ ] Claude Code 재시작 후 SAP 도구 16개가 목록에 보임
+- [ ] Claude Code 재시작 후 SAP 도구 28개(compact)가 목록에 보임
 - [ ] Claude Code에서 "SAP에 연결해줘" 테스트 성공
 - [ ] Claude Code에서 "MM03에서 자재 100-100 조회해줘" 테스트 성공
 
@@ -762,3 +776,30 @@ Microsoft Store를 통해 Python을 설치한 경우, `python` 대신 `python3`�
   }
 }
 ```
+
+### 8.9 데몬이 시작되지 않거나 명령이 계속 실패합니다
+
+CLI/MCP는 기본적으로 상주 데몬을 경유하며, 데몬이 없으면 자동 기동을 시도합니다.
+자동 기동이 계속 실패하거나, 다른 프로젝트 폴더에서 실행할 때만 실패한다면 먼저
+진단 명령을 실행합니다:
+
+```powershell
+sap daemon doctor
+```
+
+MCP에서는 `sap_daemon_status` 도구(`action="status"`)가 같은 진단을 수행합니다.
+출력에서 다음을 확인합니다:
+
+1. `python_executable` — 데몬을 띄우는 인터프리터입니다. sap-cli를 설치한
+   가상환경의 python이 아니면 데몬이 `ModuleNotFoundError: No module named
+   'sap_cli'`로 즉시 죽습니다. `settings.json`의 `command`를 가상환경 python
+   전체 경로로 지정하세요.
+2. `sap_cli_path` / `pywin32` / `mcp` — import 가능 여부입니다. `false`이면 해당
+   인터프리터에 패키지가 설치되지 않은 것입니다.
+3. `log_tail` — 기동 실패 시 데몬의 마지막 에러가 그대로 보입니다. 로그 전체는
+   `%USERPROFILE%\.sap_cli\daemon.log`에 있습니다.
+
+원인을 고친 뒤 `sap daemon restart`(또는 MCP `sap_daemon_status`의
+`action="restart"`)로 재기동합니다. 콜드 스타트가 느린 환경(무거운 pywin32
+import 등)은 `SAP_CLI_DAEMON_START_TIMEOUT`(기본 20초)으로 기동 대기 예산을
+늘릴 수 있습니다.

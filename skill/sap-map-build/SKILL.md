@@ -147,6 +147,9 @@ sap session
 역추적한다. ③ 그래도 모르면 `name = "sap-cli"`를 담은 `pyproject.toml` 폴더를
 찾는다. venv는 보통 그 폴더의 `.venv`(다르면 사용자에게 확인).
 
+daemon 기동이 실패하면 `sap daemon doctor`로 원인(인터프리터/venv, import 실패,
+`~/.sap_cli/daemon.log` tail)을 먼저 확인한다.
+
 `map-traverse-start`, `map-traverse-resume`, `map-augment-start`,
 `map-job-cancel`은 **persistent daemon 전용**이다. daemon이 없으면 direct
 fallback 없이 실패한다. 반면 `map-list`, `map-search`, `map-path`, `map-report`,
