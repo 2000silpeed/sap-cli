@@ -2188,6 +2188,7 @@ def macro_play(
     var: Optional[list[str]] = typer.Option(None, "--var", help="변수 KEY=VALUE. 여러 번 사용 가능"),
     dry_run: bool = typer.Option(False, "--dry-run", help="실제 실행 없이 프리뷰"),
     out: str = typer.Option("", "--out", help="captured_data를 JSONL 파일에 append"),
+    batch: str = typer.Option("", "--batch", help="변수 객체 배열/JSONL 파일 경로"),
 ) -> None:
     """매크로 재생."""
     try:
@@ -2195,20 +2196,53 @@ def macro_play(
         if variables:
             vars_dict = _parse_vars(variables)
         vars_dict = _merge_var_assignments(vars_dict, var)
-        result = _dispatch_local(
+        if batch and (variables or var):
+            raise typer.BadParameter("--batch는 --vars/--var와 함께 사용할 수 없습니다.")
+
+        batch_items: list[dict[str, Any]] = []
+        if batch:
+            batch_path = Path(batch).expanduser()
+            raw_batch = batch_path.read_text(encoding="utf-8")
+            try:
+                decoded = json.loads(raw_batch)
+                batch_items = decoded if isinstance(decoded, list) else [decoded]
+            except json.JSONDecodeError:
+                for line in raw_batch.splitlines():
+                    if line.strip():
+                        item = json.loads(line)
+                        batch_items.append(item)
+            if not all(isinstance(item, dict) for item in batch_items):
+                raise typer.BadParameter("--batch 파일은 JSON 객체 배열 또는 JSONL이어야 합니다.")
+        else:
+            batch_items = [vars_dict]
+
+        results: list[dict[str, Any]] = []
+        for item in batch_items:
+            result = _dispatch_local(
                 "macro_play",
                 {
                     "macro_id": macro_id,
-                    "variables": vars_dict,
+                    "variables": item,
                     "dry_run": dry_run,
                 },
             )
-        if out and isinstance(result, dict) and result.get("success") and result.get("captured_data"):
-            output_path = Path(out).expanduser()
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with output_path.open("a", encoding="utf-8") as stream:
-                stream.write(json.dumps(result["captured_data"], ensure_ascii=False) + "\n")
-            result["output_file"] = str(output_path)
+            if out and isinstance(result, dict) and result.get("success") and result.get("captured_data"):
+                captured = dict(result["captured_data"])
+                captured.update({key: value for key, value in item.items() if key not in captured})
+                output_path = Path(out).expanduser()
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                with output_path.open("a", encoding="utf-8") as stream:
+                    stream.write(json.dumps(captured, ensure_ascii=False) + "\n")
+                result["output_file"] = str(output_path)
+            results.append(result)
+        result = results[0] if not batch else {
+            "macro_id": macro_id,
+            "batch": True,
+            "count": len(results),
+            "success_count": sum(bool(item.get("success")) for item in results),
+            "results": results,
+            **({"output_file": str(Path(out).expanduser())} if out else {}),
+        }
         _output_json(result)
     except json.JSONDecodeError as e:
         _handle_error(e)

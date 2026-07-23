@@ -106,6 +106,7 @@ target="<table ID>", row=2, description="대상 행 선택")`을 사용한다. �
 sap record-step read-field "<자재명 field ID>" --as description
 sap record-step read-field "<플랜트 field ID>" --as plant
 sap macro-play <macro_id> --var matnr=100-100 --out .\output\materials.jsonl
+sap macro-play <macro_id> --batch .\input\materials.jsonl --out .\output\materials.jsonl
 ```
 
 실행 결과에는 `captured_data`가 포함되고, `--out`을 사용하면 성공한 실행마다 JSONL

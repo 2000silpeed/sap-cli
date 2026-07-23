@@ -959,7 +959,14 @@ element를 확인하고, 행 순서가 동적으로 바뀌는 화면에서는 �
 
 ```powershell
 sap macro-play <macro_id> --var matnr=100-100 --out .\output\materials.jsonl
+
+# JSON 배열 또는 JSONL 입력으로 반복 수집
+sap macro-play <macro_id> --batch .\input\materials.jsonl --out .\output\materials.jsonl
 ```
+
+`--batch`의 각 줄은 매크로 변수 객체다. 각 실행은 독립적으로 preflight/검증되고,
+성공한 `captured_data`만 결과 JSONL에 한 줄씩 추가된다. 실패한 항목은 전체 반복을
+중단하지 않고 해당 결과에 오류를 남긴다.
 
 ### 5.6 fill 명령으로 간단하게
 
