@@ -1643,7 +1643,70 @@ Claude: sap_macro_control(command="finish", name="자재조회",
                           variables={"100-100": "조회할 자재번호"})
 ```
 
-### 시나리오 3: 매크로 재생 (변수 변경)
+### 시나리오 3: AI가 UI 지도를 녹화하고 계획을 실행
+
+사용자가 반복 업무를 지도에 기록한 뒤, 자연어 요청을 계획으로 검토하고 승인 후
+실행하는 흐름이다. 지도 녹화는 테스트 client에서 시작하며, 저장·전기·삭제·승인·
+전송·인쇄 같은 변경/외부 전송 동작은 자동 녹화하지 않는다.
+
+```
+사용자: "MM03 조회 화면을 지도에 기록해. 테스트 client이고 조회만 할 거야"
+
+Claude: sap_daemon_status(action="start")
+        sap_connect(system="PR1")
+        sap_map_traverse_start(
+          tcode="MM03", map_id="mm03-readonly", mode="passive"
+        )
+        sap_job_status(job_id="...")
+        sap_map_report(map_id="mm03-readonly", tcode="MM03")
+```
+
+현재 화면 한 장만으로 목표 화면에 도달할 수 없다면 AI는 임의로 업무 버튼을 누르지
+않는다. `guided` 지도의 `needs_user_input` 질문과 구조적 `candidate_id`를 사용자에게
+보여주고, 사용자가 고른 안전한 탭/트리/스크롤 후보만 다음처럼 재개한다.
+
+```
+사용자: "조회 탭으로 계속 기록해"
+
+Claude: sap_map_traverse_resume(
+          job_id="...",
+          answers={"<resume-token>": {"candidate_id": "<candidate-id>"}}
+        )
+        sap_job_status(job_id="...")
+        sap_map_report(map_id="mm03-readonly", tcode="MM03")
+```
+
+지도가 완성되면 AI는 바로 SAP를 조작하지 않고 먼저 실행 계획을 만든다.
+
+```
+사용자: "방금 지도에서 자재 TEST_MATNR의 기본 데이터를 조회하는 계획을 보여줘"
+
+Claude: sap_plan_preview(
+          request="자재 TEST_MATNR의 기본 데이터 조회",
+          tcode="MM03", map_id="mm03-readonly",
+          goal_query="기본 데이터", values={"material": "TEST_MATNR"}
+        )
+        → validation.valid, plan.steps, plan_ref, required_approvals 확인
+```
+
+`validation.valid=true`이고 사용자가 계획을 확인한 경우에만 `plan_ref`의 activation
+정보를 그대로 넘겨 실행한다. 계획이 지도 버전/fingerprint와 맞지 않거나 목표 화면이
+없으면 실행하지 않고 지도를 보강하거나 새 preview를 만든다.
+
+```
+사용자: "계획대로 실행해"
+
+Claude: sap_plan_execute(plan_ref=<preview.plan_ref>, verify_mode="cheap")
+        sap_get_status()
+        sap_screen()  → 최종 화면과 결과 확인
+```
+
+변경 단계가 포함된 계획은 `required_approvals`의 step만 별도 승인받은 뒤
+`sap_plan_approve`가 반환한 일회성 approval token과 함께 실행한다. 이 흐름의 핵심은
+`지도 녹화 → 지도 보고서 확인 → 계획 preview → 사용자 승인 → 계획 실행 → 결과 검증`의
+순서를 지키는 것이다.
+
+### 시나리오 4: 매크로 재생 (변수 변경)
 
 ```
 사용자: "자재조회 매크로 실행해. 자재번호는 200-200으로"
@@ -1652,7 +1715,7 @@ Claude: sap_macro_list()  → 매크로 ID 확인
         sap_macro_play(macro_id="a1b2c3", variables={"matnr": "200-200"})
 ```
 
-### 시나리오 4: 온톨로지 기반 지능적 조작
+### 시나리오 5: 온톨로지 기반 지능적 조작
 
 ```
 사용자: "VA01에서 수주를 만들려면 뭘 입력해야 해?"
@@ -1670,7 +1733,7 @@ Claude 응답: "VA01 수주 생성에는 다음 필드가 필요합니다:
   - 자재번호/수량: 품목 테이블에 입력"
 ```
 
-### 시나리오 5: 배치 처리 (매크로 반복 실행)
+### 시나리오 6: 배치 처리 (매크로 반복 실행)
 
 ```
 사용자: "이 자재번호 리스트에 대해 자재조회 매크로를 반복 실행해줘:
@@ -1682,7 +1745,7 @@ Claude:
     sap_screen()  → 결과 수집
 ```
 
-### 시나리오 6: Operator / Verifier 협업
+### 시나리오 7: Operator / Verifier 협업
 
 ```
 사용자: "방금 실행한 MM03 입력 단계를 다시 해도 안전한지 검토해줘"
