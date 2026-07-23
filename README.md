@@ -69,24 +69,23 @@ git clone https://github.com/2000silpeed/sap-cli.git
 cd sap-cli
 
 # 가상환경 생성 및 활성화
-python -m venv .venv
-.venv\Scripts\activate        # Windows
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1   # Windows PowerShell
 # source .venv/bin/activate   # macOS/Linux
 
-# 설치 (편집 가능 모드)
-pip install -e .
-
-# MCP 서버도 사용할 경우
-pip install -e ".[mcp]"
-
-# 개발/테스트용 (pytest 포함)
-pip install -e ".[dev]"
+# CLI + MCP + 개발/테스트 의존성까지 설치
+python -m pip install -e ".[mcp,dev]"
 
 # 설치 확인
 sap --help
 ```
 
 > **주의**: 반드시 가상환경(.venv) 내에서 설치하세요. 시스템 Python에 직접 설치하면 의존성 충돌이 발생할 수 있습니다.
+
+Windows에서 PowerShell이 `Activate.ps1` 실행을 차단하면 현재 사용자 범위에서
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`를 한 번 적용하세요. SAP GUI
+자동화와 COM 연결은 SAP GUI for Windows가 실행 중인 동일한 Windows 사용자 세션에서
+수행해야 합니다.
 
 ---
 
@@ -833,6 +832,12 @@ sap record-step set "wnd[0]/usr/ctxtRMMG1-MATNR" "100-100" --desc "자재번호 
 # Enter
 sap record-step vkey 0
 
+# 같은 의미의 자연어형 매크로 액션
+sap record-step enter enter --desc "Enter로 확인"
+
+# 테이블의 세 번째 행 선택 (행 번호는 0-based)
+sap record-step select-row "<table element ID>" --row 2 --desc "대상 행 선택"
+
 # 뷰 선택 화면에서 Enter
 sap record-step vkey 0
 
@@ -931,13 +936,19 @@ sap macro-delete a1b2c3d4e5f6
 | `set` | 필드 값 설정 | 필드 ID | 설정할 값 |
 | `press` | 버튼 클릭 / 탭 선택 | 버튼 또는 탭 ID | - |
 | `vkey` | 키보드 키 전송 | VKey 번호 (0=Enter) | - |
+| `enter` | Enter 전송 (VKey 0) | `enter` | - |
 | `checkbox` | 체크박스 토글 | 체크박스 ID | `true` 또는 `false` |
 | `radio` | 라디오 버튼 선택 | 라디오 ID | - |
 | `combo` | 드롭다운 선택 | 콤보박스 ID | 선택할 값 |
 | `tab` | 탭 선택 | 탭 ID | - |
 | `menu` | 메뉴 선택 | 메뉴 ID | - |
 
-| `table-select` / `select-row` | 테이블 행 선택 | 테이블 ID | 행 번호 (0-based) |
+| `table-select` / `select-row` / `table-row` | 테이블 행 선택 | 테이블 ID | 행 번호 (0-based) |
+
+사용자가 “n번째 행을 선택해”, “이 행을 클릭해”, “선택한 행으로 진행해”라고 말하면
+`select_row`로 해석한다. 먼저 `sap screen` 또는 `sap inspect <table ID>`로 테이블
+element를 확인하고, 행 순서가 동적으로 바뀌는 화면에서는 선택 후 셀 값/화면을
+검증한다. “엔터”, “확인하고 진행해”는 `enter` 또는 VKey `0`으로 실행한다.
 
 ### 5.6 fill 명령으로 간단하게
 
@@ -1230,7 +1241,7 @@ Windows의 Claude Code `settings.json`에 추가:
 
 > `~/.sap_cli/policy.yaml` 파일이 존재하면 ReBAC 권한관리가 활성화되어 에이전트별로 허용된 도구만 호출할 수 있습니다. 정책 파일이 없으면 모든 도구가 허용됩니다 (하위 호환).
 
-기본 MCP 표면은 지도 제작·온톨로지 검토·계획·실행에 필요한 도구 28개만 노출하는
+기본 MCP 표면은 지도 제작·온톨로지 검토·계획·실행에 필요한 핵심 도구만 노출하는
 `compact`입니다. 세부 UI 액션, 매크로·레시피 관리, 이벤트, 세션 풀, 디버그 도구는 CLI에
 그대로 남아 있지만 MCP 목록에서는 숨깁니다. 기존 전문 자동화가 꼭 필요할 때만 MCP 서버
 환경 변수 `SAP_CLI_MCP_SURFACE=full`을 지정합니다.
@@ -1878,7 +1889,7 @@ sap_cli/
 │   └── agents/
 │       ├── claude/sap-map-planner.md          # Claude Code 서브에이전트
 │       └── codex/sap-map-planner/SKILL.md     # Codex용 에이전트 스킬
-└── tests/                      # 326개 테스트 (SAP/Windows 불필요)
+└── tests/                      # 순수 로직 테스트 (SAP/Windows 불필요)
     ├── test_dispatcher.py      # 디스패처 통합 테스트
     ├── test_mcp_server.py      # MCP 서버 테스트
     ├── test_mcp_daemon.py      # MCP → 데몬 위임 테스트
@@ -1887,7 +1898,7 @@ sap_cli/
     ├── test_connection_stability.py  # 멀티 시스템/세션 복구 테스트
     ├── test_ontology_ask.py    # 온톨로지 Q&A 테스트
     ├── test_recipe_query.py    # 레시피 검색 테스트
-    └── ...                     # 기타 단위 테스트
+    └── ...                     # 기타 단위 테스트 (실제 수는 코드 변경에 따라 달라짐)
 ```
 
 > 실제 매크로 데이터는 `~/.sap_cli/macros/`, 온톨로지 지식 데이터는 `~/.sap_cli/knowledge/`에 저장됩니다. 패키지의 `knowledge/` 디렉토리는 시드 데이터 역할만 합니다.
@@ -1916,8 +1927,8 @@ pytest tests/ -v
 
 | 항목 | 값 |
 |------|---|
-| 총 테스트 수 | 389개 |
-| 실행 시간 | 약 0.5초 |
+| 총 테스트 수 | 환경/커밋에 따라 변동 (pytest로 확인) |
+| 실행 시간 | 환경에 따라 변동 |
 | SAP/Windows 필요 여부 | 불필요 |
 
 매크로 변수 치환, 온톨로지 스키마 검증, ReBAC 정책 판단, 디스패처 통합, MCP 서버 라우팅, 데몬 위임, 세션 스토어, 레시피 검색, 온톨로지 Q&A, 연결 안정성(멀티 시스템/세션 복구), 병렬 멀티 세션(풀 CRUD/TTL/슬롯 검증/디스패처 통합/스레드 안전) 등을 포함합니다.
@@ -1955,7 +1966,7 @@ persistent daemon이 필요하므로 `sap daemon start`를 먼저 실행합니�
 # 저장소 루트에서
 mkdir -p ~/.claude/skills ~/.claude/agents
 
-# CLI 전용 스킬 3종
+# CLI 전용 스킬 및 에이전트
 cp -r skill/sap-map-build   ~/.claude/skills/
 cp -r skill/sap-plan-author ~/.claude/skills/
 cp -r skill/sap-plan-run    ~/.claude/skills/
@@ -1974,6 +1985,9 @@ Windows PowerShell:
 ```powershell
 New-Item -ItemType Directory -Force "$HOME\.claude\skills","$HOME\.claude\agents" | Out-Null
 Copy-Item -Recurse -Force skill\sap-map-build,skill\sap-plan-author,skill\sap-plan-run "$HOME\.claude\skills\"
+Copy-Item -Recurse -Force skill\sap-cli-usage,skill\sap-ontology-qa "$HOME\.claude\skills\"
+New-Item -ItemType Directory -Force "$HOME\.claude\skills\sap" | Out-Null
+Copy-Item -Force skill\SKILL.md "$HOME\.claude\skills\sap\SKILL.md"
 Copy-Item -Force skill\agents\claude\sap-map-planner.md "$HOME\.claude\agents\"
 ```
 
@@ -2010,6 +2024,9 @@ Windows PowerShell:
 ```powershell
 New-Item -ItemType Directory -Force "$HOME\.codex\skills" | Out-Null
 Copy-Item -Recurse -Force skill\sap-map-build,skill\sap-plan-author,skill\sap-plan-run "$HOME\.codex\skills\"
+Copy-Item -Recurse -Force skill\sap-cli-usage,skill\sap-ontology-qa "$HOME\.codex\skills\"
+New-Item -ItemType Directory -Force "$HOME\.codex\skills\sap" | Out-Null
+Copy-Item -Force skill\SKILL.md "$HOME\.codex\skills\sap\SKILL.md"
 Copy-Item -Recurse -Force skill\agents\codex\sap-map-planner "$HOME\.codex\skills\"
 ```
 
