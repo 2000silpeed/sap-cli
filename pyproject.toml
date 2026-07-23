@@ -1,6 +1,6 @@
 [project]
 name = "sap-cli"
-version = "0.1.0"
+version = "0.2.0"
 description = "SAP GUI Scripting CLI for AI Agents - Ontology-driven SAP automation"
 readme = "README.md"
 requires-python = ">=3.11"

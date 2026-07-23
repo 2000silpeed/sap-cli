@@ -576,7 +576,7 @@ flowchart TB
 
 ## 11. 현재 구현 상태 요약
 
-- Python 패키지: `sap-cli` version `0.1.0`
+- Python 패키지: `sap-cli` version `0.2.0`
 - 엔트리포인트: `sap = sap_cli.cli:app`
 - 주요 의존성: `pydantic`, `typer`, `rich`, Windows 한정 `pywin32`, `Pillow`
 - 선택 의존성: `mcp`
