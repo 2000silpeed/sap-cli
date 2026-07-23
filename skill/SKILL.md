@@ -231,10 +231,11 @@ GuiTableControl이다.
 |------|----|------|
 | 0 | Enter | 확인/다음 화면 |
 | 3 | F3 (Back) | 이전 화면 |
+| 4 | F4 | 검색 도움말 (Search Help) |
 | 8 | F8 (Execute) | 실행/조회 |
 | 11 | Ctrl+S | 저장 |
 | 12 | F12 (Cancel) | 취소 |
-| 16 | F4 | 검색 도움말 (Search Help) |
+| 16 | Shift+F4 | 검색 도움말 — `search_help` 액션이 내부적으로 사용 |
 | 2 | F2 | 선택/더블클릭 |
 | 5 | F5 | 기타 기능 |
 

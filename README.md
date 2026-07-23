@@ -1749,11 +1749,12 @@ sap transcript-plan --command set --index 0
 |------|---|------|
 | 0 | Enter | 확인/실행 |
 | 3 | F3 | 뒤로 가기 |
+| 4 | F4 | 검색 도움말 (Search Help) |
 | 8 | F8 | 실행 (Execute) |
 | 11 | Ctrl+S | 저장 |
 | 12 | F12 | 취소 |
-| 15 | F1 | 도움말 |
-| 16 | F4 | 검색 도움말 (Search Help) |
+| 15 | Shift+F3 | 종료 (Exit) |
+| 16 | Shift+F4 | 검색 도움말 — `search_help` 액션이 내부적으로 사용 |
 
 ---
 

@@ -10,11 +10,16 @@ MCP 서버나 SAP 연결 없이 동작한다.
 
 ## 데이터 소스
 
-모든 온톨로지 데이터는 `sap_cli/ontology/knowledge/` 하위에 JSON으로 저장되어 있다.
+정본 온톨로지 데이터는 **홈 디렉토리 `~/.sap_cli/knowledge/`** 하위에 JSON으로
+저장된다 (Windows: `%USERPROFILE%\.sap_cli\knowledge\`). 리포지토리의
+`sap_cli/ontology/knowledge/`는 배포용 seed일 뿐이며, 첫 실행 시
+transactions/processes/patterns가 홈 경로로 복사된다. **사용자가 추가 학습한
+트랜잭션과 rebuild 생성 파일은 홈 경로에만 존재한다** — 항상 홈 경로를 먼저
+읽고, 홈 경로가 비어 있을 때만 seed를 참조한다.
 
 ```
-sap_cli/ontology/knowledge/
-├── transactions/          # 항상 존재 — 트랜잭션별 화면/필드/시맨틱 구조
+~/.sap_cli/knowledge/
+├── transactions/          # seed 7종 + 사용자가 학습한 트랜잭션
 │   ├── MM03.json         # 자재 조회
 │   ├── VA01.json         # 판매오더 생성
 │   ├── ME21N.json        # 구매오더 생성
@@ -22,13 +27,13 @@ sap_cli/ontology/knowledge/
 │   ├── MIRO.json         # 송장 검증
 │   ├── VL01N.json        # 출하(납품) 생성
 │   └── VF01.json         # 대금청구 생성
-├── processes/             # 항상 존재 — 업무 프로세스 (트랜잭션 시퀀스)
+├── processes/             # 업무 프로세스 (트랜잭션 시퀀스)
 │   ├── procurement_basic.json  # 자재조달: MM01→ME21N→MIGO→MIRO
 │   └── sales_to_billing.json   # 판매: VA01→VL01N→VF01
-├── patterns/              # 항상 존재 — 공통 패턴
+├── patterns/              # 공통 패턴
 │   ├── save_flow.json    # 저장 흐름 (Ctrl+S→상태확인→모달)
 │   └── search_help.json  # F4 검색 도움말 패턴
-├── field_registry.json    # 없을 수 있음 — rebuild 후 생성
+├── field_registry.json    # 없을 수 있음 — rebuild 후 생성 (홈 경로에만 생성됨)
 ├── field_relationships.json  # 없을 수 있음 — rebuild 후 생성
 └── document_flow.json     # 없을 수 있음 — rebuild 후 생성
 ```

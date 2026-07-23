@@ -24,9 +24,9 @@ sap daemon status
 sap map-list --tcode MM03
 ```
 
-`plan-preview`는 persistent daemon 전용이다. daemon이 없으면 payload는 돌아와도
-`plan_ref`와 `activation`이 `null`이라 실행할 수 없는 계획이 된다. 이 경우
-"daemon을 시작해야 실행 가능한 계획이 된다"고 명시적으로 알린다.
+`plan-preview`는 persistent daemon 전용이다. daemon이 없으면 payload 없이
+"persistent daemon 전용입니다" 오류로 즉시 실패한다. 이 경우 `sap daemon start`
+(실패하면 `sap daemon doctor`)로 daemon을 먼저 올린 뒤 다시 미리보기한다.
 
 ## 기본 호출
 
