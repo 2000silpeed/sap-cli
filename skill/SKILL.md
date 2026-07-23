@@ -70,6 +70,12 @@ CLI/MCP는 기본적으로 daemon 경유를 우선 사용한다. daemon이 없�
 기본값이 켜지며, 명시하려면 `SAP_CLI_USE_DAEMON=1`,
 `SAP_CLI_DAEMON_AUTOSTART=1`을 MCP env에 넣는다.
 
+daemon이 안 뜨거나 명령이 계속 실패하면 `sap daemon doctor`(MCP에서는
+`sap_daemon_status` 도구)로 먼저 진단한다. 인터프리터/가상환경, `sap_cli`·
+`pywin32`·`mcp` import 가능 여부, 기동 실패 로그 tail(`~/.sap_cli/daemon.log`)을
+한 번에 보여준다. `sap daemon restart` / `sap_daemon_status(action="restart")`로
+재기동한다.
+
 ## CLI/bash 실행 기록 원칙
 
 Codex/Claude가 터미널을 사용할 수 있으면 `sap` CLI 예시는 실제 bash/PowerShell

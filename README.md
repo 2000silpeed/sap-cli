@@ -1228,14 +1228,14 @@ Windows의 Claude Code `settings.json`에 추가:
 
 > `~/.sap_cli/policy.yaml` 파일이 존재하면 ReBAC 권한관리가 활성화되어 에이전트별로 허용된 도구만 호출할 수 있습니다. 정책 파일이 없으면 모든 도구가 허용됩니다 (하위 호환).
 
-기본 MCP 표면은 지도 제작·온톨로지 검토·계획·실행에 필요한 도구 20개만 노출하는
+기본 MCP 표면은 지도 제작·온톨로지 검토·계획·실행에 필요한 도구 22개만 노출하는
 `compact`입니다. 세부 UI 액션, 매크로·레시피 관리, 이벤트, 세션 풀, 디버그 도구는 CLI에
 그대로 남아 있지만 MCP 목록에서는 숨깁니다. 기존 전문 자동화가 꼭 필요할 때만 MCP 서버
 환경 변수 `SAP_CLI_MCP_SURFACE=full`을 지정합니다.
 
-`compact` 핵심 도구는 `sap_session`, `sap_screen`, `sap_run`, `sap_ui_action`, 지도
-수집/재개/보강/보고 도구, `sap_ontology_query`, `sap_plan_preview`,
-`sap_plan_approve`, `sap_plan_execute`, `sap_job_status`입니다.
+`compact` 핵심 도구는 `sap_session`, `sap_daemon_status`, `sap_screen`, `sap_run`,
+`sap_ui_action`, 지도 수집/재개/보강/보고 도구, `sap_ontology_query`,
+`sap_plan_preview`, `sap_plan_approve`, `sap_plan_execute`, `sap_job_status`입니다.
 
 
 #### 기본 SAP 조작
@@ -1245,6 +1245,7 @@ Windows의 Claude Code `settings.json`에 추가:
 | `sap_connect` | SAP GUI에 연결 (system 파라미터로 SID 자동 탐색) |
 | `sap_connections` | 모든 활성 SAP 연결 목록 조회 |
 | `sap_session` | 세션 정보 조회 |
+| `sap_daemon_status` | daemon 상태 + 실행 환경(인터프리터/venv, import 가능 여부, 로그 tail) 진단. `action=start/restart`로 기동·재기동 |
 | `sap_screen` | 현재 화면 UI 구조 (JSON) |
 | `sap_inspect_element` | 단일 element의 Type/SubType/capability/entries 검사 |
 | `sap_scripting_query` | SAP GUI Scripting API 그래프 온톨로지 subgraph 조회 |
@@ -1352,12 +1353,26 @@ MCP 서버는 각 도구 호출마다 새로운 Python 프로세스를 시작할
 # 데몬 시작
 sap daemon start
 
-# 데몬 상태 확인
+# 데몬 상태 확인 (미기동 시 원인 진단 포함)
 sap daemon status
+
+# 실행 환경 전체 진단 (인터프리터/venv, sap_cli·pywin32·mcp import, 로그 tail)
+sap daemon doctor
+
+# 종료 후 재기동
+sap daemon restart
 
 # 데몬 정지
 sap daemon stop
 ```
+
+데몬이 안 뜨거나 명령이 계속 실패하면 `sap daemon doctor`(MCP에서는
+`sap_daemon_status` 도구)를 먼저 실행하세요. 어떤 Python 인터프리터/가상환경으로
+도는지, `sap_cli`·`pywin32`·`mcp`를 import 할 수 있는지, 기동 실패 시
+`~/.sap_cli/daemon.log`의 마지막 에러를 한 번에 보여줍니다. 흔한 원인은 데몬이
+`sap_cli`가 설치되지 않은 다른 가상환경으로 스폰되는 경우입니다. 콜드 스타트가
+느린 환경은 `SAP_CLI_DAEMON_START_TIMEOUT`(기본 20초)으로 기동 대기 예산을
+조정합니다.
 
 MCP 서버가 데몬 모드를 사용하도록 설정:
 
