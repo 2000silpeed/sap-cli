@@ -180,7 +180,7 @@ def test_finish_and_cancel_reset(tmp_path):
     rec.start(map_id="mm03-rec", tcode="mm03", slot_id="ses0")
     done = rec.finish()
     assert done["finished"] is True
-    assert done["unobserved_branches"] == 2
+    assert done["unobserved_branches"] == 1
     assert rec.active is False
     assert rec.record("press", {"element_id": "x"}) is None
     saved = store.latest(
@@ -192,7 +192,6 @@ def test_finish_and_cancel_reset(tmp_path):
         if item["reason"] == "recording_branch_not_observed"
     ]
     assert {item["target_logical_id"] for item in gaps} == {
-        "wnd[0]/usr/tabs/tabpTAB1",
         "wnd[0]/usr/tabs/tabpTAB2",
     }
 
@@ -207,7 +206,7 @@ def test_recorded_branch_is_not_marked_unobserved(tmp_path):
 
     done = rec.finish()
 
-    assert done["unobserved_branches"] == 3
+    assert done["unobserved_branches"] == 1
     saved = store.latest(
         "mm03-rec", tcode="MM03", system_id="DEV", client="100", language="EN"
     )

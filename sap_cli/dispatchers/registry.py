@@ -87,6 +87,12 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "plan_preview": CommandDef(
         "sap_plan_preview", Permission.READ, category="planning", risk_level="low"
     ),
+    "plan_context": CommandDef(
+        "sap_plan_context", Permission.READ, category="planning", risk_level="low"
+    ),
+    "plan_compile": CommandDef(
+        "sap_plan_compile", Permission.READ, category="planning", risk_level="low"
+    ),
     "plan_approve": CommandDef(
         "sap_plan_approve", Permission.ADMIN, category="planning", risk_level="high"
     ),

@@ -818,6 +818,53 @@ def plan_preview(
     )
 
 
+@app.command("plan-context")
+def plan_context(
+    request: str = typer.Argument(help="SAP에서 수행할 자연어 요청"),
+    tcode: str = typer.Option(..., "--tcode"),
+    map_id: str = typer.Option("", "--map-id"),
+    system_id: str = typer.Option("", "--system"),
+    client: str = typer.Option("", "--client"),
+    language: str = typer.Option("", "--language"),
+) -> None:
+    """LLM 계획 작성을 위한 값 없는 지도 문맥을 반환."""
+    _run_command(
+        "plan_context",
+        {
+            "request": request, "tcode": tcode, "map_id": map_id,
+            "system_id": system_id, "client": client, "language": language,
+        },
+        allow_daemon=True,
+    )
+
+
+@app.command("plan-compile")
+def plan_compile(
+    request: str = typer.Argument(help="SAP에서 수행할 자연어 요청"),
+    draft_json: str = typer.Argument(help="LLM이 작성한 PlanDraft JSON"),
+    tcode: str = typer.Option(..., "--tcode"),
+    map_id: str = typer.Option("", "--map-id"),
+    current_state_id: str = typer.Option("", "--current-state"),
+    values_json: str = typer.Option("{}", "--values-json"),
+) -> None:
+    """LLM PlanDraft를 검증해 immutable 실행 계획으로 컴파일."""
+    try:
+        draft = json.loads(_json_arg(draft_json, label="draft_json"))
+        values = json.loads(_json_arg(values_json, label="--values-json"))
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter("draft_json and --values-json must be JSON objects") from exc
+    if not isinstance(draft, dict) or not isinstance(values, dict):
+        raise typer.BadParameter("draft_json and --values-json must be JSON objects")
+    _run_command(
+        "plan_compile",
+        {
+            "request": request, "tcode": tcode, "map_id": map_id,
+            "current_state_id": current_state_id, "draft": draft, "values": values,
+        },
+        allow_daemon=True,
+    )
+
+
 @app.command("plan-execute")
 def plan_execute(
     plan_id: str = typer.Argument("", help="미리보기 plan_ref의 plan_id"),

@@ -335,6 +335,48 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         }, "required": ["job_id"]},
     },
     {
+        "name": "sap_plan_context",
+        "description": (
+            "LLM이 SAP 계획을 직접 작성하도록 자연어 요청과 관련된 값 없는 UI 지도 구조를 "
+            "반환합니다. 호출 LLM은 states/transitions/gaps의 의미를 판단해 draft_schema에 "
+            "맞는 PlanDraft를 만들고 sap_plan_compile로 검증해야 합니다. 미관측 목적지는 "
+            "추측하지 않습니다. interactions가 있으면 llm_guidance에 따라 자연스러운 사용자 "
+            "질문으로 바꾸고 답변 전에는 continuation을 호출하지 않습니다."
+        ),
+        "inputSchema": {"type": "object", "properties": {
+            "request": {"type": "string"}, "tcode": {"type": "string"},
+            "map_id": {"type": "string"}, "system_id": {"type": "string"},
+            "client": {"type": "string"}, "language": {"type": "string"}
+        }, "required": ["request", "tcode"]},
+    },
+    {
+        "name": "sap_plan_compile",
+        "description": (
+            "호출 LLM이 sap_plan_context를 읽고 작성한 PlanDraft를 결정론적으로 검증해 "
+            "immutable 실행 계획으로 컴파일합니다. draft의 목표와 transition 경로는 저장된 "
+            "지도에 실제 존재해야 합니다. interactions가 반환되면 원시 JSON을 보여주지 말고 "
+            "자연어로 질문한 뒤 사용자 답변을 기다립니다."
+        ),
+        "inputSchema": {"type": "object", "properties": {
+            "request": {"type": "string"}, "tcode": {"type": "string"},
+            "map_id": {"type": "string"}, "system_id": {"type": "string"},
+            "client": {"type": "string"}, "current_state_id": {"type": "string"},
+            "draft": {
+                "type": "object",
+                "properties": {
+                    "goal_query": {"type": "string"},
+                    "route_transition_ids": {
+                        "type": "array", "items": {"type": "string"}
+                    },
+                    "reasoning_summary": {"type": "string"}
+                },
+                "required": ["goal_query", "route_transition_ids"]
+            },
+            "values": {"type": "object"},
+            "success_criteria": {"type": "array", "items": {"type": "string"}}
+        }, "required": ["request", "tcode", "draft"]},
+    },
+    {
         "name": "sap_plan_preview",
         "description": (
             "자연어 SAP 요청을 저장된 UI 지도만 사용해 전체 명령·guard·예상 전이·위험·"
@@ -1816,6 +1858,8 @@ COMPACT_TOOL_NAMES = frozenset(
         "sap_map_traverse_resume",
         "sap_ontology_query",
         "sap_plan_preview",
+        "sap_plan_context",
+        "sap_plan_compile",
         "sap_plan_approve",
         "sap_plan_execute",
         "sap_job_status",
@@ -2007,6 +2051,7 @@ def handle_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
 
         if command in {
             "plan_preview",
+            "plan_compile",
             "plan_approve",
             "plan_execute",
             "job_status",

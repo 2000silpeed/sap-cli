@@ -65,6 +65,8 @@ TOOL_PERMISSION_MAP: dict[str, Permission] = {
     "sap_map_traverse_start": Permission.EXECUTE,
     "sap_map_traverse_resume": Permission.EXECUTE,
     "sap_plan_preview": Permission.READ,
+    "sap_plan_context": Permission.READ,
+    "sap_plan_compile": Permission.READ,
     "sap_plan_approve": Permission.ADMIN,
     "sap_plan_execute": Permission.WRITE,
     "sap_job_status": Permission.READ,

@@ -55,6 +55,66 @@ def store_with_map(tmp_path):
     return store
 
 
+def test_plan_context_returns_value_free_llm_authoring_contract(tmp_path):
+    result = dispatch_planning_command(
+        "plan_context",
+        {
+            "request": "MM03 기본 데이터 조회",
+            "tcode": "MM03",
+            "map_id": "map",
+        },
+        get_map_store=lambda: store_with_map(tmp_path),
+    )
+
+    assert result["author"] == "calling_llm"
+    assert result["draft_schema"]["goal_query"]
+    assert result["context"]["states"][0]["state_id"] == "start"
+    assert result["context"]["transitions"] == []
+    assert result["interactions"] == []
+
+
+def test_plan_compile_validates_llm_draft_and_returns_interaction(tmp_path):
+    result = dispatch_planning_command(
+        "plan_compile",
+        {
+            "request": "tcode MM03 기본 데이터 조회",
+            "tcode": "MM03",
+            "map_id": "map",
+            "draft": {
+                "goal_query": "description",
+                "route_transition_ids": [],
+                "reasoning_summary": "기본 데이터 출력 필드",
+            },
+            "values": {"material": "MAT-1"},
+        },
+        get_map_store=lambda: store_with_map(tmp_path),
+        get_recipe_store=lambda: type(
+            "Recipes", (), {"query_for_ai": lambda *a, **k: []}
+        )(),
+    )
+
+    assert result["validation"]["valid"] is True
+    assert result["plan"]["goal_component_id"] == "description"
+
+
+def test_plan_question_has_blocking_llm_conversation_contract(tmp_path):
+    result = dispatch_planning_command(
+        "plan_preview",
+        {"request": "tcode SU01 조회 password='TOP-SECRET'"},
+        get_map_store=lambda: UiMapStore(tmp_path),
+        get_recipe_store=lambda: type(
+            "Recipes", (), {"query_for_ai": lambda *a, **k: []}
+        )(),
+    )
+
+    interaction = result["interactions"][0]
+    assert interaction["blocking"] is True
+    assert interaction["audience"] == "user"
+    assert interaction["continuation"]["tool"] == "sap_plan_compile"
+    assert "답변을 받기 전" in " ".join(interaction["llm_guidance"])
+    assert "TOP-SECRET" not in str(interaction)
+
+
 def test_plan_preview_dispatcher_returns_redacted_hashed_plan(tmp_path):
     store = store_with_map(tmp_path)
     result = dispatch_planning_command(

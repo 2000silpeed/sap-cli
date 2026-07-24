@@ -8,10 +8,25 @@ description: >-
   사용한다. 지도 제작은 sap-map-build, 실제 실행은 sap-plan-run 스킬이 담당한다.
 ---
 
-# SAP 실행 계획 작성 (CLI 전용)
+# SAP 실행 계획 작성
 
-`sap plan-preview` 하나만 쓴다. 이 명령은 **SAP를 전혀 조작하지 않는다.** 저장된
-UI 지도와 레시피를 읽어 step, 변수, 필요한 승인, 지도 버전/fingerprint를
+## 기본 원칙 — LLM이 작성하고 엔진이 검증
+
+새 계획은 `sap_plan_context`로 값 없는 지도 구조를 읽고, LLM이 화면 의미와 사용자
+의도를 판단해 `goal_query`와 `route_transition_ids`를 포함한 PlanDraft를 작성한 뒤
+`sap_plan_compile`로 검증한다. compiler는 의미를 추측하지 않고 저장된 지도 참조,
+경로, 권한, 위험, 버전과 fingerprint를 검증한다.
+
+기존 `sap plan-preview`는 CLI와 이전 클라이언트 호환용이다.
+
+응답의 `interactions[]`는 대화 실행 계약이다. `blocking=true`이면 `prompt`와
+`choices`를 현재 업무 문맥에 맞는 자연스러운 질문으로 바꾸고 사용자 답변을 기다린다.
+답변 전에는 `continuation.tool`을 호출하지 않는다. 원시 JSON과 내부 ID는 꼭 필요한
+경우가 아니면 노출하지 않으며, 불명확한 답변을 임의의 선택지로 추측하지 않는다.
+
+계획 작성에는 `sap_plan_context`와 `sap_plan_compile`을 사용한다. CLI 호환 흐름에서는
+`sap plan-preview`를 사용할 수 있다. 이 도구들은 **SAP를 전혀 조작하지 않는다.**
+저장된 UI 지도와 레시피를 읽어 step, 변수, 필요한 승인, 지도 버전/fingerprint를
 확정하고 검증 결과를 돌려준다.
 
 이 스킬은 계획을 **만들고 설명하는 데서 끝난다.** 실행은 절대 하지 않는다.

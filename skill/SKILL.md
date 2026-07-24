@@ -275,6 +275,8 @@ GuiTableControl이다.
 | 도구 | 용도 | 핵심 파라미터 |
 |------|------|--------------|
 | `sap_plan_preview` | 자연어 요청을 실행 전 전체 계획으로 컴파일 | `request`, `tcode`, `map_id`, `goal_query`, `values` |
+| `sap_plan_context` | LLM 계획 작성을 위한 값 없는 지도 구조·전이·gap 조회 | `request`, `tcode`, `map_id` |
+| `sap_plan_compile` | LLM PlanDraft를 검증해 실행 계획으로 고정 | `request`, `tcode`, `map_id`, `draft`, `values` |
 | `sap_plan_approve` | 위험 step에 일회용 승인 토큰 발급 | `plan_id`, `plan_hash`, `subject_agent`, `step_ids` |
 | `sap_plan_execute` | 확정 계획을 한 번에 실행 | `plan_ref`, `verify_mode`, `approval_token`, `execution_id` |
 | `sap_job_status` | 계획 실행·지도 순회 공통 작업 상태 | `job_id` |
@@ -539,6 +541,11 @@ overlay가 로드된 것이다. `false`면 `graph.generated.json`이 없거나 �
   `goal_semantic_inference_required`이면 자연어 목표와 각 후보의 화면 문맥을 LLM이
   의미적으로 비교한다. 관련 후보가 하나면 그 `augment_args`로 필요한 분기만 보강하고
   같은 계획을 다시 미리본다. 후보가 없거나 비슷한 후보가 여러 개일 때만 사용자에게 묻는다.
+- 새 계획의 기본 흐름은 `sap_plan_context` → LLM의 PlanDraft 작성 →
+  `sap_plan_compile`이다. LLM이 요청과 `states`, `transitions`, `gaps`의 의미를
+  판단하고, compiler는 지도 참조·경로·권한·위험·fingerprint만 검증한다.
+- 응답에 `interactions`가 있으면 `blocking=true` 항목을 자연스러운 사용자 질문으로
+  바꾼다. 답변 전에는 `continuation` 도구를 호출하지 않고, 불명확한 답변은 추측하지 않는다.
 - 유효한 미리보기에는 `activation`이 따라온다. 사용자가 확인한 뒤
   `activation.arguments`를 그대로 `sap_plan_execute`에 넘긴다. ID나 hash를 사람이
   다시 조립하지 않는다.

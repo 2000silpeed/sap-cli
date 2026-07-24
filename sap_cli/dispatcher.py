@@ -1027,7 +1027,7 @@ def _dispatch_sensitive_values(
         values.update(_sensitive_replay_values(args.get("variables")))
     elif command == "macro_play":
         values.update(_sensitive_replay_values(args.get("variables")))
-    elif command == "plan_preview":
+    elif command in {"plan_preview", "plan_compile"}:
         values.update(_sensitive_plan_values(args))
     elif command == "plan_execute":
         token = str(args.get("approval_token", "") or "")

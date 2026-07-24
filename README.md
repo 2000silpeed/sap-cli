@@ -804,6 +804,25 @@ sap map-report mm03-readonly MM03
 승인, 지도 버전/fingerprint를 확정합니다. `validation.valid`가 `true`이고
 `plan_ref`가 있어야 실행할 수 있습니다.
 
+MCP AI의 기본 경로는 LLM-first 방식입니다. 먼저 `sap_plan_context`로 값 없는
+`states`, `transitions`, `gaps`를 읽고 LLM이 PlanDraft를 작성한 다음
+`sap_plan_compile`로 검증합니다. compiler는 목표 의미를 추측하지 않고 선택한 목표와
+경로가 지도에 실제 존재하는지, 권한·위험·버전·fingerprint가 유효한지만 확인합니다.
+
+```powershell
+sap plan-context "MM03에서 기본 데이터를 조회해줘" `
+  --tcode MM03 --map-id mm03-readonly
+
+sap plan-compile "MM03에서 기본 데이터를 조회해줘" `
+  '{"goal_query":"<logical-id>","route_transition_ids":["<transition-id>"]}' `
+  --tcode MM03 --map-id mm03-readonly `
+  --values-json '{"material":"TEST_MATNR"}'
+```
+
+계획 응답의 `interactions[]`는 공통 대화 계약입니다. `blocking=true`이면 AI가
+`prompt`와 `choices`를 자연스러운 질문으로 바꾸고 사용자 답변을 기다려야 합니다.
+답변 전에는 `continuation` 도구를 호출하지 않으며, 불명확한 답변은 추측하지 않습니다.
+
 ```powershell
 $preview = sap plan-preview "MM03에서 자재 기본 데이터를 조회해줘" --tcode MM03 --map-id mm03-readonly --goal "기본 데이터" --values-json '{"material":"TEST_MATNR"}' | ConvertFrom-Json
 $preview.validation
