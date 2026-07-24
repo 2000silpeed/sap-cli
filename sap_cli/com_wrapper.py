@@ -864,6 +864,17 @@ class SapGuiWrapper:
         API call without needing a bespoke command for every component.
         """
         normalized = normalize_action(action)
+        # Enter is a keyboard command, not a SAP GUI element action. LLMs
+        # often route natural-language "확인/엔터" through sap_ui_action, so
+        # handle it before requiring an element_id or component capability.
+        if normalized in {"enter", "send_enter"}:
+            self.send_vkey(0)
+            return {
+                "entered": True,
+                "vkey": 0,
+                "requested_action": action,
+                "action": "enter",
+            }
         element = self.session.FindById(element_id)
         component_type = str(self._safe_attr(element, "Type", "Unknown"))
         subtype = str(self._safe_attr(element, "SubType", ""))

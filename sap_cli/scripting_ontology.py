@@ -158,6 +158,10 @@ COMPONENT_CAPABILITIES: dict[str, dict[str, Any]] = {
 
 
 ACTION_ALIASES: dict[str, str] = {
+    "send-enter": "enter",
+    "send_enter": "enter",
+    "confirm": "enter",
+    "ok": "enter",
     "input": "set",
     "write": "set",
     "choose": "select",

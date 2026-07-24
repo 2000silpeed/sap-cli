@@ -68,6 +68,7 @@ MCP를 쓰지 않고 `sap` CLI만으로 지도·계획·실행을 다룰 때는 
 3. **에러 즉시 중단**: 상태바 type이 "E"면 사용자에게 보고하고 진행을 멈춘다
 4. **필드 ID 동적 확인**: 필드 ID를 모르면 `sap_screen(fields_only=true)`로 확인한다
 5. **전용 기능 없으면 Scripting API 그래프 사용**: 전용 도구가 없거나 조작법이 애매하면 `sap_scripting_query`로 공식 API 그래프 subgraph를 조회하고, `sap_inspect_element`로 live Type/SubType/capability를 확인한 뒤 `sap_ui_action`으로 실행한다
+6. **엔터/확인은 키보드 액션으로 처리**: 사용자가 “엔터”, “확인”, “다음 화면으로”라고 하면 우선 `sap_send_vkey(vkey=0)`을 사용한다. `sap_ui_action(action="enter")`도 VKey 0으로 처리되지만 element_id는 요구하지 않는다.
 6. **온톨로지 선행 조회**: 트랜잭션 구조를 모르면 `sap_ontology_query`로 먼저 조회한다
 7. **화면 전환 후 재확인**: 버튼/VKey 실행 후 모든 UI 요소 참조가 무효화되므로, 반드시 `sap_screen`으로 새 화면을 다시 읽는다
 8. **재시도 전 transcript 검토**: 직전 실패/경고/승인요청이 있으면 `sap_transcript_query`와 `sap_transcript_plan`으로 먼저 검토한다
