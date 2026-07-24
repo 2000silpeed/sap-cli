@@ -5,6 +5,13 @@ description: SAP CLI 실제 사용법 스킬. sap connect/run/screen/set/fill/vk
 
 # SAP CLI Usage
 
+## 셸 선택 규칙
+
+Windows에서는 모든 설치·진단·CLI 명령을 PowerShell로 실행한다. `bash`, `source`,
+Unix 경로, `&&`, `mkdir -p`, `cp`를 사용하지 않는다. macOS/Linux일 때만 bash 문법을
+사용한다. 사용자가 PowerShell 전환을 요청하면 이후 명령 블록 전체를 PowerShell로
+작성한다.
+
 이 스킬은 `sap` CLI와 MCP `sap_*` 도구로 SAP GUI를 실제 조작하는 방법을 제공한다.
 이슈 해결/재설치/커밋이 아니라 **운영 사용법**에 집중한다.
 
@@ -193,9 +200,9 @@ sap recipe-query --keywords "shipping point 설정"
 응답의 `retrieval.match_reasons`, `retrieval.matched_snippets`,
 `relevance_score`, `quality_score`를 같이 보고 가장 맞는 recipe를 선택한다.
 
-## CLI/bash 실행을 레시피로 기록
+## CLI 실행을 레시피로 기록
 
-bash에서 직접 실행한 `sap ...` 명령을 재사용 가능한 recipe 후보로 남기려면
+현재 셸에서 직접 실행한 `sap ...` 명령을 재사용 가능한 recipe 후보로 남기려면
 작업 시작 전에 CLI 세션을 연다. 이후 실행되는 `sap` CLI 명령은 active session에
 자동 기록되며, 각 step에는 재실행용 원문 `cli_invocation`과 `raw_argv`가 함께 저장된다.
 
@@ -235,7 +242,7 @@ sap session-excel "MATNR 목록 붙여넣기" --action paste --workbook input.xl
 ```
 
 운영 규칙:
-- recipe로 남길 작업은 `sap session-start` → 실제 `sap ...` bash 명령들 → `sap session-end` 순서로 수행한다.
+- recipe로 남길 작업은 `sap session-start` → 실제 현재 셸의 `sap ...` 명령들 → `sap session-end` 순서로 수행한다.
 - SAP 외부 단계는 `sap session-mark`로 남겨 `step_kind`, `followable`, `requires_sap`를 명확히 표시한다.
 - Excel 단계는 `sap session-excel`로 남기면 `step_kind=excel`, `requires_sap=false`가 자동 지정된다.
 - `sap session-end` 응답의 `recipe_suggestion`이 나오면 `sap session-approve <session_id>`로 recipe 저장을 승인한다.

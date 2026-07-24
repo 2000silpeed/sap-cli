@@ -33,6 +33,18 @@ triggers:
 
 # SAP GUI 자동화 Skill
 
+## 셸 선택 규칙 (필수)
+
+먼저 실행 환경의 OS와 셸을 확인한다. Windows 사용자는 **PowerShell만 사용**하며,
+`bash`, `sh`, `source .venv/bin/activate`, Unix 경로, `&&`, `mkdir -p`, `cp` 명령을
+제시하거나 실행하지 않는다. Windows에서는 `.venv\Scripts\Activate.ps1`, `;`,
+`New-Item`, `Copy-Item`, `$env:NAME = "value"` 문법을 사용한다. macOS/Linux일 때만
+bash 예시를 사용한다.
+
+Windows에서 셸이 확실하지 않으면 먼저 `sap daemon doctor`의 `platform`을 확인하고,
+PowerShell 명령 블록으로 답한다. 사용자가 PowerShell 전환을 요청하면 이후 해당
+요청의 모든 터미널 명령을 PowerShell로만 생성한다.
+
 SAP GUI MCP 도구를 사용하여 SAP 트랜잭션을 실행하고, 화면을 탐색하며, 반복 작업을 매크로로 자동화하는 가이드.
 
 ## 관련 스킬 (MCP 없이 CLI만 쓸 때)
@@ -100,10 +112,11 @@ sap connect
 `doctor`에서 `platform`이 `Windows`, `pywin32`가 import 가능하고,
 `python_executable`이 프로젝트 `.venv\Scripts\python.exe`인지 확인한다.
 
-## CLI/bash 실행 기록 원칙
+## CLI 실행 기록 원칙
 
-Codex/Claude가 터미널을 사용할 수 있으면 `sap` CLI 예시는 실제 bash/PowerShell
-명령으로 실행한다. 레시피 후보로 남길 작업은 다음 순서를 지킨다.
+Codex/Claude가 터미널을 사용할 수 있으면 현재 셸에 맞는 실제 `sap` CLI 명령으로
+실행한다. Windows에서는 PowerShell 명령만 사용한다. 레시피 후보로 남길 작업은
+다음 순서를 지킨다.
 
 ```powershell
 sap session-start "작업 목표"

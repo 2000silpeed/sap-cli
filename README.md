@@ -87,6 +87,11 @@ Windows에서 PowerShell이 `Activate.ps1` 실행을 차단하면 현재 사용�
 자동화와 COM 연결은 SAP GUI for Windows가 실행 중인 동일한 Windows 사용자 세션에서
 수행해야 합니다.
 
+Windows에서 Claude/Codex가 명령을 실행할 때는 PowerShell 문법을 사용해야 합니다.
+`bash`, `source`, Unix 경로, `&&`, `mkdir -p`, `cp` 명령은 사용하지 말고
+`.venv\Scripts\Activate.ps1`, `New-Item`, `Copy-Item`, `$env:NAME = "value"`를
+사용하세요.
+
 ---
 
 ## 3. SAP GUI 스크립팅 활성화

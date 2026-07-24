@@ -123,6 +123,9 @@ sap map-traverse-resume <job-id> '@answer.json'
 
 ## 0단계 — 프로젝트 폴더 + 가상환경, daemon과 SAP 세션 준비
 
+Windows에서는 이 문서의 모든 명령을 PowerShell로 실행한다. bash/source/Unix 경로를
+사용하지 말고 `.venv\Scripts\Activate.ps1` 또는 `.venv\Scripts\sap.exe`를 사용한다.
+
 `sap` CLI는 프로젝트의 가상환경에 editable 설치돼 있다. **먼저 sap_cli 프로젝트
 폴더로 이동해 `.venv`를 활성화한 뒤** 모든 `sap` 명령을 실행한다. 활성화하지
 않으면 `sap`이 PATH에 없거나 다른 설치본을 쓸 수 있다.
