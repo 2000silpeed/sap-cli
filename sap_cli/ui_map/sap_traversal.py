@@ -72,6 +72,9 @@ class SapTraversalAdapter:
         """Yield only typed actions whose inverse is known before execution."""
 
         components = {item.logical_id: item for item in state.components}
+        runtime_input = self._runtime_input_gap(state)
+        if runtime_input is not None:
+            yield runtime_input
         yield from self._tab_candidates(state, components)
         yield from self._scroll_candidates(state, components)
         yield from self._tree_candidates(state, components)
@@ -287,10 +290,99 @@ class SapTraversalAdapter:
         return True
 
     def apply_user_input(self, item: UserInputRequest, answer: Any) -> bool:
-        """Acknowledge an answer without ever writing it into a COM component."""
+        """Apply ephemeral runtime inputs without persisting business values."""
 
-        del item
+        if item.reason == "runtime_input_required":
+            if not isinstance(answer, dict) or not isinstance(item.scope, dict):
+                return False
+            fields = item.scope.get("runtime_fields") or []
+            try:
+                for field in fields:
+                    key = str(field.get("answer_key", ""))
+                    if key not in answer:
+                        continue
+                    control = self._find(str(field.get("sap_id", "")))
+                    value = str(answer[key])
+                    if str(field.get("component_type", "")) == "GuiComboBox":
+                        try:
+                            control.Key = value
+                        except Exception:
+                            control.Text = value
+                    else:
+                        control.Text = value
+                window = self._find("wnd[0]")
+                window.SendVKey(0)
+                return True
+            except Exception:
+                return False
         return answer is not None
+
+    def _runtime_input_gap(self, state: UiState) -> TraversalCandidate | None:
+        """Ask for one required/focused input and keep its value memory-only."""
+
+        input_types = {"GuiTextField", "GuiCTextField", "GuiComboBox"}
+        candidates = [
+            item
+            for item in state.components
+            if item.type in input_types
+            and item.changeable is True
+            and item.visible is not False
+            and item.enabled is not False
+            and not item.sensitive
+        ]
+        if not candidates:
+            return None
+        required = [item for item in candidates if item.required is True]
+        focused = [item for item in candidates if item.logical_id == state.focused_component]
+        selected = (required or focused or candidates)[:1]
+        fields: list[dict[str, Any]] = []
+        required_fields: list[dict[str, Any]] = []
+        labels: list[str] = []
+        for index, component in enumerate(selected, 1):
+            answer_key = f"input_{index}"
+            label = component.tooltip or component.name or component.logical_id
+            labels.append(label)
+            fields.append({
+                "answer_key": answer_key,
+                "sap_id": component.sap_id,
+                "logical_id": component.logical_id,
+                "component_type": component.type,
+                "label": label,
+            })
+            required_fields.append({"name": answer_key, "label": label})
+        identity = json.dumps(
+            [state.state_id, [field["logical_id"] for field in fields]],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        request = UserInputRequest(
+            question=(
+                "다음 화면으로 이동하려면 입력값이 필요합니다. "
+                + ", ".join(labels)
+                + " 값을 입력해 주세요. 값은 지도나 job 파일에 저장되지 않습니다."
+            ),
+            reason="runtime_input_required",
+            current_state_id=state.state_id,
+            required_fields=required_fields,
+            risk="low",
+            resume_token="runtime-input-"
+            + hashlib.sha256(identity.encode()).hexdigest()[:24],
+            scope={"runtime_fields": fields, "submit_vkey": 0},
+            provenance={
+                "source": "runtime_input_required",
+                "answer_value_stored": False,
+                "requires_distinct_screen": True,
+            },
+        )
+        return TraversalCandidate(
+            action="runtime_input",
+            target_logical_id=selected[0].logical_id,
+            target_locator={"sap_id": selected[0].sap_id},
+            side_effect=SideEffectClass.REVERSIBLE,
+            reversible=False,
+            idempotent=False,
+            needs_user_input=request,
+        )
 
     def _tab_candidates(
         self, state: UiState, components: dict[str, UiComponent]

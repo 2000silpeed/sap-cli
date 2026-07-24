@@ -101,6 +101,7 @@ sap map-traverse-resume <job-id> '@answer.json'
 | reason | 누가 고르나 | 행동 |
 |---|---|---|
 | `guided_candidate_selection` | **사용자** | choices의 `label`/`action`을 사람이 읽을 형태로 보여주고 **하나** 고르게 한다. 절대 임의 선택 금지 (절대 규칙 4) |
+| `runtime_input_required` | **사용자** | 필수 입력 필드의 테스트 값을 묻는다. 답변은 메모리에서만 SAP에 입력하고 지도/job 파일에는 저장하지 않는다 |
 | `map_coverage_incomplete` | **사용자** | 어떤 화면이 빠졌는지 보여주고, 직접 이동 후 보강할지 확인 |
 | `semantic_review` | 에이전트 | 구조적 의미 연결 후보다. 값이 없으므로 에이전트가 `accepted_candidate_ids`로 확정 가능. 애매하면 비우고 넘어간다 |
 

@@ -152,6 +152,49 @@ def candidates_by_action(adapter: SapTraversalAdapter, state: UiState):
     return candidates, {candidate.action: candidate for candidate in candidates}
 
 
+def test_required_input_emits_memory_only_question_and_applies_enter() -> None:
+    class Input:
+        Text = ""
+
+    class Window:
+        def __init__(self) -> None:
+            self.vkeys: list[int] = []
+
+        def SendVKey(self, key: int) -> None:
+            self.vkeys.append(key)
+
+    field = Input()
+    window = Window()
+    adapter = SapTraversalAdapter(Session({"field": field, "wnd[0]": window}))
+    state = UiState(
+        tcode="MM03",
+        components=[
+            UiComponent(
+                logical_id="material",
+                sap_id="field",
+                type="GuiCTextField",
+                name="MATNR",
+                visible=True,
+                enabled=True,
+                changeable=True,
+                required=True,
+            )
+        ],
+    ).ensure_state_id()
+
+    request = next(
+        item.needs_user_input
+        for item in adapter.discover(state)
+        if item.action == "runtime_input"
+    )
+    assert request is not None
+    assert request.reason == "runtime_input_required"
+    assert request.provenance["answer_value_stored"] is False
+    assert adapter.apply_user_input(request, {"input_1": "TEST_MATNR"}) is True
+    assert field.Text == "TEST_MATNR"
+    assert window.vkeys == [0]
+
+
 def test_discover_emits_safe_actions_and_one_consolidated_manual_gap() -> None:
     adapter, state, _, _, _ = make_fixture()
 
