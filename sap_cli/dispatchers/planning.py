@@ -864,13 +864,60 @@ def _dispatch_plan_execute(
             ledger.update(
                 coordinator_id, status="failed", error_code=error_code
             )
-        return {
+        payload = {
             "execution_id": execution_id,
             "status": failed.status,
             "error_code": failed.error_code,
             "replayed": False,
             "result": failed.result,
         }
+        if any(
+            "input_value_conflict" in str(error)
+            for error in execution_result.errors
+        ):
+            payload["interactions"] = [
+                {
+                    "interaction_id": "interaction-" + hashlib.sha256(
+                        f"{execution_id}:input-value-conflict".encode()
+                    ).hexdigest()[:16],
+                    "type": "choice",
+                    "audience": "user",
+                    "blocking": True,
+                    "code": "input_value_conflict",
+                    "prompt": (
+                        "SAP 입력 필드에 계획과 다른 값이 이미 있습니다. "
+                        "기존 값을 유지해 새 계획을 만들까요, 작업을 취소할까요?"
+                    ),
+                    "choices": [
+                        {
+                            "id": "replan",
+                            "label": "기존 값으로 재계획",
+                            "description": "현재 SAP 값을 덮어쓰지 않고 계획을 다시 작성합니다.",
+                        },
+                        {
+                            "id": "cancel",
+                            "label": "취소",
+                            "description": "SAP 값을 변경하지 않고 종료합니다.",
+                        },
+                    ],
+                    "continuation": {
+                        "tool": "sap_plan_context",
+                        "choice_argument_mapping": {
+                            "replan": {
+                                "request": plan.original_request,
+                                "tcode": plan.tcode,
+                                "map_id": plan.map_id,
+                            },
+                            "cancel": None,
+                        },
+                    },
+                    "llm_guidance": [
+                        "기존 값이나 계획 값을 응답에 노출하지 않고 충돌 사실만 자연어로 설명합니다.",
+                        "사용자 답변 전에 필드를 지우거나 덮어쓰거나 후속 도구를 호출하지 않습니다.",
+                    ],
+                }
+            ]
+        return payload
     completed = runtime.complete_execution(
         execution_id,
         result,

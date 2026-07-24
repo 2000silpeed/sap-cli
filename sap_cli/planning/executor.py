@@ -268,10 +268,46 @@ class PlanExecutor:
                 screen_count,
             )
 
+        skip_initial_run = False
+        first_step = plan.steps[0] if plan.steps else None
+        if (
+            first_step is not None
+            and first_step.command == "run"
+            and _is_structural_fingerprint(first_step.expected_to_fingerprint)
+        ):
+            start_state = ui_map.states.get(plan.start_state_id)
+            already_at_start = not _observed_state_error(
+                initial, start_state, "initial"
+            )
+            if already_at_start:
+                already_at_start = not self._targeted_state_error(
+                    sap,
+                    start_state,
+                    expected_fingerprint=first_step.expected_to_fingerprint,
+                )
+            skip_initial_run = already_at_start
+
         batches = _execution_batches(plan.steps)
         last_probed_step_id = ""
         final_probe: dict[str, Any] = {}
         for batch in batches:
+            if (
+                skip_initial_run
+                and len(batch) == 1
+                and batch[0].step_id == first_step.step_id
+            ):
+                traces.append(
+                    StepTrace(
+                        step_id=first_step.step_id,
+                        order=first_step.order,
+                        command=first_step.command,
+                        status="success",
+                        attempts=0,
+                        params=_redact(raw_params[first_step.step_id], secrets),
+                        result={"reused_current_transaction": True},
+                    )
+                )
+                continue
             if len(batch) > 1 and all(step.command == "ui_set" for step in batch):
                 grouped = [(step, raw_params[step.step_id]) for step in batch]
                 try:
@@ -325,6 +361,7 @@ class PlanExecutor:
                 )
                 attempts = 0
                 failure_kind = None
+                failure_detail = ""
                 recovery_trace: dict[str, Any] = {}
                 while attempts < attempt_limit:
                     attempts += 1
@@ -335,6 +372,7 @@ class PlanExecutor:
                         failure_kind = None
                         break
                     except Exception as error:
+                        failure_detail = str(error)
                         failure_kind = classify_execution_error(error)
                         if (
                             failure_kind is RecoveryErrorKind.LOCATOR_DRIFT
@@ -386,7 +424,13 @@ class PlanExecutor:
                     )
                     return self._failed(
                         plan,
-                        [f"step {step.step_id}: action failed"],
+                        [
+                            (
+                                f"step {step.step_id}: input_value_conflict"
+                                if failure_detail.startswith("input_value_conflict:")
+                                else f"step {step.step_id}: action failed"
+                            )
+                        ],
                         traces,
                         {},
                         commit_attempted,
@@ -870,6 +914,8 @@ def _default_execute_action(
     if not command.startswith("ui_"):
         raise ValueError("execution plan contains a non-closed command")
     action = command[3:]
+    if action == "set":
+        return _execute_set_value(_step, params, sap)
     kwargs = {
         key: params[key]
         for key in (
@@ -900,23 +946,56 @@ def _default_execute_set_group(
 
     results: list[Any] = []
     for step, params in grouped:
-        element_id = str(params["element_id"])
-        value = "" if params.get("value") is None else str(params.get("value"))
-        component_type = str(
-            step.target_locator.get("type")
-            or step.target_locator.get("component_type")
-            or ""
-        )
-        if component_type == "GuiCheckBox":
-            sap.set_checkbox(
-                element_id, value.casefold() not in {"", "0", "false", "off", "no"}
-            )
-        elif component_type == "GuiRadioButton":
-            sap.select_radio(element_id)
-        else:
-            sap.set_field(element_id, value)
-        results.append({"field": element_id, "value_set": value})
+        results.append(_execute_set_value(step, params, sap))
     return results
+
+
+def _execute_set_value(step: PlanStep, params: dict[str, Any], sap: Any) -> dict[str, Any]:
+    """Apply one input idempotently and reject silent overwrite conflicts."""
+
+    element_id = str(params["element_id"])
+    value = "" if params.get("value") is None else str(params.get("value"))
+    component_type = str(
+        step.target_locator.get("type")
+        or step.target_locator.get("component_type")
+        or ""
+    )
+    if component_type == "GuiCheckBox":
+        sap.set_checkbox(
+            element_id, value.casefold() not in {"", "0", "false", "off", "no"}
+        )
+    elif component_type == "GuiRadioButton":
+        sap.select_radio(element_id)
+    else:
+        getter = getattr(sap, "get_field", None)
+        if callable(getter):
+            current = _field_value(getter(element_id))
+            if current == value:
+                return {
+                    "field": element_id,
+                    "value_set": value,
+                    "already_set": True,
+                }
+            if current:
+                raise ValueError(f"input_value_conflict:{element_id}")
+        setter = getattr(sap, "set_field", None)
+        if callable(setter):
+            setter(element_id, value)
+        else:
+            sap.perform_ui_action(element_id, "set", value)
+    return {"field": element_id, "value_set": value}
+
+
+def _field_value(value: Any) -> str:
+    """Normalize wrapper/model/dict field reads without exposing the value."""
+
+    dumped = _dump(value)
+    if isinstance(dumped, Mapping):
+        for key in ("value", "text", "result"):
+            if key in dumped:
+                return "" if dumped[key] is None else str(dumped[key])
+        return ""
+    return "" if dumped is None else str(dumped)
 
 
 def _default_targeted_locator_recovery(

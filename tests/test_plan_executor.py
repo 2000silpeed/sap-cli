@@ -651,6 +651,46 @@ def test_same_fingerprint_ui_sets_have_no_intermediate_probe():
     assert probe_calls == [False, False]
 
 
+def test_reuses_current_start_screen_and_accepts_same_prefilled_input():
+    ui_map = _map()
+    sap = _Sap()
+    sap.get_field = lambda _element_id: _Dump({"value": "100"})
+    run_step = PlanStep(
+        step_id="navigate-tcode",
+        order=1,
+        command="run",
+        tool="sap_run",
+        params={"tcode": "VA01"},
+        expected_to_fingerprint=ui_map.states["s1"].compute_fingerprint(),
+        side_effect=SideEffectClass.NAVIGATION,
+        map_id="map-1",
+        map_version=3,
+    )
+    set_step = _step(2)
+
+    result = _executor(ui_map, sap).execute(
+        _plan(ui_map, steps=[run_step, set_step])
+    )
+
+    assert result.status == "success"
+    assert ("run", "VA01") not in sap.actions
+    assert not any(action[0] == "set" for action in sap.actions)
+    assert result.traces[0].result == {"reused_current_transaction": True}
+    assert result.traces[1].result["already_set"] is True
+
+
+def test_different_prefilled_input_is_not_silently_overwritten():
+    ui_map = _map()
+    sap = _Sap()
+    sap.get_field = lambda _element_id: _Dump({"value": "DIFFERENT"})
+
+    result = _executor(ui_map, sap).execute(_plan(ui_map))
+
+    assert result.status == "failed"
+    assert result.errors == ["step step-1: input_value_conflict"]
+    assert not any(action[0] == "set" for action in sap.actions)
+
+
 def test_set_group_uses_saved_component_type_not_fragile_sap_id_substrings():
     from sap_cli.planning.executor import _default_execute_set_group
 

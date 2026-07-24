@@ -823,6 +823,11 @@ sap plan-compile "MM03에서 기본 데이터를 조회해줘" `
 `prompt`와 `choices`를 자연스러운 질문으로 바꾸고 사용자 답변을 기다려야 합니다.
 답변 전에는 `continuation` 도구를 호출하지 않으며, 불명확한 답변은 추측하지 않습니다.
 
+실행 시 SAP가 이미 계획의 시작 화면에 있으면 같은 TCode를 다시 실행하지 않고 현재
+화면을 재사용합니다. 입력 필드에 계획값과 같은 값이 있으면 해당 입력 step은
+idempotent 성공으로 처리합니다. 다른 값이 있으면 자동으로 덮어쓰지 않고
+`input_value_conflict` interaction으로 재계획 또는 취소를 확인합니다.
+
 ```powershell
 $preview = sap plan-preview "MM03에서 자재 기본 데이터를 조회해줘" --tcode MM03 --map-id mm03-readonly --goal "기본 데이터" --values-json '{"material":"TEST_MATNR"}' | ConvertFrom-Json
 $preview.validation

@@ -546,6 +546,9 @@ overlay가 로드된 것이다. `false`면 `graph.generated.json`이 없거나 �
   판단하고, compiler는 지도 참조·경로·권한·위험·fingerprint만 검증한다.
 - 응답에 `interactions`가 있으면 `blocking=true` 항목을 자연스러운 사용자 질문으로
   바꾼다. 답변 전에는 `continuation` 도구를 호출하지 않고, 불명확한 답변은 추측하지 않는다.
+- 실행 시작 화면이 이미 열려 있으면 같은 TCode를 다시 실행하지 않는다. 계획값과 동일한
+  기존 입력은 성공으로 간주하고, 다른 기존 입력은 덮어쓰지 않고
+  `input_value_conflict` interaction으로 사용자에게 재계획 또는 취소를 묻는다.
 - 유효한 미리보기에는 `activation`이 따라온다. 사용자가 확인한 뒤
   `activation.arguments`를 그대로 `sap_plan_execute`에 넘긴다. ID나 hash를 사람이
   다시 조립하지 않는다.
