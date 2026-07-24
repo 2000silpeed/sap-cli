@@ -141,12 +141,15 @@ def dispatch_macro_control(
         }
 
     if command == "undo":
-        removed = recorder.undo_last()
+        removed_steps = recorder.undo(int(args.get("count", 1) or 1))
+        removed = removed_steps[0] if removed_steps else None
         if removed:
             return {
                 "undone": True,
                 "removed_step": removed.step_number,
                 "action": removed.action.value,
+                "removed_count": len(removed_steps),
+                "removed_steps": [step.step_number for step in removed_steps],
                 "remaining_steps": len(recorder.current_steps),
             }
         return {"undone": False, "message": "취소할 단계가 없습니다."}

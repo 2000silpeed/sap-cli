@@ -112,6 +112,17 @@ class MacroRecorder:
         self._save_state()
         return removed
 
+    def undo(self, count: int = 1) -> list[MacroStep]:
+        """Remove the most recent ``count`` recorded steps."""
+        if count < 1:
+            raise ValueError("undo count must be at least 1")
+        removed: list[MacroStep] = []
+        for _ in range(min(count, len(self._steps))):
+            removed.append(self._steps.pop())
+        if removed:
+            self._save_state()
+        return removed
+
     def finish(
         self,
         name: str,

@@ -856,6 +856,9 @@ sap record-status
 # --- Step 4: 실수했으면 마지막 단계 취소 ---
 sap record-undo
 
+# 잘못된 화면으로 나갔다 들어온 경우 최근 경로를 여러 단계 취소
+sap record-undo --count 4
+
 # --- Step 5: 녹화 완료 + 변수 지정 ---
 sap record-finish \
   --name "자재 기본데이터 조회" \

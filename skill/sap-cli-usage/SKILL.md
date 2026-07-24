@@ -121,6 +121,10 @@ sap macro-play <macro_id> --batch .\input\materials.jsonl --out .\output\materia
 누적된다. 필드 ID와 결과 이름은 자연어 요청마다 달라도 되며, 매크로마다 자신의
 output schema로 저장한다.
 
+녹화 중 잘못된 화면으로 이동했다가 되돌아온 경우, 되돌아오기 위해 기록된 단계까지
+함께 제거해야 중복 경로가 남지 않는다. `record-status`로 마지막 정상 단계 번호를
+확인한 뒤 `sap record-undo --count N`으로 여러 단계를 한 번에 취소하고 계속 녹화한다.
+
 사용자가 “엔터”, “Enter를 눌러”, “확인하고 진행해”라고 요청하면 `enter`로 해석하고
 SAP VKey `0`을 전송한다. 매크로 기록에서는 `sap record-step enter enter`를 사용하며,
 재생 시에도 동일하게 Enter로 실행된다. 숫자 VKey가 필요한 경우에만 `vkey`를 사용한다.

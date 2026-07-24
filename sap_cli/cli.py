@@ -2122,9 +2122,9 @@ def record_step(
 
 
 @app.command("record-undo")
-def record_undo() -> None:
-    """마지막 녹화 단계 취소."""
-    _output_json(_dispatch_local("macro_control", {"command": "undo"}))
+def record_undo(count: int = typer.Option(1, "--count", "-n", min=1, help="최근 녹화 단계 수")) -> None:
+    """최근 녹화 단계 취소. 잘못 이동한 경로를 여러 단계 제거한다."""
+    _output_json(_dispatch_local("macro_control", {"command": "undo", "count": count}))
 
 
 @app.command("record-status")
