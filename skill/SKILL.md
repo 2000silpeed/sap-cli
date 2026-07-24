@@ -1,34 +1,10 @@
 ---
 name: sap
-description: SAP GUI 자동화 - MCP 도구로 SAP 트랜잭션 실행, UI 지도 기반 계획·실행, 매크로 녹화/재생, 온톨로지 학습
-triggers:
-  - sap
-  - SAP
-  - 트랜잭션
-  - tcode
-  - 지도
-  - UI map
-  - 실행 계획
-  - plan-preview
-  - 자재
-  - 수주
-  - 구매오더
-  - 판매오더
-  - MM03
-  - MM01
-  - MM02
-  - VA01
-  - VA02
-  - VA03
-  - ME21N
-  - ME22N
-  - MMBE
-  - MD04
-  - VL01N
-  - VF01
-  - FB01
-  - 매크로
-  - 온톨로지
+description: >-
+  SAP GUI 자동화용 MCP 및 CLI 가이드. SAP 트랜잭션/tcode 실행, MM03·MM01·MM02,
+  VA01·VA02·VA03, ME21N·ME22N, MMBE·MD04, VL01N·VF01·FB01 작업, UI 지도,
+  LLM-first 실행 계획, plan-preview, 매크로 녹화·재생, 레시피 검색·저장·재생,
+  온톨로지 학습을 요청할 때 사용한다.
 ---
 
 # SAP GUI 자동화 Skill
@@ -74,6 +50,9 @@ MCP를 쓰지 않고 `sap` CLI만으로 지도·계획·실행을 다룰 때는 
 8. **재시도 전 transcript 검토**: 직전 실패/경고/승인요청이 있으면 `sap_transcript_query`와 `sap_transcript_plan`으로 먼저 검토한다
 9. **온톨로지와 transcript를 같이 본다**: 온톨로지는 일반 구조를, transcript는 직전 실행 사실을 보여주므로 둘 중 하나만 믿지 않는다
 10. **직접 탐색 전 recipe RAG 검색**: 유사 작업은 `sap_recipe_query`로 먼저 검색한다. 검색은 BM25 + semantic overlap + tcode/step_kind boost + 품질점수 기반 hybrid reranking이며, `retrieval.match_reasons`를 보고 선택한다
+11. **레시피 문법을 추측하지 않는다**: 레시피를 검색·저장·버전업·재생할 때는
+    [레시피 문법 및 사용 규약](references/recipe-syntax.md)을 먼저 읽는다.
+    레시피 step은 `{tool,args,hint}`이며 매크로의 `{action,target_id,value}`와 다르다.
 
 ## Daemon 기본 실행
 

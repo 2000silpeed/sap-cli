@@ -196,6 +196,10 @@ sap status
 BM25 lexical search, lightweight semantic overlap, tcode/step_kind boost,
 recipe quality score를 섞어 hybrid reranking한다.
 
+레시피를 저장·버전업·재생하거나 JSON 인자를 작성하기 전에는 반드시
+[레시피 문법 및 사용 규약](../references/recipe-syntax.md)을 읽는다. 레시피 step의
+문법은 `{tool,args,hint}`이며 매크로의 `{action,target_id,value}`를 사용하지 않는다.
+
 ```powershell
 sap recipe-query --tcode MM03 --keywords "엑셀 업로드 자재 조회"
 sap recipe-query --keywords "shipping point 설정"

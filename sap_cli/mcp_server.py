@@ -1265,6 +1265,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "name": "sap_recipe_save",
         "description": (
             "AI 네비게이션 레시피를 저장합니다. SPRO 등 트리 네비게이션에 성공한 후, 성공 경로를 레시피로 저장하면 다음에 같은 요청이 올 때 빠르게 실행할 수 있습니다. "
+            "[문법] steps는 JSON 배열이며 각 step은 반드시 "
+            "{\"tool\":\"sap_...\",\"args\":{...},\"hint\":\"...\"} 형태입니다. "
+            "매크로 문법인 action/target_id/value나 tool_name/arguments/params를 사용하지 "
+            "말고, args를 JSON 문자열로 이중 인코딩하지 마세요. "
             "반드시 성공한 경로만 저장하세요. 시행착오는 제외하고 최종 성공 단계만 포함. "
             "[중요] context 필드에 이 레시피가 정확히 무엇을 하는지 상세히 기록하세요. "
             "같은 영역(예: Shipping Point)에도 여러 레시피가 있을 수 있으므로 구체적 목적, "
