@@ -209,17 +209,24 @@ sap session-excel "업로드 대상 범위 확인" --action check --workbook inp
 | `sap_map_report` | 지도 coverage·복구 계측 | `map_id`, `tcode` |
 | `sap_map_view` | 화면 연결 outline + mermaid 그래프 | `map_id`, `tcode` |
 | `sap_map_delete` | 저장된 지도를 모든 버전째 영구 삭제 | `map_id`, `tcode`, `confirm` |
-| `sap_map_record_start` | 기록 세션 시작 — 이후 직접 클릭한 이동을 지도에 자동 저장 | `map_id`, `tcode` |
+| `sap_map_record_start` | 대화형 기록 시작 — 다음 행동을 사용자에게 하나씩 질문 | `map_id`, `tcode` |
 | `sap_map_record_finish` | 기록 세션 종료 + 요약 | - |
 | `sap_map_record_cancel` | 기록 세션 중단 (저장된 화면은 유지) | - |
 | `sap_map_record_status` | 기록 세션 상태 조회 | - |
+| `sap_map_manual_record_start` | Windows SAP GUI 직접 조작 기록 시작 | `map_id`, `tcode` |
+| `sap_map_manual_record_poll` | 직접 조작 이벤트를 지도에 반영 | - |
 | `sap_map_scan` | 현재 화면 1장을 UiState로 스캔 | - |
 
-**지도 기록 세션.** daemon 순회에 맡기지 않고 **LLM이 직접 `sap_press`/`sap_ui_action`으로
-탭·버튼을 눌러 순회**할 때 쓴다. `sap_map_record_start` 후 이동하면, 도달한 화면과
+**대화형 지도 기록 세션.** `sap_map_record_start` 결과의 화면 구조와 `safe_actions`를
+설명하고 **다음 행동을 사용자에게 하나씩 물어야 한다. 응답 전에는 SAP를 조작하지
+않는다.** 응답 후 LLM이 `sap_press`/`sap_ui_action`으로 이동하면, 도달한 화면과
 (안전한 구조 컨트롤 클릭이면) 전이가 자동으로 지도에 저장된다. 화면은 값 없이
 구조만 기록되고, 저장·전기 등 위험 컨트롤 클릭은 전이로 기록하지 않는다. 다른
 TCode로 벗어난 화면은 흡수하지 않는다. `sap_map_record_finish`로 종료. daemon 전용.
+
+사용자가 SAP GUI를 직접 클릭하려면 `sap_map_manual_record_start`를 사용한다.
+Windows SAP GUI의 `Hit/Change/EndRequest` 이벤트로 이동을 기록하며 입력 업무값은
+저장하지 않는다. 중간과 종료 전 `sap_map_manual_record_poll` 또는 status를 호출한다.
 
 `mode`는 `passive` / `guided` / `reversible` / `allowlisted`. MCP에서 mode를
 생략하면 기본값은 `guided`이며, `passive` 외 모든 모드는

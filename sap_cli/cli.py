@@ -616,7 +616,7 @@ def map_record_start(
     map_id: str = typer.Argument(),
     tcode: str = typer.Argument(),
 ) -> None:
-    """지도 기록 세션 시작. 이후 press/act로 직접 이동하면 자동으로 지도에 저장."""
+    """대화형 지도 기록 시작. 화면 후보를 보고 다음 행동을 하나씩 선택."""
     _run_command(
         "map_record_start", {"map_id": map_id, "tcode": tcode}, allow_daemon=True
     )
@@ -638,6 +638,25 @@ def map_record_cancel() -> None:
 def map_record_status() -> None:
     """현재 지도 기록 세션 상태 조회."""
     _run_command("map_record_status", {}, allow_daemon=True)
+
+
+@app.command("map-manual-record-start")
+def map_manual_record_start(
+    map_id: str = typer.Argument(),
+    tcode: str = typer.Argument(),
+) -> None:
+    """SAP GUI에서 사람이 직접 클릭하는 지도 기록을 시작."""
+    _run_command(
+        "map_manual_record_start",
+        {"map_id": map_id, "tcode": tcode},
+        allow_daemon=True,
+    )
+
+
+@app.command("map-manual-record-poll")
+def map_manual_record_poll() -> None:
+    """수동 SAP GUI 이벤트를 읽어 지도에 반영."""
+    _run_command("map_manual_record_poll", {}, allow_daemon=True)
 
 
 @app.command("map-job-cancel")

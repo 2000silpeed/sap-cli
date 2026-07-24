@@ -740,6 +740,27 @@ sap map-report mm03-readonly MM03
 탭이 서로 이동 후보로 보이더라도, 첫 도달 경로만 기록하고 각 탭 내부의 필드·ALV·분기는
 계속 수집합니다. 이 동작은 같은 탭 사이를 반복 왕복하는 시간을 줄입니다.
 
+daemon 자동 순회 대신 AI와 대화하며 기록하려면 `map-record-start`를 사용합니다.
+AI는 응답의 현재 화면 구조와 `safe_actions`를 보여주고 “다음에 무엇을 할까요?”라고
+한 단계씩 물어야 하며, 답을 받기 전에는 SAP를 조작하지 않습니다.
+
+```powershell
+sap map-record-start mm03-guided MM03
+sap map-record-status
+sap map-record-finish
+```
+
+Windows SAP GUI에서 사용자가 직접 클릭하는 모습을 기록할 수도 있습니다. 이 모드는
+persistent daemon에서 SAP GUI Scripting의 `Hit`, `Change`, `EndRequest` 이벤트를
+구독하며 입력한 업무값은 저장하지 않습니다.
+
+```powershell
+sap map-manual-record-start mm03-manual MM03
+# SAP GUI에서 직접 조작한 뒤 수시로 반영
+sap map-manual-record-poll
+sap map-record-finish
+```
+
 버튼, 메뉴, 툴바/ALV 항목을 눌러 다음 화면으로 가는 분기는 `guided`에서도 추측하지
 않습니다. `save`, `post`, `delete`, `release`, `send`, `print` 같은 변경·외부 전송
 동작은 어떤 모드에서도 지도 수집 대상으로 허용되지 않습니다. 조회성 분기만 정확한

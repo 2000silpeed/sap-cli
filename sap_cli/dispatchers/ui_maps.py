@@ -25,6 +25,8 @@ UI_MAP_COMMANDS = frozenset(
         "map_record_finish",
         "map_record_cancel",
         "map_record_status",
+        "map_manual_record_start",
+        "map_manual_record_poll",
         "map_job_status",
         "map_job_cancel",
         "map_augment_start",
@@ -163,7 +165,10 @@ def dispatch_ui_map_command(
         )
         return {"job": _job_summary(record)}
 
-    if command in {"map_record_start", "map_record_finish", "map_record_cancel", "map_record_status"}:
+    if command in {
+        "map_record_start", "map_record_finish", "map_record_cancel",
+        "map_record_status", "map_manual_record_start", "map_manual_record_poll",
+    }:
         from sap_cli.ui_map.runtime import get_map_recorder
 
         recorder = get_map_recorder(slot_id)
@@ -177,6 +182,15 @@ def dispatch_ui_map_command(
                 tcode=_required(args, "tcode"),
                 slot_id=slot_id,
             )
+        if command == "map_manual_record_start":
+            return recorder.start_manual(
+                map_id=_required(args, "map_id"),
+                tcode=_required(args, "tcode"),
+                slot_id=slot_id,
+            )
+        if command == "map_manual_record_poll":
+            polled = recorder.poll_manual()
+            return {"poll": polled, **recorder.status()}
         if command == "map_record_finish":
             return recorder.finish()
         if command == "map_record_cancel":

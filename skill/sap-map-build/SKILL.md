@@ -284,7 +284,7 @@ sap map-report mm03-readonly MM03
 화면(예: 조회하려는 데이터 탭)이 지도에 들어오면 거기서 멈춰도 된다 — "끝 판단"
 참고.
 
-## 2-B단계 — LLM이 직접 클릭하며 기록 (map-record)
+## 2-B단계 — 사용자에게 하나씩 물으며 기록 (map-record)
 
 daemon 순회(guided)에 맡기지 않고 **LLM/사용자가 직접 `sap press`·`sap act`로
 탭·버튼을 눌러 순회**하고 싶을 때 쓴다. 기록 세션을 켜두면 그 클릭들이 자동으로
@@ -299,6 +299,21 @@ sap act  "wnd[0]/usr/..." press
 sap map-record-status                        # 기록 상태(state/transition 수) 확인
 sap map-record-finish                        # 종료 + 요약
 ```
+
+시작·상태 응답의 `safe_actions`를 설명하고 “다음에 무엇을 할까요?”라고 묻는다.
+사용자 응답 전에는 SAP를 조작하지 않고, 답을 실행한 뒤 다시 한 단계씩 묻는다.
+
+사용자가 Windows SAP GUI에서 직접 클릭하는 모습을 기록하려면:
+
+```powershell
+sap map-manual-record-start mm03-manual MM03
+# SAP GUI에서 직접 조작
+sap map-manual-record-poll
+sap map-record-finish
+```
+
+이 모드는 persistent daemon과 SAP GUI Scripting 이벤트가 필요하며 업무 입력값은
+저장하지 않는다.
 
 동작 규칙:
 

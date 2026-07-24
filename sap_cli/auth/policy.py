@@ -57,6 +57,8 @@ TOOL_PERMISSION_MAP: dict[str, Permission] = {
     "sap_map_record_finish": Permission.WRITE,
     "sap_map_record_cancel": Permission.WRITE,
     "sap_map_record_status": Permission.READ,
+    "sap_map_manual_record_start": Permission.WRITE,
+    "sap_map_manual_record_poll": Permission.READ,
     "sap_map_job_status": Permission.READ,
     "sap_map_job_cancel": Permission.WRITE,
     "sap_map_augment_start": Permission.WRITE,

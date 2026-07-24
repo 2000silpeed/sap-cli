@@ -63,6 +63,12 @@ COMMAND_REGISTRY: dict[str, CommandDef] = {
     "map_record_status": CommandDef(
         "sap_map_record_status", Permission.READ, category="ui_map", risk_level="low"
     ),
+    "map_manual_record_start": CommandDef(
+        "sap_map_manual_record_start", Permission.WRITE, category="ui_map", risk_level="medium"
+    ),
+    "map_manual_record_poll": CommandDef(
+        "sap_map_manual_record_poll", Permission.READ, category="ui_map", risk_level="low"
+    ),
     "map_job_status": CommandDef(
         "sap_map_job_status", Permission.READ, category="ui_map", risk_level="low"
     ),

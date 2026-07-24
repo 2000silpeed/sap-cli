@@ -498,11 +498,10 @@ class _DaemonServer(socketserver.TCPServer):
         )
         self._ui_map_scheduler.hydrate_persisted_jobs()
         set_ui_map_scheduler(self._ui_map_scheduler)
-        set_map_recorder_factory(
-            lambda _slot, store=self._ui_map_store: MapRecorder(store, get_sap)
-        )
+        event_manager_getter = None
         if platform.system() == "Windows":
             from .events.manager import EventSubscriptionManager
+            from .events.runtime import get_event_manager
             from .events.win32_backend import Win32EventBackend
 
             # The event backend pins itself to the thread that creates it, and
@@ -511,6 +510,12 @@ class _DaemonServer(socketserver.TCPServer):
                 lambda: EventSubscriptionManager(Win32EventBackend())
             )
             set_event_manager(self._event_manager)
+            event_manager_getter = get_event_manager
+        set_map_recorder_factory(
+            lambda _slot, store=self._ui_map_store, manager=event_manager_getter: MapRecorder(
+                store, get_sap, get_event_manager=manager
+            )
+        )
 
         # Runtime state is ready — now expose the port. Until this point a
         # connect() is refused instantly, so is_running()/first-contact probes

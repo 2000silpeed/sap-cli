@@ -80,6 +80,28 @@ class FakeWrapper:
         )
 
 
+class FakeEventManager:
+    def __init__(self):
+        self.events = []
+        self.unsubscribed = []
+
+    def subscribe(self, **kwargs):
+        self.subscription = kwargs
+        return {"subscription_id": "manual-1"}
+
+    def poll(self, subscription_id, *, cursor=0, limit=100):
+        selected = [item for item in self.events if item["sequence"] > cursor][:limit]
+        return {
+            "events": selected,
+            "next_cursor": selected[-1]["sequence"] if selected else cursor,
+            "lost_count": 0,
+        }
+
+    def unsubscribe(self, subscription_id):
+        self.unsubscribed.append(subscription_id)
+        return True
+
+
 def test_start_records_initial_screen_and_scope(tmp_path):
     store = UiMapStore(tmp_path)
     wrapper = FakeWrapper()
@@ -91,6 +113,8 @@ def test_start_records_initial_screen_and_scope(tmp_path):
     assert status["map_id"] == "mm03-rec"
     assert status["scope"]["client"] == "100"
     assert status["states_recorded"] == 1
+    assert status["needs_user_input"] is True
+    assert any(item["action"] == "select_tab" for item in status["safe_actions"])
     saved = store.latest("mm03-rec", tcode="MM03", system_id="DEV", client="100", language="EN")
     assert len(saved.states) == 1
 
@@ -158,6 +182,33 @@ def test_finish_and_cancel_reset(tmp_path):
     assert done["finished"] is True
     assert rec.active is False
     assert rec.record("press", {"element_id": "x"}) is None
+
+
+def test_manual_record_consumes_hit_and_end_request(tmp_path):
+    store = UiMapStore(tmp_path)
+    wrapper = FakeWrapper()
+    manager = FakeEventManager()
+    rec = MapRecorder(store, lambda slot: wrapper, get_event_manager=lambda: manager)
+
+    status = rec.start_manual(map_id="mm03-manual", tcode="MM03")
+    assert status["mode"] == "manual"
+    assert wrapper.session.ActiveWindow.ElementVisualizationMode is True
+
+    wrapper.advance(200, extra_tab_text=" (detail)")
+    manager.events = [
+        {
+            "sequence": 1,
+            "event_name": "Hit",
+            "payload": {"Component": {"id": "wnd[0]/usr/tabs/tabpTAB2"}},
+        },
+        {"sequence": 2, "event_name": "EndRequest", "payload": {}},
+    ]
+    result = rec.poll_manual()
+
+    assert result["screens_recorded"] == 1
+    assert rec.transitions_recorded == 1
+    rec.finish()
+    assert manager.unsubscribed == ["manual-1"]
 
 
 def test_dispatch_hook_records_navigating_action_for_active_slot(tmp_path):

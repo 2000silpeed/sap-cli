@@ -211,14 +211,31 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "sap_map_record_start",
         "description": (
-            "지도 기록 세션을 시작합니다. 시작 후 sap_press·sap_ui_action 등으로 "
-            "직접 탭·버튼을 눌러 화면을 이동하면, 도달한 화면과(안전한 구조 컨트롤 "
+            "대화형 지도 기록 세션을 시작합니다. 반환된 화면 구조와 safe_actions를 "
+            "사용자에게 설명하고 반드시 다음에 무엇을 할지 하나씩 물으세요. 답을 받은 "
+            "후 sap_press·sap_ui_action으로 이동하면, 도달한 화면과(안전한 구조 컨트롤 "
             "클릭이면) 전이가 자동으로 지도에 저장됩니다. 저장·전기 등 위험 컨트롤 "
             "클릭은 전이로 기록하지 않습니다. persistent daemon 전용."
         ),
         "inputSchema": {"type": "object", "properties": {
             "map_id": {"type": "string"}, "tcode": {"type": "string"}
         }, "required": ["map_id", "tcode"]},
+    },
+    {
+        "name": "sap_map_manual_record_start",
+        "description": (
+            "Windows SAP GUI에서 사용자가 마우스/키보드로 직접 조작하는 수동 지도 기록을 "
+            "시작합니다. Hit/Change/EndRequest 이벤트를 사용하며 업무 입력값은 저장하지 "
+            "않습니다. persistent daemon과 SAP GUI Scripting 이벤트 지원이 필요합니다."
+        ),
+        "inputSchema": {"type": "object", "properties": {
+            "map_id": {"type": "string"}, "tcode": {"type": "string"}
+        }, "required": ["map_id", "tcode"]},
+    },
+    {
+        "name": "sap_map_manual_record_poll",
+        "description": "대기 중인 사용자의 SAP GUI 조작 이벤트를 읽어 현재 지도에 반영합니다.",
+        "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "sap_map_record_finish",
@@ -1783,6 +1800,8 @@ COMPACT_TOOL_NAMES = frozenset(
         "sap_map_record_finish",
         "sap_map_record_cancel",
         "sap_map_record_status",
+        "sap_map_manual_record_start",
+        "sap_map_manual_record_poll",
         "sap_map_job_cancel",
         "sap_map_augment_start",
         "sap_map_traverse_start",
