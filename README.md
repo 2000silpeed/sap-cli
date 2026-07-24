@@ -793,6 +793,10 @@ sap map-report mm03-readonly MM03
 
 #### 4) 자연어 요청을 실행 전 계획으로 변환
 
+부분 지도에서 LLM의 미관측 분기 판단과 자동 보강 흐름을 처음부터 검증하려면
+[부분 지도 기반 LLM 계획 보강 테스트 가이드](PARTIAL_MAP_PLAN_TEST_GUIDE.md)를
+따릅니다.
+
 지도 수집이 끝난 뒤에는 자연어 요청과 필요한 업무값을 `plan-preview`로 보냅니다.
 이 명령은 SAP를 조작하지 않고 저장된 지도와 레시피에서 전체 step, 변수, 필요한
 승인, 지도 버전/fingerprint를 확정합니다. `validation.valid`가 `true`이고
