@@ -536,6 +536,9 @@ overlay가 로드된 것이다. `false`면 `graph.generated.json`이 없거나 �
 
 - `validation.valid`가 `false`면 실행하지 않는다. `errors`/`questions`를 읽고
   목표 재지정(`use_goal_query`) 또는 지도 보강(`sap_map_augment_start`)으로 간다.
+  `goal_semantic_inference_required`이면 자연어 목표와 각 후보의 화면 문맥을 LLM이
+  의미적으로 비교한다. 관련 후보가 하나면 그 `augment_args`로 필요한 분기만 보강하고
+  같은 계획을 다시 미리본다. 후보가 없거나 비슷한 후보가 여러 개일 때만 사용자에게 묻는다.
 - 유효한 미리보기에는 `activation`이 따라온다. 사용자가 확인한 뒤
   `activation.arguments`를 그대로 `sap_plan_execute`에 넘긴다. ID나 hash를 사람이
   다시 조립하지 않는다.

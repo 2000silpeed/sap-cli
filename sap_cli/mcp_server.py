@@ -336,7 +336,14 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_plan_preview",
-        "description": "자연어 SAP 요청을 저장된 UI 지도만 사용해 전체 명령·guard·예상 전이·위험·승인 조건이 포함된 실행 계획으로 컴파일합니다. SAP 화면은 스캔하거나 조작하지 않습니다.",
+        "description": (
+            "자연어 SAP 요청을 저장된 UI 지도만 사용해 전체 명령·guard·예상 전이·위험·"
+            "승인 조건이 포함된 실행 계획으로 컴파일합니다. SAP 화면은 스캔하거나 조작하지 "
+            "않습니다. goal_semantic_inference_required가 반환되면 호출 LLM은 자연어 목표와 "
+            "choices의 화면 문맥을 의미적으로 비교해야 합니다. 관련 후보가 하나면 그 후보의 "
+            "augment_args로 sap_map_augment_start를 호출하고, 보강 완료 후 같은 계획을 다시 "
+            "미리봅니다. 후보가 없거나 비슷한 후보가 여러 개일 때만 사용자에게 선택을 묻습니다."
+        ),
         "inputSchema": {"type": "object", "properties": {
             "request": {"type": "string"}, "tcode": {"type": "string"},
             "map_id": {"type": "string"}, "system_id": {"type": "string"},

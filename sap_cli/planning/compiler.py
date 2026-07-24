@@ -246,12 +246,14 @@ class PlanCompiler:
                         _goal_error,
                     ) = alternative
         if goal_state is None:
-            coverage_question = self._coverage_guidance_question(ui_map, start)
+            coverage_question = self._coverage_guidance_question(
+                ui_map, start, target_query
+            )
             if coverage_question is not None:
                 return self._needs(
-                    "map_coverage_incomplete",
-                    "저장된 지도에 아직 관측하지 않은 화면 분기가 있어 목표를 확정할 수 없습니다. "
-                    "누락 화면으로 이동해 지도를 보강해 주세요.",
+                    "goal_semantic_inference_required",
+                    "부분 지도만으로 목표를 확정할 수 없습니다. AI가 요청과 구조 후보의 "
+                    "의미를 비교해 관련 분기 하나를 선택하고 그 분기만 보강해야 합니다.",
                     intent,
                     question=coverage_question,
                 )
@@ -621,13 +623,13 @@ class PlanCompiler:
 
     @staticmethod
     def _coverage_guidance_question(
-        ui_map: UiMap, start: UiState
+        ui_map: UiMap, start: UiState, goal_query: str = ""
     ) -> dict[str, Any] | None:
-        """Turn known missing map structure into an actionable HITL request.
+        """Expose closed, value-free gap candidates for semantic AI routing.
 
-        This is deliberately used only after the goal could not be resolved.
-        A partial collection elsewhere in a large transaction must not block a
-        fully known, unrelated execution route.
+        The compiler cannot safely invent an unobserved destination.  It can,
+        however, give the calling LLM enough structural context to decide which
+        single branch is relevant and start a narrowly scoped augmentation.
         """
 
         incomplete_markers = {
@@ -671,22 +673,96 @@ class PlanCompiler:
             return None
         # Keep prompts bounded and value-free.  The MCP client can use a
         # returned state_id directly with sap_map_augment_start.
-        choices = sorted(
+        raw_choices = sorted(
             {
                 (item["kind"], item["state_id"], item["reason"])
                 for item in gaps
             }
         )[:12]
+        choices: list[dict[str, Any]] = []
+        for kind, state_id, reason in raw_choices:
+            state = ui_map.states.get(state_id)
+            labels: list[str] = []
+            controls: list[dict[str, str]] = []
+            if state is not None:
+                labels.extend(
+                    str(value)
+                    for value in (state.title, state.program, state.screen_number)
+                    if value
+                )
+                for component in state.components:
+                    if component.sensitive or component.visible is False:
+                        continue
+                    label = component.text or component.name or component.tooltip
+                    if (
+                        component.type
+                        in {
+                            "GuiLabel", "GuiTab", "GuiButton", "GuiMenu",
+                            "GuiTitlebar", "GuiStatusbar",
+                        }
+                        and label
+                        and label not in labels
+                    ):
+                        labels.append(label)
+                    if (
+                        component.type in {"GuiTab", "GuiButton", "GuiMenu"}
+                        and component.enabled is not False
+                        and label
+                    ):
+                        controls.append(
+                            {
+                                "logical_id": component.logical_id,
+                                "label": label,
+                                "type": component.type,
+                            }
+                        )
+                    if len(labels) >= 20 and len(controls) >= 8:
+                        break
+            identity = json.dumps(
+                [ui_map.manifest.map_id, kind, state_id, reason],
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            candidate_id = "gap-" + hashlib.sha256(identity.encode()).hexdigest()[:16]
+            augmentation_request = (
+                f"계획 목표 '{goal_query}'와 관련된 미관측 분기 확인"
+                if goal_query
+                else "계획 목표와 관련된 미관측 분기 확인"
+            )
+            choices.append(
+                {
+                    "candidate_id": candidate_id,
+                    "kind": kind,
+                    "state_id": state_id,
+                    "reason": reason,
+                    "screen_context": labels[:20],
+                    "actionable_controls": controls[:8],
+                    "augment_args": {
+                        "map_id": ui_map.manifest.map_id,
+                        "tcode": ui_map.manifest.tcode,
+                        "from_state_id": state_id,
+                        "request": augmentation_request,
+                    },
+                }
+            )
         return {
-            "code": "map_coverage_incomplete",
-            "question": "누락된 화면 또는 UI 분기를 선택해 지도 보강을 시작해 주세요.",
+            "code": "goal_semantic_inference_required",
+            "question": (
+                "자연어 목표와 각 후보의 screen_context/actionable_controls를 의미적으로 "
+                "비교해 가장 관련 있는 candidate_id 하나를 선택하세요."
+            ),
             "map_id": ui_map.manifest.map_id,
             "tcode": ui_map.manifest.tcode,
             "from_state_id": start.state_id,
-            "choices": [
-                {"kind": kind, "state_id": state_id, "reason": reason}
-                for kind, state_id, reason in choices
+            "goal_query": goal_query,
+            "decision_owner": "calling_llm",
+            "instructions": [
+                "규칙 기반 문자열 일치만 사용하지 말고 화면 문맥과 사용자 요청의 의미를 판단합니다.",
+                "후보 하나가 충분히 관련 있으면 사용자에게 다시 묻지 말고 해당 augment_args로 sap_map_augment_start를 호출합니다.",
+                "후보가 없거나 둘 이상이 비슷하면 candidate_id와 화면 설명을 사용자에게 보여주고 선택을 요청합니다.",
+                "미관측 목적지를 실행 계획에 추측해 넣지 않습니다. 지도 보강 완료 후 동일 요청으로 sap_plan_preview를 다시 호출합니다.",
             ],
+            "choices": choices,
         }
 
     @staticmethod

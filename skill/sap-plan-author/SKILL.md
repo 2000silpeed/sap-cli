@@ -103,6 +103,7 @@ $preview.plan_ref
 | `map_build_incomplete` | 지도 수집이 미완 | `map-report` 확인 후 guided 확장 |
 | `start_state_missing` | 시작 화면을 못 찾음 | `--current-state` 지정 또는 지도 보강 |
 | `goal_selection_required` / `goal_ambiguous` | 목표 후보 여럿 | 아래 참조 |
+| `goal_semantic_inference_required` | 부분 지도에서 목표 관련 분기 판단 필요 | 아래의 LLM 분기 판단 절차 |
 | `map_coverage_incomplete` | 목표까지 경로 부족 | 아래 참조 |
 | `input_target_missing` / `input_target_ambiguous` | 값 넣을 필드 확정 실패 | questions의 choices로 확인 |
 | `collection_target_ambiguous` / `collection_target_requires_user_guidance` | 테이블/트리 대상 불명확 | 사용자에게 대상 행/열 확인 |
@@ -118,6 +119,13 @@ $preview.plan_ref
 ```powershell
 sap plan-preview "..." --tcode MM03 --map-id mm03-readonly --goal "<use_goal_query 값>"
 ```
+
+`goal_semantic_inference_required`는 단순 오류가 아니다. 호출 LLM이 자연어 목표와
+각 `choices[]`의 `screen_context`, `actionable_controls`, `reason`을 의미적으로 비교한다.
+관련 후보가 하나면 사용자에게 다시 묻지 않고 그 후보의 `augment_args`로
+`sap_map_augment_start`를 호출한다. 후보가 없거나 둘 이상이 비슷할 때만 사용자가
+`candidate_id`를 선택하게 한다. 보강 job이 완료되면 원래 요청과 목표로
+`sap_plan_preview`를 다시 호출한다. 관측하지 않은 목적지를 계획에 직접 추측해 넣지는 않는다.
 
 ### 지도 커버리지가 부족할 때
 

@@ -694,15 +694,22 @@ def test_missing_goal_with_known_collection_gap_requests_map_augmentation(tmp_pa
     )
 
     assert result.plan is None
-    assert result.validation.errors == ["map_coverage_incomplete"]
+    assert result.validation.errors == ["goal_semantic_inference_required"]
     assert result.validation.questions[0]["from_state_id"] == "start"
-    assert result.validation.questions[0]["choices"] == [
-        {
-            "kind": "collection",
-            "state_id": "start",
-            "reason": "material-grid:context_menu_actions:not_observed_until_opened",
-        }
-    ]
+    question = result.validation.questions[0]
+    assert question["decision_owner"] == "calling_llm"
+    assert question["goal_query"] == "없는 화면"
+    assert len(question["choices"]) == 1
+    choice = question["choices"][0]
+    assert choice["candidate_id"].startswith("gap-")
+    assert choice["kind"] == "collection"
+    assert choice["state_id"] == "start"
+    assert choice["augment_args"] == {
+        "map_id": "DEV-100-MM03",
+        "tcode": "MM03",
+        "from_state_id": "start",
+        "request": "계획 목표 '없는 화면'와 관련된 미관측 분기 확인",
+    }
 
 
 def test_ambiguous_operation_is_hitl_and_explicit_success_criteria_are_kept(tmp_path):
