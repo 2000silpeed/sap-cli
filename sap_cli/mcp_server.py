@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from dataclasses import dataclass
 from typing import Any
 
 try:
@@ -25,6 +26,13 @@ try:
     HAS_MCP = True
 except ImportError:
     HAS_MCP = False
+
+    @dataclass
+    class TextContent:
+        """Minimal result shape for local diagnostics without the optional MCP package."""
+
+        type: str
+        text: str
 
 from .auth.checker import PermissionChecker
 from .auth.policy import load_policy
@@ -1306,6 +1314,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                             "tool": {"type": "string", "description": "MCP 도구 이름 (예: sap_run, sap_tree_expand)"},
                             "args": {"type": "object", "description": "도구 인자"},
                             "hint": {"type": "string", "description": "이 단계 설명 (AI가 참고)"},
+                            "shell": {"type": "string", "enum": ["powershell", "bash"], "description": "외부 CLI step의 셸. Windows에서는 powershell만 허용"},
                         },
                         "required": ["tool"],
                     },
@@ -1448,6 +1457,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                             "tool": {"type": "string"},
                             "args": {"type": "object"},
                             "hint": {"type": "string"},
+                            "shell": {"type": "string", "enum": ["powershell", "bash"]},
                         },
                         "required": ["tool"],
                     },
@@ -1668,7 +1678,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "name": "sap_session_mark",
         "description": (
             "현재 실행 세션에 명시적인 표식 step을 추가합니다. SAP 화면 조작이 아니더라도 "
-            "파일 준비, 외부 bash/CLI, 사람 확인, 검증 절차처럼 recipe가 나중에 따라야 하는 "
+            "파일 준비, 외부 PowerShell/CLI, 사람 확인, 검증 절차처럼 recipe가 나중에 따라야 하는 "
             "단계를 step_kind/followable/requires_sap와 함께 기록할 때 사용합니다."
         ),
         "inputSchema": {
@@ -1676,8 +1686,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "properties": {
                 "session_id": {"type": "string", "description": "대상 세션 ID"},
                 "text": {"type": "string", "description": "표식 step 설명"},
-                "step_kind": {"type": "string", "description": "note/bash/external/manual/check 등 step 종류"},
-                "cli_invocation": {"type": "string", "description": "따라 실행할 외부 CLI/bash 원문"},
+                "step_kind": {"type": "string", "description": "note/powershell/external/manual/check 등 step 종류"},
+                "cli_invocation": {"type": "string", "description": "따라 실행할 외부 CLI 원문"},
+                "shell": {"type": "string", "enum": ["powershell", "bash"], "description": "실행 셸. Windows에서는 powershell만 허용"},
                 "raw_argv": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -1706,7 +1717,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "sheet": {"type": "string", "description": "시트 이름"},
                 "range_ref": {"type": "string", "description": "셀/범위 예: A1, A1:D20"},
                 "value": {"type": "string", "description": "입력/확인할 값"},
-                "cli_invocation": {"type": "string", "description": "실제 실행할 외부 CLI/bash 원문"},
+                "cli_invocation": {"type": "string", "description": "실제 실행할 외부 CLI 원문"},
+                "shell": {"type": "string", "enum": ["powershell", "bash"], "description": "실행 셸. Windows에서는 powershell만 허용"},
                 "raw_argv": {
                     "type": "array",
                     "items": {"type": "string"},

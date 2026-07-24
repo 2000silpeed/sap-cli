@@ -401,6 +401,10 @@ def dispatch_command(
         before_state=before_state,
         after_state=after_state,
     )
+    from .shell_policy import attach_runtime_guidance
+
+    if isinstance(result, dict):
+        result = attach_runtime_guidance(result)
     return _redact_sensitive_payload(result, sensitive_values)
 
 

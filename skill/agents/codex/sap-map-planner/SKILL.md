@@ -51,7 +51,7 @@ Codex CLI에는 Claude Code의 서브에이전트 레지스트리에 해당하�
 
 ### 0. 환경 확인
 
-```bash
+```powershell
 sap daemon status
 sap session
 ```
@@ -63,7 +63,7 @@ daemon이 없으면 `sap daemon start`, 연결이 없으면 `sap connect`. `plan
 
 요청에서 TCode와 업무 목적을 뽑는다. 확실하지 않으면 지어내지 말고 묻는다.
 
-```bash
+```powershell
 sap map-list --tcode <TCODE>
 sap map-view <map-id> <TCODE>
 sap map-report <map-id> <TCODE>
@@ -75,8 +75,8 @@ sap map-report <map-id> <TCODE>
 
 ### 2. 계획 컴파일
 
-```bash
-sap plan-preview "<사용자 요청 원문>" --tcode <TCODE> --map-id <map-id> \
+```powershell
+sap plan-preview "<사용자 요청 원문>" --tcode <TCODE> --map-id <map-id> `
   --goal "<목표>" --values-json '{"<이름>":"<값>"}'
 ```
 
@@ -112,7 +112,7 @@ sap plan-preview "<사용자 요청 원문>" --tcode <TCODE> --map-id <map-id> \
 
 ### 4. 승인 (필요할 때만)
 
-```bash
+```powershell
 sap plan-approve <plan_id> <plan_hash> <실행-agent> '["<step-id>"]' --expires-in 300
 ```
 
@@ -120,7 +120,7 @@ sap plan-approve <plan_id> <plan_hash> <실행-agent> '["<step-id>"]' --expires-
 
 ### 5. 실행
 
-```bash
+```powershell
 sap plan-execute --plan-ref-json '<plan_ref JSON>' --verify cheap
 ```
 

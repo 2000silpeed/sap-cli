@@ -238,7 +238,7 @@ SAP 조작은 아니지만 recipe가 따라야 하는 준비/검증/외부 CLI �
 
 ```powershell
 sap session-mark "pdftotext 설치 여부 확인" --kind external --cli "pdftotext -v" --no-requires-sap
-sap session-mark "입력 CSV 생성" --kind bash --cli "python scripts/prepare_input.py" --no-requires-sap
+sap session-mark "입력 CSV 생성" --kind powershell --shell powershell --cli "python scripts/prepare_input.py" --no-requires-sap
 sap session-mark "사용자 승인 확인 후 저장 진행" --kind manual --not-followable --no-requires-sap
 ```
 

@@ -9,7 +9,7 @@
 | 경로 | 이름 | 역할 | 주 사용 상황 |
 |------|------|------|------|
 | `SKILL.md` | `sap` | MCP 도구 레퍼런스 + SAP 도메인 지식 (메인) | MCP로 SAP를 조작하는 모든 작업 |
-| `sap-cli-usage/` | `sap-cli-usage` | 개별 화면 조작 CLI 사용법 | bash에서 `sap connect/run/screen/set/...`으로 수동 조작 |
+| `sap-cli-usage/` | `sap-cli-usage` | 개별 화면 조작 CLI 사용법 | Windows PowerShell에서 `sap connect/run/screen/set/...`으로 수동 조작 |
 | `sap-map-build/` | `sap-map-build` | UI 지도 수집·보강·점검 (`sap map-*`) | 트랜잭션 화면 지도를 새로 만들거나 확장할 때 |
 | `sap-plan-author/` | `sap-plan-author` | 자연어 요청 → 실행 계획 컴파일 (`sap plan-preview`) | 지도가 있는 트랜잭션에서 실행 계획을 만들 때 |
 | `sap-plan-run/` | `sap-plan-run` | 승인·실행·결과 판정 (`sap plan-approve/execute`) | 컴파일된 계획을 실제로 실행할 때 |
@@ -66,7 +66,7 @@ macOS/Linux는 `~/.claude/skills/`, `~/.claude/agents/`에 `cp -r`로 동일하�
 
 - **[1]~[3]을 한 번에**: `sap-map-planner` 에이전트에게 자연어 요청을 통째로 맡긴다.
   예: "MM03에서 자재 100-100 기본 정보 조회해줘"
-- **지도 없이 한 화면만 조작**: `sap-cli-usage` (bash) 또는 메인 `sap` 스킬 (MCP)
+- **지도 없이 한 화면만 조작**: `sap-cli-usage` (Windows PowerShell) 또는 메인 `sap` 스킬 (MCP)
 - **SAP 연결 없이 구조 질문**: `sap-ontology-qa`
 
 ### 전제 조건
@@ -89,33 +89,20 @@ macOS/Linux는 `~/.claude/skills/`, `~/.claude/agents/`에 `cp -r`로 동일하�
 2. `sap daemon restart` — 원인 수정 후 재기동
 3. 각 스킬 문서의 "오류 코드와 대응" / "job 상태와 대응" 표 참조
 
+## Windows 셸 정책
+
+Windows에서는 외부 명령을 PowerShell로 생성하고 실행한다. 레시피나 세션 마커에
+외부 명령을 넣을 때는 `step_kind: powershell`, `shell: powershell`을 사용한다.
+`bash`, `sh`, `source`, `export`, `&&`, `mkdir -p`, `/tmp/...`, `~/...` 같은
+Bash 전용 문법은 Windows에서 저장 전에 거부된다. CLI/MCP 응답의
+`runtime_guidance`에 현재 플랫폼의 셸과 환경 변수·가상환경 문법이 함께 제공되므로
+LLM은 이 값을 우선해서 명령을 작성해야 한다.
+
 ## 스킬 파일 검증
 
 스킬 문서가 참조하는 CLI 명령·옵션·MCP 도구는 코드와 함께 움직인다. 명령/도구를
 추가·변경했다면 스킬 문서의 예시가 실제 CLI와 일치하는지 확인한다:
 
-```bash
-# 문서 속 `sap <명령> --옵션` 예시를 실제 CLI --help와 대조
-python - <<'PY'
-import re, glob, subprocess, sys
-examples = {}
-for f in glob.glob('skill/**/*.md', recursive=True):
-    text = open(f, encoding='utf-8').read()
-    for block in re.findall(r'```(?:powershell|bash|sh)?\n(.*?)```', text, re.S):
-        for line in block.split('\n'):
-            m = re.match(r'\s*sap ([a-z][a-z0-9-]+)\b(.*)', line)
-            if m:
-                examples.setdefault(m.group(1), set()).update(re.findall(r'(--[a-z0-9-]+)', m.group(2)))
-for cmd, opts in sorted(examples.items()):
-    r = subprocess.run([sys.executable, '-m', 'sap_cli.cli', cmd, '--help'], capture_output=True, text=True)
-    if r.returncode != 0:
-        print(f'없는 명령: sap {cmd}')
-        continue
-    # 참고: rich --help가 긴 옵션명을 자를 수 있어 접두 일치로 확인한다
-    shown = re.findall(r'(--[a-z0-9-]+)', r.stdout)
-    for o in opts:
-        if not any(s == o or o.startswith(s) for s in shown):
-            print(f'sap {cmd}: 문서에만 있는 옵션 {o}')
-print('검증 완료')
-PY
+```powershell
+.venv\Scripts\python.exe -m pytest -q tests\test_command_surface_consistency.py
 ```

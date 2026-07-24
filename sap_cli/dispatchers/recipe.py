@@ -571,6 +571,29 @@ def link_recipe_to_ontology(
     return linked
 
 
+def _normalize_recipe_external_steps(steps_raw: list[Any]) -> list[Any]:
+    """Apply the host shell contract to external recipe steps in place."""
+
+    from sap_cli.shell_policy import normalize_external_step
+
+    for raw_step in steps_raw:
+        if not isinstance(raw_step, dict):
+            continue
+        step_kind = str(raw_step.get("step_kind", "sap")).strip().lower()
+        cli_invocation = str(raw_step.get("cli_invocation", ""))
+        if cli_invocation or step_kind in {
+            "bash", "sh", "shell", "powershell", "external", "cli"
+        }:
+            normalized_kind, normalized_shell = normalize_external_step(
+                cli_invocation=cli_invocation,
+                step_kind=step_kind,
+                shell=str(raw_step.get("shell", "")),
+            )
+            raw_step["step_kind"] = normalized_kind
+            raw_step["shell"] = normalized_shell
+    return steps_raw
+
+
 def dispatch_recipe_save(
     args: dict[str, Any],
     get_recipe_store: RecipeStoreFactory,
@@ -588,7 +611,7 @@ def dispatch_recipe_save(
     keywords = args.get("keywords", [])
     if isinstance(keywords, str):
         keywords = [k.strip() for k in keywords.split(",")]
-    steps_raw = args.get("steps", [])
+    steps_raw = _normalize_recipe_external_steps(args.get("steps", []))
     steps = [RecipeStep(**s) if isinstance(s, dict) else s for s in steps_raw]
     criteria_supplied = "replay_success_criteria" in args
     replay_success_criteria = (
@@ -962,7 +985,7 @@ def dispatch_recipe_version_up(
 
     store = get_recipe_store()
     recipe_id = str(args["recipe_id"])
-    steps_raw = args.get("new_steps", [])
+    steps_raw = _normalize_recipe_external_steps(args.get("new_steps", []))
     new_steps = [RecipeStep(**s) if isinstance(s, dict) else s for s in steps_raw]
     new_context = str(args.get("new_context", ""))
     change_note = str(args.get("change_note", ""))

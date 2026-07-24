@@ -335,6 +335,9 @@ def doctor() -> dict:
         "pid_file": PID_FILE,
         "log_path": log_path,
     }
+    from .shell_policy import runtime_shell_guidance
+
+    info["runtime_guidance"] = runtime_shell_guidance(info["platform"])
 
     try:
         import sap_cli

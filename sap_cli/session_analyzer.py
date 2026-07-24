@@ -228,6 +228,7 @@ def session_to_recipe(
             "cli_invocation": step_data.get("cli_invocation", ""),
             "raw_argv": step_data.get("raw_argv", []),
             "step_kind": step_data.get("step_kind", "sap"),
+            "shell": step_data.get("shell", ""),
             "followable": step_data.get("followable", True),
             "requires_sap": step_data.get("requires_sap", True),
         })

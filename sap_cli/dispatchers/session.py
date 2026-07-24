@@ -159,6 +159,14 @@ def _append_marker_step(
     followable = bool(args.get("followable", True))
     requires_sap = bool(args.get("requires_sap", False))
     cli_invocation = str(args.get("cli_invocation") or "").strip()
+    shell = str(args.get("shell") or "").strip()
+    from sap_cli.shell_policy import normalize_external_step
+
+    step_kind, shell = normalize_external_step(
+        cli_invocation=cli_invocation,
+        step_kind=step_kind,
+        shell=shell,
+    )
     raw_argv = args.get("raw_argv") if isinstance(args.get("raw_argv"), list) else []
     raw_argv = [str(item) for item in raw_argv]
     source = str(args.get("source") or getattr(ctx, "source", "") or "manual")
@@ -173,6 +181,8 @@ def _append_marker_step(
         marker_args.update({k: v for k, v in extra_arguments.items() if v not in (None, "")})
     if cli_invocation:
         marker_args["cli_invocation"] = cli_invocation
+    if shell:
+        marker_args["shell"] = shell
     if raw_argv:
         marker_args["raw_argv"] = raw_argv
 
@@ -185,6 +195,7 @@ def _append_marker_step(
         cli_invocation=cli_invocation,
         raw_argv=raw_argv,
         step_kind=step_kind,
+        shell=shell,
         followable=followable,
         requires_sap=requires_sap,
         intent=text,
