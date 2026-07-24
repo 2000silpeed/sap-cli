@@ -742,7 +742,9 @@ sap map-report mm03-readonly MM03
 
 daemon 자동 순회 대신 AI와 대화하며 기록하려면 `map-record-start`를 사용합니다.
 AI는 응답의 현재 화면 구조와 `safe_actions`를 보여주고 “다음에 무엇을 할까요?”라고
-한 단계씩 물어야 하며, 답을 받기 전에는 SAP를 조작하지 않습니다.
+한 단계씩 물어야 하며, 답을 받기 전에는 SAP를 조작하지 않습니다. 기록을 종료하면
+화면에 보였지만 선택하지 않은 안전한 탭·버튼·메뉴는
+`recording_branch_not_observed` 미관측 분기로 저장되어 부분 지도 계획에 사용됩니다.
 
 ```powershell
 sap map-record-start mm03-guided MM03

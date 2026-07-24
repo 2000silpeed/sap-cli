@@ -180,8 +180,69 @@ def test_finish_and_cancel_reset(tmp_path):
     rec.start(map_id="mm03-rec", tcode="mm03", slot_id="ses0")
     done = rec.finish()
     assert done["finished"] is True
+    assert done["unobserved_branches"] == 2
     assert rec.active is False
     assert rec.record("press", {"element_id": "x"}) is None
+    saved = store.latest(
+        "mm03-rec", tcode="MM03", system_id="DEV", client="100", language="EN"
+    )
+    gaps = [
+        item
+        for item in saved.manifest.unreachable
+        if item["reason"] == "recording_branch_not_observed"
+    ]
+    assert {item["target_logical_id"] for item in gaps} == {
+        "wnd[0]/usr/tabs/tabpTAB1",
+        "wnd[0]/usr/tabs/tabpTAB2",
+    }
+
+
+def test_recorded_branch_is_not_marked_unobserved(tmp_path):
+    store = UiMapStore(tmp_path)
+    wrapper = FakeWrapper()
+    rec = MapRecorder(store, lambda slot: wrapper)
+    rec.start(map_id="mm03-rec", tcode="MM03")
+    wrapper.advance(200, extra_tab_text=" (detail)")
+    rec.record("press", {"element_id": "wnd[0]/usr/tabs/tabpTAB2"})
+
+    done = rec.finish()
+
+    assert done["unobserved_branches"] == 3
+    saved = store.latest(
+        "mm03-rec", tcode="MM03", system_id="DEV", client="100", language="EN"
+    )
+    unresolved = [
+        item
+        for item in saved.manifest.unreachable
+        if item.get("resolved") is not True
+    ]
+    assert not any(
+        item.get("state_id") == next(iter(saved.states))
+        and item.get("target_logical_id") == "wnd[0]/usr/tabs/tabpTAB2"
+        for item in unresolved
+    )
+
+
+def test_partial_recording_drives_semantic_goal_inference(tmp_path):
+    from sap_cli.planning.compiler import PlanCompiler
+
+    store = UiMapStore(tmp_path)
+    rec = MapRecorder(store, lambda slot: FakeWrapper())
+    rec.start(map_id="mm03-partial", tcode="MM03")
+    rec.finish()
+
+    result = PlanCompiler(store).compile(
+        "tcode MM03 구매 정보 조회",
+        map_id="mm03-partial",
+        goal_query="구매",
+    )
+
+    assert result.plan is None
+    assert result.validation.errors == ["goal_semantic_inference_required"]
+    question = result.validation.questions[0]
+    assert question["decision_owner"] == "calling_llm"
+    assert question["choices"]
+    assert all(choice["branch"]["target_logical_id"] for choice in question["choices"])
 
 
 def test_manual_record_consumes_hit_and_end_request(tmp_path):

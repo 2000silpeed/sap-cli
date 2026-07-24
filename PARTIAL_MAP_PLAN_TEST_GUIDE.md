@@ -50,13 +50,24 @@ sap map-record-finish
 sap map-report mm03-partial-test MM03
 ```
 
-`map-record`는 사용자가 실제로 이동한 화면을 기록합니다. 이동하지 않은 모든 버튼을
-자동으로 미관측 항목으로 표시하는 것은 아닙니다. 새 플랜 로직을 검증하려면
-`map-report`에서 다음 중 하나가 확인되어야 합니다.
+최신 `map-record`는 종료할 때 화면에서 보였던 안전한 탭·버튼·메뉴와 실제 기록된
+전이를 대조합니다. 선택하지 않은 안전 분기는 `recording_branch_not_observed`로
+지도에 저장됩니다. 새 플랜 로직을 검증하려면 `map-report`에서 다음 중 하나가
+확인되어야 합니다.
 
 ```text
 unobserved_actionable_branches > 0
 has_unreachable = true
+```
+
+기능 업데이트 전에 만든 지도에는 이 표식이 없을 수 있습니다. 최신 daemon으로 같은
+지도 ID의 기록을 다시 시작한 뒤 종료하면 현재 지도 구조를 기준으로 표식을 보완할 수
+있습니다.
+
+```powershell
+sap map-record-start mm03-partial-test MM03
+sap map-record-finish
+sap map-report mm03-partial-test MM03
 ```
 
 ## 3. 미관측 표시가 없을 때 guided 순회 사용

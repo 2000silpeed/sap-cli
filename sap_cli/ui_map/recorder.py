@@ -120,7 +120,9 @@ class MapRecorder:
 
     def finish(self) -> dict[str, Any]:
         self.poll_manual()
+        coverage = self._finalize_coverage()
         summary = self.status()
+        summary.update(coverage)
         summary["finished"] = True
         self._stop_manual_events()
         self._reset()
@@ -387,6 +389,97 @@ class MapRecorder:
                 "화면 구조와 safe_actions를 설명하고 사용자에게 다음 행동을 하나 물으세요. "
                 "응답을 받은 뒤에만 해당 SAP 도구를 호출하세요."
             ),
+        }
+
+    def _finalize_coverage(self) -> dict[str, int]:
+        """Persist visible safe controls that were not traversed as map gaps."""
+
+        if not self.active:
+            return {"unobserved_branches": 0, "resolved_branches": 0}
+        try:
+            ui_map = self._store.latest(
+                self.map_id,
+                tcode=self.tcode,
+                system_id=self.scope.get("system_id", ""),
+                client=self.scope.get("client", ""),
+                language=self.scope.get("language", ""),
+            )
+        except Exception:
+            return {"unobserved_branches": 0, "resolved_branches": 0}
+
+        observed = {
+            (transition.from_state_id, transition.target_logical_id)
+            for transition in ui_map.transitions
+            if transition.target_logical_id
+        }
+        existing_recording_gaps = {
+            (str(item.get("state_id", "")), str(item.get("target_logical_id", "")))
+            for item in ui_map.manifest.unreachable
+            if item.get("reason") == "recording_branch_not_observed"
+            and item.get("resolved") is not True
+        }
+        gaps: list[dict[str, Any]] = []
+        unresolved_count = 0
+        resolved_count = 0
+        for state in ui_map.states.values():
+            for component in state.components:
+                action = _CONTROL_ACTION.get(component.type)
+                if (
+                    action is None
+                    or component.visible is False
+                    or component.enabled is False
+                    or component.selected is True
+                    or component.sensitive
+                ):
+                    continue
+                label = component.text or component.name or component.tooltip
+                safety_label = " ".join(
+                    filter(None, [label, component.logical_id, component.sap_id])
+                )
+                if _DANGEROUS.search(safety_label):
+                    continue
+                identity = (state.state_id, component.logical_id)
+                gap = {
+                    "state_id": state.state_id,
+                    "reason": "recording_branch_not_observed",
+                    "action": action,
+                    "target_logical_id": component.logical_id,
+                    "target_locator": {
+                        "sap_id": component.sap_id,
+                        "component_type": component.type,
+                    },
+                    "label": label,
+                    "source": "map_recording",
+                }
+                if identity in observed:
+                    if identity in existing_recording_gaps:
+                        gap["resolved"] = True
+                        gap["resolution"] = "recorded_transition"
+                        gap["resolved_by_state_id"] = next(
+                            (
+                                transition.to_state_id
+                                for transition in ui_map.transitions
+                                if (
+                                    transition.from_state_id,
+                                    transition.target_logical_id,
+                                )
+                                == identity
+                            ),
+                            "",
+                        )
+                        gaps.append(gap)
+                        resolved_count += 1
+                    continue
+                gaps.append(gap)
+                unresolved_count += 1
+
+        if gaps:
+            delta = self._delta(self.map_id, self.tcode, {}, [])
+            delta.manifest.unreachable = gaps
+            self._store.save_delta(delta)
+        return {
+            "unobserved_branches": unresolved_count,
+            "resolved_branches": resolved_count,
         }
 
 

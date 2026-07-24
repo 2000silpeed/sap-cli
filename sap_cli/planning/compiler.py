@@ -652,6 +652,9 @@ class PlanCompiler:
                     "kind": "transition",
                     "state_id": state_id or start.state_id,
                     "reason": str(gap.get("reason", "unobserved_transition")),
+                    "action": str(gap.get("action", "")),
+                    "target_logical_id": str(gap.get("target_logical_id", "")),
+                    "label": str(gap.get("label", "")),
                 }
             )
         for state in ui_map.states.values():
@@ -675,12 +678,19 @@ class PlanCompiler:
         # returned state_id directly with sap_map_augment_start.
         raw_choices = sorted(
             {
-                (item["kind"], item["state_id"], item["reason"])
+                (
+                    item["kind"],
+                    item["state_id"],
+                    item["reason"],
+                    item.get("action", ""),
+                    item.get("target_logical_id", ""),
+                    item.get("label", ""),
+                )
                 for item in gaps
             }
         )[:12]
         choices: list[dict[str, Any]] = []
-        for kind, state_id, reason in raw_choices:
+        for kind, state_id, reason, gap_action, gap_target, gap_label in raw_choices:
             state = ui_map.states.get(state_id)
             labels: list[str] = []
             controls: list[dict[str, str]] = []
@@ -719,7 +729,10 @@ class PlanCompiler:
                     if len(labels) >= 20 and len(controls) >= 8:
                         break
             identity = json.dumps(
-                [ui_map.manifest.map_id, kind, state_id, reason],
+                [
+                    ui_map.manifest.map_id, kind, state_id, reason,
+                    gap_action, gap_target, gap_label,
+                ],
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
@@ -735,6 +748,11 @@ class PlanCompiler:
                     "kind": kind,
                     "state_id": state_id,
                     "reason": reason,
+                    "branch": {
+                        "action": gap_action,
+                        "target_logical_id": gap_target,
+                        "label": gap_label,
+                    },
                     "screen_context": labels[:20],
                     "actionable_controls": controls[:8],
                     "augment_args": {
