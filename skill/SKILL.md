@@ -64,6 +64,14 @@ MCP를 쓰지 않고 `sap` CLI만으로 지도·계획·실행을 다룰 때는 
 
 ## Daemon 기본 실행
 
+### Guided 지도 녹화는 대화형으로 진행
+
+사용자가 지도 녹화를 요청하고 `guided` 모드를 사용하면, job을 시작한 뒤 반드시
+`sap_job_status`를 반복 호출한다. 응답이 `needs_user_input`이면 `pending_questions`의
+`question`과 `choices[].label`을 자연어로 사용자에게 보여주고, 답변을 받은 뒤에만
+`sap_map_traverse_resume`를 호출한다. candidate ID를 추측하거나 여러 후보를 임의로
+연속 실행하지 않는다. 이 루프는 지도 job이 `completed`가 될 때까지 반복한다.
+
 CLI/MCP는 기본적으로 daemon 경유를 우선 사용한다. daemon이 없으면 자동 시작하고,
 실패 시 direct dispatch로 fallback한다. 직접 실행을 강제해야 할 때만
 `SAP_CLI_USE_DAEMON=0`을 설정한다. Claude/Codex MCP에서는 별도 설정 없이 daemon

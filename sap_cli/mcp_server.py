@@ -258,7 +258,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_map_traverse_start",
-        "description": "지도 순회 job을 daemon에 등록하고 즉시 queued 상태로 반환합니다. active 모드는 테스트 클라이언트 확인이 필요합니다.",
+        "description": "지도 순회 job을 daemon에 등록하고 즉시 queued 상태로 반환합니다. guided 모드에서는 AI가 반드시 sap_job_status를 polling해 pending_questions의 화면 구조와 choices를 사용자에게 자연어로 보여준 뒤, 사용자의 답변으로 sap_map_traverse_resume을 호출해야 합니다. AI가 임의 candidate를 선택하거나 guided job을 한 번에 끝내면 안 됩니다. active 모드는 테스트 클라이언트 확인이 필요합니다.",
         "inputSchema": {"type": "object", "properties": {
             "tcode": {"type": "string"}, "map_id": {"type": "string"},
             "mode": {"enum": ["passive", "guided", "reversible", "allowlisted"], "default": "guided", "description": "기본 guided는 안전한 후보를 하나씩 사용자에게 물어본 뒤 확장합니다. active 모드는 test_client_confirmed=true가 필요합니다."},
@@ -310,7 +310,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "sap_map_traverse_resume",
-        "description": "사용자 답변·수동 SAP 이동 후 재개하거나, budget-paused job에 더 큰 budget을 적용합니다. 답변 값은 디스크에 저장하지 않습니다.",
+        "description": "사용자 답변·수동 SAP 이동 후 재개하거나, budget-paused job에 더 큰 budget을 적용합니다. 반드시 최신 sap_job_status의 pending_questions에서 resume_token과 candidate_id를 읽어 사용하며, 사용자의 답변 전에 호출하지 않습니다. 답변 값은 디스크에 저장하지 않습니다.",
         "inputSchema": {"type": "object", "properties": {
             "job_id": {"type": "string"}, "answers": {"type": "object"},
             "budget": {"type": "object"},
