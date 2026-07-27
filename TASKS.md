@@ -1,5 +1,49 @@
 # SAP CLI 작업 이력
 
+## 2026-07-27: 데몬 중복 기동 차단 (명령마다 데몬이 쌓이는 문제)
+
+### 증상
+
+Windows 실기 테스트 중, 명령 하나를 보낼 때마다 데몬 프로세스가 하나씩 새로 생겨
+무한히 쌓였다.
+
+### 원인 (세 가지가 겹침)
+
+1. 데몬은 무거운 runtime 초기화(COM/이벤트/맵 hydrate)를 끝낸 뒤에야 포트를 bind
+   한다. 그 사이 클라이언트에게는 계속 `refused` 로 보인다.
+2. `refused` 면 "이미 누가 띄우는 중인지" 확인하지 않고 곧바로 새 프로세스를 띄웠다.
+   초기화 창(window) 안에 들어온 명령 수만큼 데몬이 생긴다.
+3. `allow_reuse_address = True` + Windows SO_REUSEADDR 는 중복 bind 를 허용하므로,
+   늦게 뜬 데몬도 "포트 사용 중"으로 죽지 않고 살아남는다.
+
+### 조치
+
+- `sap_cli/daemon.py` 에 OS 파일 락 기반 싱글턴 가드 추가
+  - `acquire_singleton_lock()` / `release_singleton_lock()` (POSIX `flock`,
+    Windows `msvcrt.locking`). 프로세스가 죽으면 OS 가 자동 해제하므로 PID 파일과
+    달리 stale 락이 남지 않는다.
+  - `_run_server()` 는 무거운 초기화 **전에** 락을 확인하고, 이미 데몬이 있으면 즉시
+    종료한다.
+  - `start_daemon_detailed()` 는 락이 잡혀 있으면 새로 띄우지 않고 기존 데몬이 준비될
+    때까지 기다린다.
+  - `doctor()` 에 `singleton_lock_held` 추가 — `daemon_running=false` 인데
+    `singleton_lock_held=true` 면 어떤 프로세스가 초기화 도중 멈춰 있다는 뜻.
+- `tests/test_daemon_singleton.py` 추가 (6 케이스)
+
+### 검증
+
+- `pytest tests/test_daemon_singleton.py` — 6 passed
+- 전체 스위트 — 1263 passed / 2 failed. 실패 2건은 macro `READ_FIELD` 관련으로 이
+  변경 이전부터 실패하던 건(stash 후 재현 확인)이라 무관.
+- Windows `msvcrt` 경로는 macOS 개발기에서 실행 불가 → 실기 검증 필요.
+
+### Windows 실기 검증 필요
+
+1. 잔여 데몬 정리 후 명령 여러 개 연속 실행 → 데몬 프로세스가 1개로 유지되는지 확인
+2. 초기화가 왜 오래 걸리는지(또는 멈추는지) `~/.sap_cli/daemon.log` 로 확인
+3. `sap daemon doctor` 의 `singleton_lock_held` 값으로 "초기화 중 멈춤" 여부 판별
+
+
 ## 2026-06-25: MCP 속도 개선 + UI action 자동 노출
 
 ### 완료한 작업

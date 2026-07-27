@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 PORT = 18471
 PID_FILE = os.path.join(tempfile.gettempdir(), "sap_cli_daemon.pid")
+LOCK_FILE = os.path.join(tempfile.gettempdir(), "sap_cli_daemon.lock")
 DEFAULT_COMMAND_TIMEOUT = 60.0
 DEFAULT_PLAN_EXECUTE_TIMEOUT = 3600.0
 # Windows 콜드 스타트는 무거운 import(pywin32 등) 때문에 기동이 수 초 걸릴 수 있어
@@ -75,6 +76,81 @@ def _read_log_tail(path: str, max_bytes: int = 4000) -> str:
         return data.decode("utf-8", errors="replace").strip()
     except OSError:
         return ""
+
+
+class _NullLock:
+    """락 파일을 만들 수 없는 환경에서 보호를 건너뛰기 위한 no-op 핸들."""
+
+    def close(self) -> None:
+        pass
+
+
+def _lock_path() -> str:
+    return os.getenv("SAP_CLI_DAEMON_LOCK") or LOCK_FILE
+
+
+def acquire_singleton_lock() -> Any | None:
+    """데몬 싱글턴 락을 잡는다. 다른 데몬이 쥐고 있으면 None.
+
+    PID 파일과 달리 OS가 프로세스 종료 시 자동으로 풀어 주므로, 죽은 데몬이
+    남긴 stale 락 때문에 기동이 영구히 막히는 일이 없다. 반환된 핸들은 락을
+    유지하는 동안 열어 둬야 한다.
+    """
+    try:
+        handle: Any = open(_lock_path(), "a+b")
+    except OSError:
+        # 락 파일조차 만들 수 없으면 보호는 포기하되 기동을 막지는 않는다.
+        return _NullLock()
+    try:
+        handle.seek(0)
+        if sys.platform == "win32":
+            import msvcrt
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle
+
+
+def release_singleton_lock(handle: Any | None) -> None:
+    """acquire_singleton_lock 이 돌려준 핸들을 닫아 락을 해제한다."""
+    if handle is None:
+        return
+    if sys.platform == "win32" and hasattr(handle, "fileno"):
+        try:
+            handle.seek(0)
+            import msvcrt
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+    try:
+        handle.close()
+    except OSError:
+        pass
+
+
+def daemon_start_in_progress() -> bool:
+    """다른 프로세스가 이미 데몬을 띄웠거나 띄우는 중이면 True."""
+    handle = acquire_singleton_lock()
+    if handle is None:
+        return True
+    release_singleton_lock(handle)
+    return False
+
+
+def _wait_until_alive(deadline: float) -> bool:
+    """이미 기동 중인 데몬이 응답하기 시작할 때까지 대기."""
+    while time.monotonic() < deadline:
+        if probe_daemon(timeout=0.5) == "alive":
+            return True
+        time.sleep(0.15)
+    return False
 
 
 def command_timeout(cmd: str) -> float:
@@ -201,6 +277,23 @@ def start_daemon_detailed(timeout: float | None = None) -> tuple[bool, str | Non
         )
         return False, _last_start_error
 
+    budget = timeout if timeout is not None else _start_timeout()
+    if daemon_start_in_progress():
+        # 다른 프로세스가 띄운 데몬이 아직 초기화(COM/이벤트/맵 hydrate) 중이라
+        # 포트가 열리지 않았을 뿐이다. 여기서 하나를 더 띄우면 명령마다 데몬이
+        # 한 개씩 영구히 쌓이므로(포트를 못 잡아도 프로세스는 남는다), 새로
+        # 띄우지 않고 그 데몬이 준비될 때까지 기다린다.
+        if _wait_until_alive(time.monotonic() + budget):
+            _last_start_error = None
+            return True, None
+        tail = _read_log_tail(_daemon_log_path())
+        _last_start_error = (
+            "다른 데몬 프로세스가 기동 중이지만 준비되지 않았습니다. 중복 기동을 "
+            f"막기 위해 새 데몬을 띄우지 않았습니다. 로그: {_daemon_log_path()}"
+            + (f"\n--- daemon.log tail ---\n{tail}" if tail else "")
+        )
+        return False, _last_start_error
+
     python = sys.executable
     cmd = [python, "-m", "sap_cli.daemon"]
     log_path = _daemon_log_path()
@@ -231,7 +324,7 @@ def start_daemon_detailed(timeout: float | None = None) -> tuple[bool, str | Non
         if log_handle is not subprocess.DEVNULL:
             log_handle.close()  # 자식이 자신의 복제 핸들을 유지한다
 
-    deadline = time.monotonic() + (timeout if timeout is not None else _start_timeout())
+    deadline = time.monotonic() + budget
     while time.monotonic() < deadline:
         status = probe_daemon(timeout=0.5)
         if status == "alive":
@@ -356,6 +449,8 @@ def doctor() -> dict:
 
     running = is_running(timeout=1.0)
     info["daemon_running"] = running
+    # 데몬은 안 떠 있는데 락이 잡혀 있으면 = 어떤 프로세스가 초기화 도중 멈춰 있다.
+    info["singleton_lock_held"] = daemon_start_in_progress()
     if running:
         ping = send_command("ping", timeout=2.0)
         if ping and ping.get("ok"):
@@ -775,31 +870,43 @@ def _run_server():
     )
     pid = os.getpid()
 
-    # 서버 생성(무거운 runtime 초기화 후 마지막에 포트 바인딩)이 실패하면 그
-    # traceback이 자식 stderr(=daemon.log)로 남도록 하고, PID 파일은 성공했을
-    # 때만 쓴다.
-    try:
-        server = _DaemonServer()
-    except Exception:
-        logger.exception("데몬 초기화 실패 (port=%d, pid=%d)", PORT, pid)
-        raise
+    # 무거운 runtime 초기화를 시작하기 전에 싱글턴 여부를 확인한다. 데몬은
+    # 초기화가 끝난 뒤에야 포트를 bind 하므로, 그 사이 도착한 명령들에게는
+    # 포트가 계속 refused 로 보인다. 이 가드가 없으면 그 창(window) 동안
+    # 명령마다 데몬이 하나씩 생기고, Windows 의 SO_REUSEADDR 는 중복 bind 를
+    # 허용하므로 진 프로세스도 죽지 않고 그대로 쌓인다.
+    lock = acquire_singleton_lock()
+    if lock is None:
+        logger.info("데몬이 이미 실행/기동 중이므로 종료 (port=%d, pid=%d)", PORT, pid)
+        return
 
-    with open(PID_FILE, "w") as f:
-        f.write(str(pid))
-
-    logger.info("시작 (port=%d, pid=%d)", PORT, pid)
     try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        server.close_events()
-        server.server_close()
+        # 서버 생성이 실패하면 그 traceback이 자식 stderr(=daemon.log)로 남도록
+        # 하고, PID 파일은 성공했을 때만 쓴다.
         try:
-            os.unlink(PID_FILE)
-        except OSError:
+            server = _DaemonServer()
+        except Exception:
+            logger.exception("데몬 초기화 실패 (port=%d, pid=%d)", PORT, pid)
+            raise
+
+        with open(PID_FILE, "w") as f:
+            f.write(str(pid))
+
+        logger.info("시작 (port=%d, pid=%d)", PORT, pid)
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
             pass
-        logger.info("종료")
+        finally:
+            server.close_events()
+            server.server_close()
+            try:
+                os.unlink(PID_FILE)
+            except OSError:
+                pass
+            logger.info("종료")
+    finally:
+        release_singleton_lock(lock)
 
 
 if __name__ == "__main__":
